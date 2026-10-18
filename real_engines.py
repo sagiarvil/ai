@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-BARIŞ AI // %100 GERÇEK VE FİZİKSEL ARAMA & İSTİHBARAT MOTORLARI
-Kesin kural: Sıfır sahte veri, sıfır simülasyon.
-
+BARIŞ AI // GERÇEK VE FİZİKSEL ARAMA & İSTİHBARAT MOTORLARI
 1. RealWebSearchEngine: Canlı DuckDuckGo HTML motoru + BeautifulSoup4 sayfa kazıyıcı.
 2. RealTorEngine: 127.0.0.1:9050 SOCKS5 yerel Tor ağı.
-3. RealCryptoEngine: Binance Spot API + DexScreener API + RugCheck.xyz API.
 """
 
 import json
@@ -27,7 +24,7 @@ def get_tor_opener():
     )
 
 def get_masked_httpx_client(timeout: float = 8.0) -> httpx.AsyncClient:
-    """Dış dünyadaki sitelerin gerçek IP adresini görmesini %100 engelleyen Tor istemcisi."""
+    """Dış dünyadaki sitelerin gerçek IP adresini görmesini engelleyen Tor istemcisi."""
     try:
         return httpx.AsyncClient(proxy=TOR_SOCKS_PROXY, timeout=timeout, verify=False)
     except Exception:
@@ -40,8 +37,7 @@ class RealWebSearchEngine:
     @classmethod
     def search_live_web(cls, query: str, max_results: int = 5) -> List[Dict[str, str]]:
         """
-        DuckDuckGo HTML arama motoru üzerinden internette IP maskeli canlı fiziksel arama yapar.
-        Türkçe ve yabancı sorgularda doğrudan 100% gerçek sonuçlar çeker.
+        DuckDuckGo HTML arama motoru üzerinden internette canlı fiziksel arama yapar.
         """
         results = []
         try:
@@ -49,7 +45,6 @@ class RealWebSearchEngine:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"
             })
-            # Önce Tor üzerinden dene (Gerçek IP gizlenir), olmazsa yerel açıcı
             try:
                 opener = get_tor_opener()
                 resp_ctx = opener.open(req, timeout=10)
@@ -68,7 +63,6 @@ class RealWebSearchEngine:
                     
                     if link_elem:
                         raw_href = link_elem.get("href", "")
-                        # DuckDuckGo redirect linkini çöz
                         actual_url = raw_href
                         if "uddg=" in raw_href:
                             try:
@@ -89,61 +83,37 @@ class RealWebSearchEngine:
         except Exception:
             pass
 
-        # Yedek Kaynak: Wikipedia Canlı Arama
-        if len(results) < max_results:
-            try:
-                search_term = query if len(query.split()) <= 2 else query.split()[0]
-                wiki_url = f"https://tr.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(search_term)}&limit=3&namespace=0&format=json"
-                req = urllib.request.Request(wiki_url, headers={"User-Agent": "BarisAI/2.0"})
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    wdata = json.loads(resp.read().decode("utf-8"))
-                    titles = wdata[1] if len(wdata) > 1 else []
-                    urls = wdata[3] if len(wdata) > 3 else []
-                    for t, u in zip(titles, urls):
-                        results.append({
-                            "title": f"Wikipedia: {t}",
-                            "url": u,
-                            "snippet": f"{t} hakkında doğrulanmış açık ansiklopedik bilgiler."
-                        })
-            except Exception:
-                pass
-
         return results[:max_results]
 
     @classmethod
     async def deep_scrape_url(cls, url: str) -> str:
-        """Belirtilen web sayfasını Tor üzerinden IP maskeli olarak indirip temiz ana metni çeker."""
+        """Belirtilen web sayfasını Tor veya yerel ağ üzerinden indirip temiz metni çeker."""
         if not url.startswith("http"):
             return ""
-        try:
-            async with get_masked_httpx_client(timeout=8.0) as client:
-                resp = await client.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                })
-                if resp.status_code == 200:
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
-                        tag.decompose()
-                    paragraphs = [p.get_text().strip() for p in soup.find_all(["p", "div", "li"]) if len(p.get_text().strip()) > 35]
-                    return " ".join(paragraphs[:6])[:1200]
-        except Exception:
-            pass
+        for use_tor in [True, False]:
+            try:
+                client_ctx = get_masked_httpx_client(timeout=8.0) if use_tor else httpx.AsyncClient(timeout=8.0)
+                async with client_ctx as client:
+                    resp = await client.get(url, headers={
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    })
+                    if resp.status_code == 200:
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        for tag in soup(["script", "style", "nav", "footer", "header", "svg", "noscript"]):
+                            tag.decompose()
+                        text = soup.get_text(separator=" ", strip=True)
+                        return re.sub(r"\s+", " ", text)[:4000]
+            except Exception:
+                continue
         return ""
 
 # ==============================================================================
-# 2. GERÇEK TOR / DARK WEB MOTORU (127.0.0.1:9050 SOCKS5)
+# 2. TOR AĞI DOĞRULAMA VE .ONION YÖNETİMİ
 # ==============================================================================
 class RealTorEngine:
-    TOR_SOCKS_HOST = "127.0.0.1"
-    TOR_SOCKS_PORT = 9050
-
     @classmethod
     def get_tor_opener(cls):
-        """DNS sızıntılarını ve güvenlik duvarı engellerini aşan Remote DNS (SOCKS5h) açıcı üretir."""
-        return urllib.request.build_opener(
-            SocksiPyHandler(socks.SOCKS5, cls.TOR_SOCKS_HOST, cls.TOR_SOCKS_PORT, True)
-        )
+        return get_tor_opener()
 
     @classmethod
     def verify_tor_circuit(cls) -> Dict[str, Any]:
@@ -176,75 +146,3 @@ class RealTorEngine:
                 return soup.get_text(separator=" ", strip=True)[:2500]
         except Exception as e:
             return f"[Tor Erişim Hatası]: {e}"
-
-# ==============================================================================
-# 3. GERÇEK KRİPTO & COIN MOTORLARI (Binance + DexScreener + RugCheck)
-# ==============================================================================
-class RealCryptoEngine:
-    @classmethod
-    async def get_live_coin(cls, symbol: str) -> Optional[Dict[str, Any]]:
-        clean = symbol.upper().replace("USDT", "") + "USDT"
-        # 1. Önce Tor üzerinden dene, 403 (Cloudflare) alınırsa doğrudan yerel internete geç
-        for use_tor in [True, False]:
-            try:
-                client_ctx = get_masked_httpx_client(timeout=5.0) if use_tor else httpx.AsyncClient(timeout=5.0)
-                async with client_ctx as client:
-                    resp = await client.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={clean}")
-                    if resp.status_code == 200:
-                        d = resp.json()
-                        return {
-                            "symbol": symbol.upper().replace("USDT", ""),
-                            "pair": clean,
-                            "price": float(d.get("lastPrice", 0)),
-                            "change_24h": round(float(d.get("priceChangePercent", 0)), 2),
-                            "high_24h": float(d.get("highPrice", 0)),
-                            "low_24h": float(d.get("lowPrice", 0)),
-                            "volume_usdt": round(float(d.get("quoteVolume", 0)), 2)
-                        }
-            except Exception:
-                continue
-        return None
-
-    @classmethod
-    async def get_solana_rugcheck(cls, mint_address: str) -> Optional[Dict[str, Any]]:
-        try:
-            async with get_masked_httpx_client(timeout=8.0) as client:
-                resp = await client.get(f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report")
-                if resp.status_code == 200:
-                    return resp.json()
-        except Exception:
-            pass
-        return None
-
-    @classmethod
-    async def fetch_latest_tokens_with_audit(cls, limit: int = 5) -> List[Dict[str, Any]]:
-        """
-        DexScreener canlı token boost akışından yeni çıkan tokenları IP maskeli olarak yakalar
-        ve Solana kontratlarını otomatik olarak RugCheck risk filtresinden geçirir.
-        """
-        results = []
-        try:
-            async with get_masked_httpx_client(timeout=8.0) as client:
-                resp = await client.get("https://api.dexscreener.com/token-boosts/latest/v1")
-                if resp.status_code == 200:
-                    tokens = resp.json()[:limit]
-                    for t in tokens:
-                        chain = t.get("chainId", "unknown")
-                        addr = t.get("tokenAddress", "")
-                        item = {
-                            "chain": chain,
-                            "address": addr,
-                            "amount": t.get("totalAmount", 0),
-                            "url": t.get("url", f"https://dexscreener.com/{chain}/{addr}"),
-                            "risk_score": None,
-                            "audit_status": "Bilinmiyor"
-                        }
-                        if chain == "solana" and addr:
-                            audit = await cls.get_solana_rugcheck(addr)
-                            if audit:
-                                item["risk_score"] = audit.get("score", 0)
-                                item["audit_status"] = "GÜVENLİ (Düşük Risk)" if audit.get("score", 0) < 500 else "RİSKLİ / DİKKAT"
-                        results.append(item)
-        except Exception:
-            pass
-        return results

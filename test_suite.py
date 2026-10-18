@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
 BARIŞ AI // %100 GERÇEK VE FİZİKSEL MOTOR DOĞRULAMA TEST SÜİTİ
-Tüm motorların canlı ve fiziksel çalıştığını test eder.
+Fiyat çekme modülleri kaldırılmıştır; saf mühendislik, güvenlik, ağ ve araştırma motorları test edilir.
 """
 
 import asyncio
+import subprocess
+import tempfile
+from pathlib import Path
 from fastapi.testclient import TestClient
 
 from omni_chat_panel import app
-from real_engines import RealTorEngine, RealWebSearchEngine, RealCryptoEngine
+from real_engines import RealTorEngine, RealWebSearchEngine
 from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
 
@@ -27,11 +30,25 @@ def test_deep_web_research():
     assert "url" in result[0]
     print(f"[PASS] 2. Deep Web Research: Canlı Web Araması Başarılı ({len(result)} kaynak)")
 
-def test_crypto_engines():
-    """Binance ve DexScreener API'lerinden canlı veri çeker."""
-    coin = asyncio.run(RealCryptoEngine.get_live_coin("BTC"))
-    assert coin is not None and coin.get("price", 0) > 0, "Binance BTC fiyatı alınamadı"
-    print(f"[PASS] 3. RealCryptoEngine: Binance BTC Canlı Fiyatı: ${coin['price']:,.2f}")
+def test_slither_security_analysis():
+    """Slither ile statik akıllı kontrat analizi yapar."""
+    sol_code = """// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+contract TestBank {
+    mapping(address => uint) public balances;
+    function withdraw() public {
+        uint bal = balances[msg.sender];
+        (bool s,) = msg.sender.call{value: bal}("");
+        require(s);
+        balances[msg.sender] = 0;
+    }
+}"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sol_file = Path(tmpdir) / "TestBank.sol"
+        sol_file.write_text(sol_code, encoding="utf-8")
+        res = subprocess.run(["slither", str(sol_file)], capture_output=True, text=True, timeout=20)
+        assert "reentrancy" in (res.stdout + res.stderr).lower()
+    print("[PASS] 3. Slither Statik Güvenlik Analizi: Reentrancy Başarıyla Tespit Edildi")
 
 def test_browser_controller():
     """Google Chrome ikilisi ile canlı web sayfası gezinmesini doğrular."""
@@ -57,11 +74,11 @@ def test_fastapi_system_status():
     print(f"[PASS] 6. FastAPI: /api/system_status Çevrimiçi ({data['hardware']})")
 
 if __name__ == "__main__":
-    print("=== BARIŞ AI GERÇEK MOTOR TESTLERİ ÇALIŞTIRILIYOR ===")
+    print("=== BARIŞ AI GERÇEK MOTOR TESTLERİ ÇALIŞTIRILIYOR (FİYAT ÇEKME SIFIRLANDI) ===")
     test_tor_network()
     test_deep_web_research()
-    test_crypto_engines()
+    test_slither_security_analysis()
     test_browser_controller()
     test_sandbox_and_agentic_engine()
     test_fastapi_system_status()
-    print("=== TÜM GERÇEK FİZİKSEL MOTORLAR DOĞRULANDI (6/6 PASS) ===")
+    print("=== TÜM GERÇEK MÜHENDİSLİK MOTORLARI DOĞRULANDI (6/6 PASS) ===")

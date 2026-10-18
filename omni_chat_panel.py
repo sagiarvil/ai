@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
-from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine, get_masked_httpx_client
+from real_engines import RealWebSearchEngine, RealTorEngine, get_masked_httpx_client
 from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
 from deterministic_engine import DeterministicEngine
@@ -348,9 +348,7 @@ async def system_status():
             "I2P (Invisible Internet Project - i2pd)",
             "Tor SOCKS5 (9050)",
             "Crawl4AI",
-            "Slither",
-            "RugCheck",
-            "DexScreener"
+            "Slither"
         ],
         "active_installed_engines_count": len(installed_engines),
         "active_installed_engines": [e.get("name") for e in installed_engines],
