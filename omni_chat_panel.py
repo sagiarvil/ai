@@ -405,7 +405,13 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
                 f"- **Önemli Not:** Depo testleri geçmiştir ancak henüz çalışan bir servis olarak AKTiF DEĞİLDİR. "
                 f"Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
             )
-        return f"[Kurulum Başarısız / Doğrulanamadı]: {report.message} (Durum: {report.state.value})"
+        err_detail = report.message
+        if report.evidence:
+            for ev_item in reversed(report.evidence):
+                if isinstance(ev_item, dict) and ev_item.get("error"):
+                    err_detail = ev_item.get("error")
+                    break
+        return f"[Kurulum Başarısız / Doğrulanamadı]: {err_detail} (Durum: {report.state.value})"
     elif fname == "tool_browser_navigate":
         return await tool_browser_navigate(
             url=fargs.get("url", ""),

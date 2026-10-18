@@ -213,7 +213,7 @@ def install_repo(url: str) -> dict[str, Any]:
             return _fail('REVISION', 'Cannot verify git commit', evidence, job_id)
         sha = commit['stdout'].strip()
         evidence.append({'stage': 'REVISION', 'commit': sha, 'kind': kind})
-        if kind not in {'python', 'node'}:
+        if kind not in {'python', 'node', 'go', 'rust'}:
             return {'success': False, 'verified': False, 'state': 'UNSUPPORTED',
                     'error': f'{kind}: no verified installer adapter; nothing activated',
                     'repo': safe_url, 'commit': sha, 'job_id': job_id, 'evidence': evidence}
@@ -260,7 +260,7 @@ def install_repo(url: str) -> dict[str, Any]:
                 test_cmd = f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"'
 
             test = run(test_cmd, source, 180)
-        else:
+        elif kind == 'node':
             if not (source / 'package-lock.json').exists():
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                         'repo': safe_url, 'commit': sha, 'error': 'package-lock.json required; not activated', 'evidence': evidence}
@@ -303,6 +303,40 @@ def install_repo(url: str) -> dict[str, Any]:
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                         'repo': safe_url, 'commit': sha, 'error': 'No npm test script; not activated', 'evidence': evidence}
             test = run(test_script, source, 180)
+        elif kind == 'go':
+            gocache = task_dir / '.gocache'
+            gopath = task_dir / '.gopath'
+            gocache.mkdir(parents=True, exist_ok=True)
+            gopath.mkdir(parents=True, exist_ok=True)
+            go_env = f"GOCACHE='{gocache}' GOPATH='{gopath}'"
+
+            # 1. Bağımlılıkları indir
+            deps = run(f"{go_env} go mod download", source, 600, network=True)
+            evidence.append({'stage': 'DEPENDENCIES', 'exit_code': deps.get('exit_code'), 'stderr': deps.get('stderr', '')[-900:]})
+            if not deps.get('success'):
+                return _fail('DEPENDENCIES', deps.get('stderr', '')[-900:], evidence, job_id)
+
+            # 2. Derleme
+            build_res = run(f"{go_env} go build ./...", source, 300)
+            evidence.append({'stage': 'BUILD', 'exit_code': build_res.get('exit_code'), 'stderr': build_res.get('stderr', '')[-900:]})
+            if not build_res.get('success'):
+                return _fail('BUILD', build_res.get('stderr', 'Go build failed')[-900:], evidence, job_id)
+
+            # 3. Test
+            test = run(f"{go_env} go test -short ./...", source, 300)
+        elif kind == 'rust':
+            cargo_home = task_dir / '.cargo'
+            cargo_home.mkdir(parents=True, exist_ok=True)
+            rust_env = f"CARGO_HOME='{cargo_home}'"
+
+            # 1. Derleme
+            build_res = run(f"{rust_env} cargo build", source, 600, network=True)
+            evidence.append({'stage': 'BUILD', 'exit_code': build_res.get('exit_code'), 'stderr': build_res.get('stderr', '')[-900:]})
+            if not build_res.get('success'):
+                return _fail('BUILD', build_res.get('stderr', 'Cargo build failed')[-900:], evidence, job_id)
+
+            # 2. Test
+            test = run(f"{rust_env} cargo test --no-fail-fast", source, 300)
 
         evidence.append({'stage': 'FUNCTIONAL_TEST', 'exit_code': test.get('exit_code'),
                          'stdout': test.get('stdout', '')[-600:], 'stderr': test.get('stderr', '')[-600:]})
