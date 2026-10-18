@@ -9,23 +9,27 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
-      --bg: #0a0c10;
-      --panel: #11141a;
-      --border: #1e2430;
-      --text: #e6edf3;
-      --muted: #7d8590;
-      --accent: #2f81f7;
-      --green: #3fb950;
-      --red: #f85149;
-      --orange: #d29922;
-      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --bg: #ffffff;
+      --bg-gradient: radial-gradient(circle at 50% 38%, #eef5fc 0%, #f7fafd 55%, #ffffff 100%);
+      --text: #1f1f1f;
+      --text-secondary: #444746;
+      --text-muted: #747775;
+      --border: #e3e3e3;
+      --pill-bg: #ffffff;
+      --pill-border: #dfe3e7;
+      --pill-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+      --chip-bg: #f0f4f9;
+      --chip-hover: #e3e8ee;
+      --msg-user-bg: #e9eef6;
+      --accent: #1a73e8;
+      --sans: "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--bg);
+      background: var(--bg-gradient);
       color: var(--text);
-      font-family: var(--mono);
+      font-family: var(--sans);
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -33,346 +37,327 @@
       -webkit-font-smoothing: antialiased;
     }
     header {
-      height: 46px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--border);
+      height: 52px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 16px;
-      font-size: 12px;
-      font-weight: 600;
+      padding: 0 24px;
+      background: transparent;
+      z-index: 10;
     }
-    .status-pill {
-      display: inline-flex;
+    .brand-title {
+      display: flex;
       align-items: center;
-      gap: 6px;
-      color: var(--green);
-      font-size: 11px;
+      gap: 8px;
+      font-size: 17px;
+      font-weight: 500;
+      color: #1f1f1f;
+      letter-spacing: -0.2px;
     }
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green);
+    .brand-sparkle {
+      font-size: 19px;
+      background: linear-gradient(135deg, #1a73e8, #9334e6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .voice-btn {
-      background: #161b22;
+      background: #ffffff;
       border: 1px solid var(--border);
-      color: var(--green);
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 6px;
+      color: var(--text-secondary);
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 20px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      transition: all 0.2s ease;
+      gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: all 0.2s;
     }
     .voice-btn:hover {
-      border-color: var(--accent);
-      background: #1f242c;
+      background: #f8fafd;
+      border-color: #c4c7c5;
+    }
+    #mainContent {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
     }
     #feed {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 20px 24px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
-      max-width: 960px;
+      gap: 20px;
+      max-width: 840px;
       width: 100%;
       margin: 0 auto;
     }
+    /* GEMINI HERO */
+    .gemini-hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      padding-bottom: 30px;
+    }
+    .gemini-hero h1 {
+      font-size: 40px;
+      font-weight: 400;
+      color: #1f1f1f;
+      letter-spacing: -0.5px;
+      text-align: center;
+    }
+    /* CHAT BUBBLES */
     .msg-user {
       align-self: flex-end;
-      background: #1f304d;
-      border: 1px solid #284470;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      max-width: 80%;
+      background: var(--msg-user-bg);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 22px 22px 4px 22px;
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 78%;
       white-space: pre-wrap;
+      word-break: break-word;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     .msg-ai {
       align-self: flex-start;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      padding: 14px 16px;
-      border-radius: 8px;
-      font-size: 13px;
+      background: transparent;
+      padding: 4px 2px;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text);
       width: 100%;
-      line-height: 1.5;
+    }
+    .msg-ai-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 6px;
     }
     .msg-ai pre {
-      background: #060709;
-      border: 1px solid var(--border);
-      padding: 10px;
-      border-radius: 6px;
+      background: #1e1f20;
+      color: #e3e3e3;
+      padding: 12px 16px;
+      border-radius: 12px;
       overflow-x: auto;
-      margin: 8px 0;
+      margin: 10px 0;
+      font-family: var(--mono);
+      font-size: 13px;
     }
     .msg-ai code {
       font-family: var(--mono);
-      color: #79c0ff;
-      font-size: 12px;
+      font-size: 13px;
+      color: #1a73e8;
     }
-    .steps {
-      border-left: 2px solid var(--accent);
-      padding-left: 10px;
-      margin-bottom: 10px;
-      font-size: 11px;
-      color: var(--muted);
+    .msg-ai pre code {
+      color: #e3e3e3;
     }
+    /* FOOTER & GEMINI PILL */
     footer {
-      background: var(--panel);
-      border-top: 1px solid var(--border);
-      padding: 10px 16px;
+      background: transparent;
+      padding: 10px 20px 24px 20px;
+      max-width: 840px;
+      width: 100%;
+      margin: 0 auto;
     }
     .attachment-tray {
-      max-width: 960px;
-      margin: 0 auto 6px auto;
+      margin: 0 auto 8px auto;
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
     }
     .attachment-chip {
-      background: #161b22;
-      border: 1px solid var(--accent);
-      color: #79c0ff;
-      font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 4px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 16px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
     .attachment-chip .remove-btn {
-      color: var(--muted);
+      color: var(--text-muted);
       cursor: pointer;
       font-weight: bold;
     }
     .attachment-chip .remove-btn:hover {
-      color: var(--red);
+      color: #d93025;
     }
-    .input-box {
-      max-width: 960px;
-      margin: 0 auto;
+    .gemini-pill-wrap {
       display: flex;
-      gap: 8px;
+      flex-direction: column;
       align-items: center;
+      gap: 14px;
     }
-    textarea {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 13px;
-      padding: 10px 12px;
-      border-radius: 6px;
-      resize: none;
-      height: 48px;
-      outline: none;
-    }
-    textarea:focus { border-color: var(--accent); }
-    .tool-btn, .mic-btn {
-      background: #161b22;
-      border: 1px solid var(--border);
-      color: var(--text);
-      width: 48px;
-      height: 48px;
-      border-radius: 6px;
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .tool-btn:hover, .mic-btn:hover {
-      border-color: var(--accent);
-      background: #1f242c;
-    }
-    .mic-btn.listening {
-      background: #3c1618;
-      border-color: var(--red);
-      color: var(--red);
-      animation: pulse 1.2s infinite;
-    }
-    @keyframes pulse {
-      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4); }
-      70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(248, 81, 73, 0); }
-      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
-    }
-    button.send {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      padding: 0 20px;
-      height: 48px;
-      border-radius: 6px;
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button.send:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.stop-btn {
-      background: #da3633;
-      color: #fff;
-      border: none;
-      padding: 0 20px;
-      height: 48px;
-      border-radius: 6px;
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    button.stop-btn:hover { background: #b62324; }
-    .footer-bar {
-      max-width: 960px;
-      margin: 6px auto 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-    .quick-bar {
-      display: flex;
-      gap: 8px;
-      font-size: 10px;
-      color: var(--muted);
-      overflow-x: auto;
-      white-space: nowrap;
-      padding-top: 2px;
-    }
-    .quick-chip {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      padding: 3px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .quick-chip:hover { color: var(--text); border-color: var(--muted); }
-    .char-counter {
-      font-size: 11px;
-      color: var(--muted);
-      white-space: nowrap;
-      font-family: var(--mono);
-      padding: 2px 6px;
-    }
-    .char-counter.warning { color: var(--orange); }
-    .char-counter.danger { color: var(--red); font-weight: bold; }
-    /* --- JARVIS NEON AUDIO EQUALIZER --- */
-    .visualizer-container {
-      max-width: 960px;
-      margin: 0 auto 4px auto;
-      background: #090a0f;
-      border: 1px solid #1c1f26;
-      border-radius: 4px;
-      padding: 3px 10px;
+    .gemini-pill {
+      width: 100%;
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      border-radius: 32px;
+      box-shadow: var(--pill-shadow);
+      padding: 8px 16px;
       display: flex;
       align-items: center;
       gap: 10px;
-      box-shadow: none;
-      transition: border-color 0.3s;
+      transition: all 0.2s ease;
+    }
+    .gemini-pill:focus-within {
+      box-shadow: 0 4px 28px rgba(0, 0, 0, 0.1);
+      border-color: #c4c7c5;
+    }
+    .pill-btn {
+      background: transparent;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .pill-btn:hover {
+      background: #f0f4f9;
+    }
+    .pill-textarea {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: var(--sans);
+      font-size: 16px;
+      color: var(--text);
+      resize: none;
+      height: 28px;
+      max-height: 120px;
+      line-height: 28px;
+      padding: 0;
+    }
+    .pill-textarea::placeholder {
+      color: var(--text-muted);
+    }
+    .pill-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .model-badge {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 12px;
       cursor: pointer;
       user-select: none;
     }
-    .visualizer-container:hover {
-      border-color: #3b1d22;
+    .model-badge:hover {
+      background: #f0f4f9;
+      color: var(--text);
     }
-    .visualizer-container.active {
-      border-color: #632228;
-      background: #0d0a0c;
+    .mic-btn.listening {
+      background: #fce8e6;
+      color: #d93025;
+      animation: pulse 1.2s infinite;
     }
-    .visualizer-canvas {
-      flex: 1;
-      height: 12px;
-      width: 100%;
-      border-radius: 2px;
-      background: #06070a;
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(217, 48, 37, 0.4); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(217, 48, 37, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(217, 48, 37, 0); }
     }
-    .visualizer-meta {
-      font-size: 11px;
-      font-family: var(--mono);
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 150px;
-      text-align: right;
+    .send-icon-btn {
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: bold;
     }
-    .visualizer-status {
-      font-weight: 600;
-      color: #94a3b8;
+    .send-icon-btn:hover {
+      background: #e8f0fe;
+    }
+    .quick-chips {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
+      justify-content: center;
+      gap: 8px;
     }
-    .visualizer-db {
-      color: #06b6d4;
-      font-size: 10px;
+    .quick-chip {
+      background: var(--chip-bg);
+      color: var(--text);
+      border: none;
+      border-radius: 16px;
+      padding: 7px 18px;
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .quick-chip:hover {
+      background: var(--chip-hover);
     }
   </style>
 </head>
 <body>
 
   <header>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <img src="/favicon.png" alt="Barış AI Logo" style="width:22px; height:22px; border-radius:5px; box-shadow:0 0 8px rgba(6,182,212,0.4);">
-      <span>BARIŞ AI // JARVIS & FAST EXECUTION CORE</span>
+    <div class="brand-title">
+      <span class="brand-sparkle">✦</span>
+      <span>Barış AI</span>
     </div>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#3c1618; border-color:#da3633; color:#f85149; font-weight:bold;" title="Jarvis ve KITT Lazer sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
+    <div class="header-actions">
+      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#fce8e6; border-color:#fad2cf; color:#d93025; font-weight:600;" title="Jarvis sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
-      <button id="clearChatBtn" onclick="clearChatHistory()" class="voice-btn" style="color:var(--muted); border-color:var(--border);" title="Konuşma geçmişini ve ekranı temizle">🗑️ Temizle</button>
-      <div class="status-pill">
-        <span class="status-dot"></span>
-        <span id="sysStatus">Apple M4 Metal</span>
-      </div>
+      <button id="clearChatBtn" onclick="clearChatHistory()" class="voice-btn" style="color:var(--text-muted);" title="Konuşma geçmişini ve ekranı temizle">🗑️ Temizle</button>
     </div>
   </header>
 
-  <div id="feed"></div>
+  <div id="mainContent">
+    <div id="geminiHero" class="gemini-hero">
+      <h1>Nereden başlayalım?</h1>
+    </div>
+    <div id="feed" style="display:none;"></div>
+  </div>
 
   <footer>
     <div id="attachmentTray" class="attachment-tray"></div>
-    <div id="visualizerContainer" class="visualizer-container" onclick="enableAudioAndListen()" title="Canlı Renkli Ekolayzırı ve Sesli Dinlemeyi Başlatmak / Açmak İçin Tıklayın">
-      <div style="font-size:16px; color:#06b6d4;" title="Canlı Ses Dalga Analizi">⚡</div>
-      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="12"></canvas>
-      <div class="visualizer-meta">
-        <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#ef4444;">🔴</span> <span id="vStatusText" style="color:#94a3b8;">KITT Lazer Aktif</span></div>
-        <div id="visualizerDb" class="visualizer-db">Dinlemeye hazır</div>
+    <div class="gemini-pill-wrap">
+      <div class="gemini-pill">
+        <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
+        <button type="button" class="pill-btn plus-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle">+</button>
+        <textarea id="promptInput" class="pill-textarea" rows="1" maxlength="5000" placeholder="Barış AI'a sorun..." autofocus></textarea>
+        <div class="pill-right">
+          <span class="model-badge" title="M4 Metal GPU Hızlandırma">M4 Metal ⌵</span>
+          <button class="pill-btn mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş">🎙️</button>
+          <button class="pill-btn send-icon-btn" id="sendBtn" onclick="sendAction()" title="Gönder">➔</button>
+          <button class="pill-btn stop-icon-btn" id="stopBtn" onclick="stopAction()" style="display:none; color:#d93025;" title="Durdur">⏹</button>
+        </div>
       </div>
-    </div>
-    <div class="input-box">
-      <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
-      <button type="button" class="tool-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle (PDF, Word, Görsel, Kod)">📎</button>
-      <textarea id="promptInput" maxlength="5000" placeholder="Emir ver, dosya üret veya Jarvis gibi dobra sohbet et... (5000 karaktere kadar)" autofocus></textarea>
-      <button class="mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş (Mikrofon)">🎙️</button>
-      <button class="send" id="sendBtn" onclick="sendAction()">İCRA ET</button>
-      <button class="stop-btn" id="stopBtn" onclick="stopAction()" style="display:none;" title="İşlemi anında durdur">⏹ DURDUR</button>
-    </div>
-    <div class="footer-bar">
-      <div class="quick-bar">
-        <span class="quick-chip" onclick="quickFill('Selam Barış, nasılsın? Durumlar ne?')">💬 Jarvis Sohbet</span>
-        <span class="quick-chip" onclick="quickFill('Sistemine kurulan tüm motorları ve aktif yetenekleri listele')">📦 Kurulu Motorlar</span>
-        <span class="quick-chip" onclick="quickFill('/Users/macair1/projects dizinindeki projeleri analiz et')">📁 Projeleri Tara</span>
-        <span class="quick-chip" onclick="quickFill('Chrome ile https://checkip.amazonaws.com adresine bağlan ve kaydet')">🌐 Chrome Ziyaret</span>
-        <span class="quick-chip" onclick="quickFill('Crawl4AI ile https://example.com sayfasını kazı')">🕷️ Crawl4AI Kazıma</span>
+      <div class="quick-chips">
+        <button type="button" class="quick-chip" onclick="quickFill('Selam Barış, ne yapabiliriz?')">Sohbet</button>
+        <button type="button" class="quick-chip" onclick="quickFill('Projeleri tara ve son durumu raporla')">Görev</button>
       </div>
-      <div id="charCounter" class="char-counter">0 / 5000</div>
     </div>
   </footer>
 
@@ -390,14 +375,16 @@
 
     // --- KARAKTER SAYACI (0 - 5000) ---
     input.addEventListener('input', () => {
-      const len = input.value.length;
-      charCounter.textContent = `${len} / 5000`;
-      if (len >= 5000) {
-        charCounter.className = 'char-counter danger';
-      } else if (len >= 4500) {
-        charCounter.className = 'char-counter warning';
-      } else {
-        charCounter.className = 'char-counter';
+      if (charCounter) {
+        const len = input.value.length;
+        charCounter.textContent = `${len} / 5000`;
+        if (len >= 5000) {
+          charCounter.className = 'char-counter danger';
+        } else if (len >= 4500) {
+          charCounter.className = 'char-counter warning';
+        } else {
+          charCounter.className = 'char-counter';
+        }
       }
     });
 
@@ -528,16 +515,16 @@
     }
 
     function clearChatHistory() {
-      // 1. Süren işlemleri ve konuşmaları derhal sustur
       stopAction();
-      // 2. Hafızayı ve ekleri sıfırla
       history = [];
       pendingAttachments = [];
       renderAttachmentTray();
-      // 3. Sohbet alanını tertemiz bomboş yap
       feed.innerHTML = '';
-      feed.scrollTop = 0;
+      feed.style.display = 'none';
+      const hero = document.getElementById('geminiHero');
+      if (hero) hero.style.display = 'flex';
       input.value = '';
+      input.style.height = '28px';
       input.dispatchEvent(new Event('input'));
       input.focus();
     }
@@ -980,7 +967,6 @@
 
     // --- İŞLEMİ DURDURMA (STOP ACTION) ---
     function stopAction() {
-      // macOS yerel say sürecini anında öldür
       fetch('/api/voice/stop', { method: 'POST' }).catch(() => {});
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       isSpeakingNow = false;
@@ -989,49 +975,51 @@
         currentAbortController.abort();
         currentAbortController = null;
       }
-      sendBtn.disabled = false;
-      sendBtn.textContent = 'İCRA ET';
-      sendBtn.style.opacity = '1';
+      sendBtn.style.display = 'inline-flex';
       stopBtn.style.display = 'none';
 
       const lastAi = feed.querySelector('.msg-ai:last-child');
       if (lastAi && lastAi.innerHTML.includes('⚡')) {
-        lastAi.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: Ses ve işlem anında durduruldu.</strong>';
+        lastAi.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><span style="color:#d93025">⏹ İşlem durduruldu.</span>';
       }
     }
+
+    // Textarea otomatik yükseklik (Gemini stili)
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.max(28, Math.min(input.scrollHeight, 120)) + 'px';
+    });
 
     async function sendAction() {
       const q = input.value.trim();
       if (!q && pendingAttachments.length === 0) return;
 
-      const welcome = document.getElementById('welcomeMsg');
-      if (welcome) welcome.remove();
+      const hero = document.getElementById('geminiHero');
+      if (hero) hero.style.display = 'none';
+      feed.style.display = 'flex';
 
       input.value = '';
+      input.style.height = '28px';
       input.dispatchEvent(new Event('input'));
 
-      // BUTON GÜVENLİĞİ: İcra butonu gizlenmez, sadece kilitlenir; böylece kullanıcı kazara durdur'a basamaz
-      sendBtn.disabled = true;
-      sendBtn.textContent = '⚡ Düşünülüyor...';
-      sendBtn.style.opacity = '0.75';
+      sendBtn.style.display = 'none';
       stopBtn.style.display = 'inline-flex';
 
-      // Kullanıcı mesajı
+      // Kullanıcı mesajı (Gemini kapsülü)
       const uDiv = document.createElement('div');
       uDiv.className = 'msg-user';
       let userDisplay = q;
       if (pendingAttachments.length > 0) {
-        const attNames = pendingAttachments.map(a => '📎 ' + a.filename).join(', ');
         userDisplay = "[" + attNames + "]\n" + (q || "(Belgeler inceleniyor)");
       }
       uDiv.textContent = userDisplay;
       feed.appendChild(uDiv);
       feed.scrollTop = feed.scrollHeight;
 
-      // AI Canlı Bekleme Kutusu ve Kronometresi
+      // AI Canlı Bekleme
       const aDiv = document.createElement('div');
       aDiv.className = 'msg-ai';
-      aDiv.innerHTML = '<em>⚡ Jarvis düşünüyor ve hazırlıyor... (<span id="liveTimer">0.0s</span>)</em>';
+      aDiv.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><em style="color:var(--text-muted)">⚡ Düşünüyor... (<span id="liveTimer">0.0s</span>)</em>';
       feed.appendChild(aDiv);
       feed.scrollTop = feed.scrollHeight;
 
@@ -1072,56 +1060,38 @@
 
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
-          const raw = await res.text();
-          throw new Error('Yerel backend servisine (http://127.0.0.1:5050) ulaşılamadı. Backend terminalde çalışıyor mu kontrol edin.');
+          throw new Error('Yerel backend servisine (http://127.0.0.1:5050) ulaşılamadı.');
         }
 
         if (res.ok) {
           const data = await res.json();
           const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
           
-          let outHtml = '';
-          if (data.execution_steps && data.execution_steps.length > 0) {
-            outHtml += '<div class="steps">';
-            data.execution_steps.forEach(st => {
-              const stepName = st.tool || st.step || 'Aşama';
-              const stepDetail = st.output || (st.exit_code !== undefined ? 'exit ' + st.exit_code : 'Tamamlandı');
-              outHtml += '▸ <strong>' + stepName + '</strong> (' + stepDetail.substring(0, 100).replace(/\n/g, ' ') + ')<br>';
-            });
-            outHtml += '</div>';
-          }
-
+          let outHtml = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div>';
           outHtml += marked.parse(data.reply || '');
-          outHtml += '<div style="font-size:10px; color:var(--muted); margin-top:8px;">⏱ Süre: ' + elapsed + 's • Durum: ' + data.status + '</div>';
+          outHtml += '<div style="font-size:11px; color:var(--text-muted); margin-top:8px;">⏱ ' + elapsed + 's</div>';
           aDiv.innerHTML = outHtml;
 
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
 
-          // Jarvis sesli konuşma (Yerel macOS Yelda motoru)
           if (jarvisPowerOn) {
             speakJarvis(data.reply);
           }
         } else if (res.status === 401) {
-          aDiv.innerHTML = '<span style="color:#f85149">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı. Lütfen sağ üstteki "X-Omni-Key" alanına geçerli anahtarınızı girin.</span>';
+          aDiv.innerHTML = '<span style="color:#d93025">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı.</span>';
         } else {
-          aDiv.innerHTML = '<span style="color:#f85149">Hata: Sunucu ' + res.status + ' yanıtı döndü.</span>';
+          aDiv.innerHTML = '<span style="color:#d93025">Hata: Sunucu ' + res.status + ' yanıtı döndü.</span>';
         }
       } catch(e) {
         clearInterval(liveInterval);
         if (e.name === 'AbortError') {
-          aDiv.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: İşlem kullanıcı tarafından durduruldu.</strong>';
+          aDiv.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><span style="color:#d93025">⏹ İşlem kullanıcı tarafından durduruldu.</span>';
         } else {
-          let errText = e.message;
-          if (window.location.protocol === 'https:' && (errText.includes('Failed to fetch') || errText.includes('NetworkError') || errText.includes('Load failed'))) {
-            errText += '<br><br>⚠️ <strong>Tarayıcı İzolasyon Engeli (Mixed Content):</strong><br>Tarayıcınız HTTPS sayfasından yerel HTTP servisine (127.0.0.1:5050) erişimi engelliyor.<br>👉 <strong>Çözüm:</strong> Arayüzü doğrudan yerel adresinden açın: <a href="http://127.0.0.1:5050" target="_blank" style="color:#2f81f7; text-decoration:underline; font-weight:bold;">http://127.0.0.1:5050</a>';
-          }
-          aDiv.innerHTML = '<span style="color:#f85149">Bağlantı Hatası: ' + errText + '</span>';
+          aDiv.innerHTML = '<span style="color:#d93025">Bağlantı Hatası: ' + e.message + '</span>';
         }
       } finally {
         currentAbortController = null;
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'İCRA ET';
-        sendBtn.style.opacity = '1';
+        sendBtn.style.display = 'inline-flex';
         stopBtn.style.display = 'none';
         input.focus();
         feed.scrollTop = feed.scrollHeight;

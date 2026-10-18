@@ -401,16 +401,10 @@ class AutonomousExecutionEngine:
                 break
 
         if blocked_by_repeated_error:
-            last_err = ""
-            for step in reversed(execution_steps):
-                if not step.get("success"):
-                    last_err = step.get("output", "")
-                    break
-            clean_err = re.sub(r'[*`#_\[\]\(\)>]', ' ', last_err)[:200].strip()
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.BLOCKED.value,
-                "reply": f"⚠️ **İşlem Durduruldu**: İstenen işlem ortam kısıtlamasıyla karşılaştı ({clean_err or 'Kaynak veya yetki engeli'}). Sonsuz döngüyü önlemek için işlem korumaya alındı. Farklı bir kütüphane veya yöntemle devam edebiliriz.",
+                "reply": "İstenen kaynak veya yöntem ortam kısıtlamasına takıldı patron. Farklı bir kütüphane veya doğrudan betik yazarak devam edebiliriz, ne dersin?",
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
                 "verified": False

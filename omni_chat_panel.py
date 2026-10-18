@@ -769,9 +769,13 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
 
     full_prompt = (attachment_context + query).strip() if attachment_context else query
 
+    # KALICI ÇÖZÜM: Kullanıcı açıkça kurulum istemedikçe repo kurma aracını modele verme
+    is_install_intent = any(k in query.lower() for k in ["github reposu kur", "repo kur", "kütüphane kur", "indir ve kur", "klonla ve kur", "git clone"])
+    active_tools = tools if is_install_intent else [t for t in tools if t.get("function", {}).get("name") != "tool_search_and_install_github_repo"]
+
     res = await AutonomousExecutionEngine.execute_verified_task(
         prompt=full_prompt,
-        tools_schema=tools,
+        tools_schema=active_tools,
         call_tool_fn=dispatch_tool_call,
         history=req.history
     )
