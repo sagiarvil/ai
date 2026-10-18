@@ -104,8 +104,8 @@ class ResilienceKernel:
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
             evidence: list[dict[str, Any]] = []
-            if self.blocked_until.get(spec.name, 0) > time.monotonic():
-                return ExecutionReport(State.BLOCKED, spec.name, 0, ErrorKind.TRANSIENT, evidence, "Circuit breaker open")
+            if self.blocked_until.get(key, 0) > time.monotonic():
+                return ExecutionReport(State.BLOCKED, spec.name, 0, ErrorKind.TRANSIENT, evidence, "Circuit breaker open for target")
             try:
                 allowed = await asyncio.wait_for(spec.preflight(args), timeout=min(spec.timeout_s, 20))
             except Exception as exc:
@@ -133,6 +133,7 @@ class ResilienceKernel:
                     except Exception:
                         validated = False
                     if validated:
+                        self.failures.pop(key, None)
                         self.failures.pop(spec.name, None)
                         return ExecutionReport(State.VERIFIED, spec.name, attempt, None, evidence, "Independent postcondition passed", True, data=result.data, outcome=result)
                     latest = ErrorKind.UNKNOWN
@@ -157,9 +158,9 @@ class ResilienceKernel:
                     break
                 await asyncio.sleep(min(2 ** (attempt - 1), 8))
 
-            self.failures[spec.name] = self.failures.get(spec.name, 0) + 1
-            if self.failures[spec.name] >= self.failure_threshold:
-                self.blocked_until[spec.name] = time.monotonic() + self.circuit_seconds
+            self.failures[key] = self.failures.get(key, 0) + 1
+            if self.failures[key] >= self.failure_threshold:
+                self.blocked_until[key] = time.monotonic() + self.circuit_seconds
             if spec.rollback:
                 try:
                     await asyncio.wait_for(spec.rollback(args), timeout=min(spec.timeout_s, 30))

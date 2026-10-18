@@ -17,6 +17,7 @@ Sıfır Sahte Başarı İlkeleri:
 import enum
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -291,12 +292,13 @@ class AutonomousExecutionEngine:
                     except Exception:
                         fargs = {}
 
-                    # Eğer aynı araç aynı parametrelerle daha önce başarısız olduysa, tekrar çalıştırma!
+                    # Eğer aynı araç aynı parametrelerle daha önce başarısız olduysa, modeli alternatif seçime yönlendir
                     call_sig = f"{fname}:{json.dumps(fargs, sort_keys=True)}"
                     if call_sig in failed_call_signatures:
-                        blocked_by_repeated_error = True
-                        engine.transition_to(TaskState.BLOCKED, f"Aynı başarısız araç çağrısı tekrarlandı: {call_sig}")
-                        out = f"[DÖNGÜ ENGELİ - BLOCKED]: '{fname}' aracı aynı parametrelerle daha önce başarısız oldu; tekrarlanan çağrı derhal engellendi."
+                        out = (
+                            f"[ALTERNATİF GEREKLİ]: '{fname}' aracı bu parametrelerle daha önce başarısız oldu. "
+                            f"Lütfen aynı çağrıyı tekrarlamayın; alternatif bir GitHub deposu seçin veya görevi farklı bir yöntemle icra edin."
+                        )
                         execution_steps.append({
                             "step": step_idx,
                             "tool": fname,
@@ -309,8 +311,7 @@ class AutonomousExecutionEngine:
                             "tool_call_id": tc["id"],
                             "content": out
                         })
-                        should_break_outer = True
-                        break
+                        continue
 
                     # İlgili aracı çalıştır
                     out = await call_tool_fn(fname, fargs)
@@ -322,14 +323,14 @@ class AutonomousExecutionEngine:
                         failed_call_signatures.add(call_sig)
                         err_sig = f"{fname}:{out[:100].strip()}"
                         seen_error_signatures[err_sig] = seen_error_signatures.get(err_sig, 0) + 1
-                        if any(k in out for k in ["Operation not permitted", "GÜVENLİK ENGELİ", "BLOCKED", "could not create work tree", "Permission denied"]) or seen_error_signatures[err_sig] >= 2:
+                        if any(k in out for k in ["Operation not permitted", "GÜVENLİK ENGELİ", "could not create work tree", "Permission denied"]) or seen_error_signatures[err_sig] >= 3:
                             blocked_by_repeated_error = True
-                            engine.transition_to(TaskState.BLOCKED, f"Kalıcı hata tespit edildi veya tekrarlandı: {err_sig}")
+                            engine.transition_to(TaskState.BLOCKED, f"Kalıcı hata tespit edildi: {err_sig}")
                             execution_steps.append({
                                 "step": step_idx,
                                 "tool": fname,
                                 "args": fargs,
-                                "output": f"[DÖNGÜ ENGELİ - BLOCKED]: {out}",
+                                "output": out,
                                 "success": False
                             })
                             should_break_outer = True
@@ -357,10 +358,16 @@ class AutonomousExecutionEngine:
                 break
 
         if blocked_by_repeated_error:
+            last_err = ""
+            for step in reversed(execution_steps):
+                if not step.get("success"):
+                    last_err = step.get("output", "")
+                    break
+            clean_err = re.sub(r'[*`#_\[\]\(\)>]', ' ', last_err)[:200].strip()
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.BLOCKED.value,
-                "reply": "Deterministik işlem hatası tekrarlandığı için görev BLOCKED durumuna geçirildi ve döngü durduruldu.",
+                "reply": f"⚠️ **İşlem Durduruldu**: İstenen işlem ortam kısıtlamasıyla karşılaştı ({clean_err or 'Kaynak veya yetki engeli'}). Sonsuz döngüyü önlemek için işlem korumaya alındı. Farklı bir kütüphane veya yöntemle devam edebiliriz.",
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
                 "verified": False
