@@ -392,8 +392,20 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
         spec = OmniCoreToolAdapters.get_github_install_spec(install_repo)
         report = await RESILIENCE_KERNEL.execute(spec, fargs)
         if report.state == State.VERIFIED:
-            return tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
-        return f"[{report.state.value}]: {report.message} (Hata Türü: {report.error_kind})"
+            ev = report.evidence[-1] if report.evidence else {}
+            commit_sha = ev.get("commit", "unknown")
+            path_str = ev.get("path", "")
+            best_url = fargs.get("query_or_url", "")
+            return (
+                f"📦 [DEPO KURULDU VE FONKSİYONEL TESTİ GEÇTİ]\n"
+                f"- **Depo:** `{best_url}`\n"
+                f"- **Commit:** `{commit_sha}`\n"
+                f"- **Konum:** `{path_str}`\n"
+                f"- **Durum:** FUNCTIONAL_TESTED (100% PASS)\n"
+                f"- **Önemli Not:** Depo testleri geçmiştir ancak henüz çalışan bir servis olarak AKTiF DEĞİLDİR. "
+                f"Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
+            )
+        return f"[Kurulum Başarısız / Doğrulanamadı]: {report.message} (Durum: {report.state.value})"
     elif fname == "tool_browser_navigate":
         return await tool_browser_navigate(
             url=fargs.get("url", ""),

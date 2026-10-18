@@ -222,7 +222,7 @@ class AutonomousExecutionEngine:
                             "options": {
                                 "num_thread": 8,
                                 "temperature": 0.1,
-                                "num_ctx": 8192,
+                                "num_ctx": 4096,
                                 "top_k": 20,
                                 "top_p": 0.9
                             }
