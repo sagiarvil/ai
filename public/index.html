@@ -102,6 +102,12 @@
         <button onclick="submitPrompt('Son çıkan yeni tokenları ve rugcheck risk durumlarını listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>🎯</span> <span class="truncate">Canlı Token Sniffer (Boosts & RugCheck)</span>
         </button>
+        <button onclick="submitPrompt('pragma solidity ^0.8.20;\ncontract Vault {\n    mapping(address => uint) public balances;\n    function deposit() public payable { balances[msg.sender] += msg.value; }\n    function withdraw() public {\n        uint bal = balances[msg.sender];\n        require(bal > 0);\n        (bool s,) = msg.sender.call{value: bal}(\"\");\n        require(s);\n        balances[msg.sender] = 0;\n    }\n}')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🛡️</span> <span class="truncate">Slither Akıllı Kontrat Güvenlik Analizi</span>
+        </button>
+        <button onclick="submitPrompt('https://ethereum.org web sayfasını Crawl4AI ile derin kazı ve özetle')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🕷️</span> <span class="truncate">Crawl4AI Derin Web Kazıma</span>
+        </button>
         <button onclick="submitPrompt('EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>⚡</span> <span class="truncate">Solana Token RugCheck & LP Taraması</span>
         </button>

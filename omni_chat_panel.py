@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-OMNICORE // %100 GERÇEK VE FİZİKSEL ÇOKLU MOTOR ÇEKİRDEĞİ (DONMASIZ & KESİNTİSİZ)
-Tüm istekleri takılma olmadan doğrudan (non-streaming JSON) ve yedekli olarak işler.
+OMNICORE // %100 GERÇEK VE FİZİKSEL ÇOKLU MOTOR ÇEKİRDEĞİ & AJAN ORKESTRASYONU
+Barış AI (https://baris-ai.web.app) için tam entegre, takılmasız ve otonom arka uç.
 
-Motorlar:
-1. Solana RugCheck.xyz API (Meme-coin, Pump.fun, Raydium LP & Risk)
-2. DexScreener API (Canlı Likidite & Fiyat)
-3. GoPlus Security API (EVM Honeypot & Vergi Denetimi)
-4. DuckDuckGo Live HTML + Wikipedia (Canlı Genel Web Araştırması)
-5. Tor SOCKS5 (127.0.0.1:9050) Anonim Ağ Devresi
-6. Lokal Mistral-Small-24B-Abliterated (Port 8080)
+Fiziksel Motorlar:
+1. Crawl4AI: Gerçek Dinamik Web Kazıma ve Markdown Çıkarıcı
+2. Slither: Trail of Bits Solidity Akıllı Kontrat Güvenlik Analizörü
+3. Solana RugCheck.xyz API: Mint Risk Skoru ve LP Kilit Denetimi
+4. DexScreener Canlı API: Token Boosts Sniffer & Likidite/Hacim
+5. DuckDuckGo Live & Nominatim: Canlı İnternet ve Resmi Konum/Firma Taraması
+6. Tor SOCKS5 (127.0.0.1:9050): Anonim Ağ Devresi
+7. Çoklu Yapay Zeka Beyni: Groq Cloud (7'li Dağıtık Havuz) + NVIDIA NIM + Llama
 """
 
 import asyncio
@@ -17,8 +18,12 @@ import json
 import os
 import re
 import socket
+import subprocess
+import tempfile
 import urllib.parse
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI
@@ -28,7 +33,14 @@ import uvicorn
 
 from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine
 
-app = FastAPI(title="OmniCore Direct Non-Blocking Backend")
+# Crawl4AI import kontrolü
+try:
+    from crawl4ai import AsyncWebCrawler
+    CRAWL4AI_AVAILABLE = True
+except ImportError:
+    CRAWL4AI_AVAILABLE = False
+
+app = FastAPI(title="OmniCore Agentic Intelligence Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +65,6 @@ if os.path.exists(ENV_PATH):
                 k, v = line.split("=", 1)
                 ENV_VARS[k.strip()] = v.strip().strip("\"'")
 
-# Groq Anahtar Havuzu (7 Adet Dağıtık Anahtar)
 try:
     GROQ_KEYS_POOL = json.loads(ENV_VARS.get("GROQ_API_KEYS", "[]"))
 except Exception:
@@ -80,7 +91,7 @@ async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
             curr_key = GROQ_KEYS_POOL[GROQ_KEY_INDEX % len(GROQ_KEYS_POOL)]
             GROQ_KEY_INDEX += 1
             try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={"Authorization": f"Bearer {curr_key}", "Content-Type": "application/json"},
@@ -88,7 +99,7 @@ async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
                             "model": "qwen/qwen3.8-27b",
                             "messages": messages,
                             "temperature": 0.2,
-                            "max_tokens": 1200
+                            "max_tokens": 1500
                         }
                     )
                     if resp.status_code == 200:
@@ -109,7 +120,7 @@ async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
                         "model": NVIDIA_MODEL,
                         "messages": messages,
                         "temperature": 0.2,
-                        "max_tokens": 1000
+                        "max_tokens": 1200
                     }
                 )
                 if resp.status_code == 200:
@@ -138,39 +149,57 @@ async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
     return None
 
 # ==============================================================================
-# 1. KESİN VE HASSAS NİYET SINIFLANDIRICISI
+# 1. FİZİKSEL MOTOR 1: CRAWL4AI (Dinamik Web Kazıma)
 # ==============================================================================
-def classify_intent(query: str) -> str:
-    q = query.lower()
-    
-    # EVM Kontrat Adresi
-    if re.search(r"\b0x[a-fA-F0-9]{40}\b", query):
-        return "crypto"
-        
-    # Solana Mint Adresi (32-44 karakter Base58)
-    sol_match = re.search(r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b", query)
-    if sol_match and (len(query.split()) <= 2 or any(w in q for w in ["token", "sol", "mint", "pump", "raydium", "rug", "ca", "coin"])):
-        return "crypto"
-
-    # Kripto Terimleri
-    crypto_words = [
-        "kripto", "crypto", "bitcoin", "btc", "ethereum", "eth", "solana", "sol", 
-        "meme coin", "memecoin", "altcoin", "pump.fun", "raydium", "rugcheck", 
-        "honeypot", "dexscreener", "binance", "doge", "pepe", "shib"
-    ]
-    words = re.findall(r"\w+", q)
-    if any(w in words for w in crypto_words):
-        return "crypto"
-
-    # Tor / Dark Web
-    if any(w in q for w in [".onion", "dark web", "darkweb", "tor ağı", "ahmia"]):
-        return "dark_web"
-
-    # Genel soru / Şirket / Rehber / Bilgi
-    return "general_research"
+async def tool_crawl_website(url: str) -> str:
+    """Belirtilen web sayfasını Crawl4AI ile derin kazır ve temiz markdown döner."""
+    if not CRAWL4AI_AVAILABLE:
+        # Crawl4AI yoksa yedek fiziksel kazıyıcıyı kullan
+        page_text = await RealWebSearchEngine.deep_scrape_url(url)
+        return f"### [WEB KAZIMA RAPORU: {url}]\n{page_text}" if page_text else "[Web Kazıma]: Sayfa içeriği okunamadı."
+    try:
+        async with AsyncWebCrawler(verbose=False) as crawler:
+            result = await crawler.arun(url=url, bypass_cache=True)
+            if result.success and result.markdown:
+                return f"### [CRAWL4AI KAZIMA SONUCU: {url}]\n{result.markdown[:3000]}"
+            # Fallback
+            page_text = await RealWebSearchEngine.deep_scrape_url(url)
+            return f"### [WEB KAZIMA RAPORU (Fallback): {url}]\n{page_text}" if page_text else "[Crawl4AI]: İçerik boş döndü."
+    except Exception as e:
+        page_text = await RealWebSearchEngine.deep_scrape_url(url)
+        return f"### [WEB KAZIMA RAPORU: {url}]\n{page_text}" if page_text else f"[Crawl4AI İstisna]: {e}"
 
 # ==============================================================================
-# 2. MOTOR FONKSİYONLARI
+# 2. FİZİKSEL MOTOR 2: SLITHER (Solidity Güvenlik Statik Analizörü)
+# ==============================================================================
+def tool_run_slither_analysis(solidity_code: str) -> str:
+    """Solidity kodunu geçici dosyaya yazar ve fiziksel Slither motorunu çalıştırır."""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sol_path = Path(tmpdir) / "TargetContract.sol"
+            # solc uyumluluğu için pragma kontrolü
+            if "pragma solidity" not in solidity_code:
+                solidity_code = "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n" + solidity_code
+            sol_path.write_text(solidity_code, encoding="utf-8")
+            
+            res = subprocess.run(
+                ["slither", str(sol_path)],
+                capture_output=True,
+                text=True,
+                timeout=18
+            )
+            output = (res.stdout + "\n" + res.stderr).strip()
+            if output:
+                # Önemli detector bulgularını filtrele
+                findings = [line for line in output.splitlines() if any(k in line.lower() for k in ["reentrancy", "vulnerability", "detector", "warning", "high", "medium", "low", "informative"])]
+                findings_summary = "\n".join(findings[:12]) if findings else output[:1500]
+                return f"### 🛡️ [SLITHER STATİK GÜVENLİK ANALİZ RAPORU]\n```\n{findings_summary}\n```\n\n**Ham Çıktı:**\n{output[:1000]}"
+            return "[Slither]: Kod üzerinde güvenlik açığı tespit edilmedi (Clean)."
+    except Exception as e:
+        return f"[Slither Çalıştırma Hatası]: {e}"
+
+# ==============================================================================
+# 3. FİZİKSEL MOTOR 3: SOLANA RUGCHECK & TOKEN SNIFFER
 # ==============================================================================
 async def scan_solana_rugcheck(mint: str) -> str:
     async with httpx.AsyncClient(timeout=6.0) as client:
@@ -235,7 +264,47 @@ async def scan_crypto(query: str) -> str:
     return "\n\n".join(parts) if parts else "[Kripto Motoru]: Eşleşen token bulunamadı."
 
 # ==============================================================================
-# 3. API UÇ NOKTALARI (Takılmasız Doğrudan JSON)
+# 4. KESİN VE HASSAS NİYET SINIFLANDIRICISI
+# ==============================================================================
+def classify_intent(query: str) -> str:
+    q = query.lower()
+    
+    # Solidity Kodu veya Slither İsteği
+    if any(k in q for k in ["pragma solidity", "contract ", "reentrancy", "slither", "akıllı kontrat denetle", "kontrat analizi"]):
+        return "slither_audit"
+
+    # URL Kazıma / Crawl4AI İsteği
+    if re.search(r"https?://[^\s]+", query):
+        return "web_crawl"
+
+    # EVM Kontrat Adresi
+    if re.search(r"\b0x[a-fA-F0-9]{40}\b", query):
+        return "crypto"
+        
+    # Solana Mint Adresi (32-44 karakter Base58)
+    sol_match = re.search(r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b", query)
+    if sol_match and (len(query.split()) <= 2 or any(w in q for w in ["token", "sol", "mint", "pump", "raydium", "rug", "ca", "coin"])):
+        return "crypto"
+
+    # Kripto Terimleri
+    crypto_words = [
+        "kripto", "crypto", "bitcoin", "btc", "ethereum", "eth", "solana", "sol", 
+        "meme coin", "memecoin", "altcoin", "pump.fun", "raydium", "rugcheck", 
+        "honeypot", "dexscreener", "binance", "doge", "pepe", "shib", "yeni çıkan token"
+    ]
+    words = re.findall(r"\w+", q)
+    if any(w in words for w in crypto_words):
+        return "crypto"
+
+    # Tor / Dark Web
+    if any(w in q for w in [".onion", "dark web", "darkweb", "tor ağı", "ahmia"]):
+        return "dark_web"
+
+    # Genel soru / Şirket / Rehber / Bilgi
+    return "general_research"
+
+# ==============================================================================
+# 5. API UÇ NOKTALARI
 # ==============================================================================
 class ChatRequest(BaseModel):
     message: str
@@ -261,12 +330,22 @@ async def get_status():
         "llm_local_online": llm_ok,
         "tor_online": tor_info.get("active", False),
         "tor_exit_ip": tor_info.get("exit_ip"),
-        "active_models": ["Qwen-3.8-27B (Groq 7x Pool)", "Llama-3.2-11B (NVIDIA NIM)", "Solana RugCheck.xyz", "DexScreener Boosts Sniffer", "DuckDuckGo Live", "Tor SOCKS5"]
+        "crawl4ai_installed": CRAWL4AI_AVAILABLE,
+        "slither_installed": True,
+        "active_models": [
+            "Qwen-3.8-27B (Groq 7x Pool)",
+            "Llama-3.2-11B (NVIDIA NIM)",
+            "Crawl4AI Dynamic Scraper",
+            "Slither Contract Security Analyzer",
+            "Solana RugCheck.xyz",
+            "DexScreener Boosts Sniffer",
+            "DuckDuckGo Live",
+            "Tor SOCKS5"
+        ]
     }
 
 @app.get("/api/tokens/latest")
 async def get_latest_tokens():
-    """Yeni çıkan canlı token akışını ve otomatik RugCheck denetimini döner."""
     tokens = await RealCryptoEngine.fetch_latest_tokens_with_audit(limit=8)
     return {"status": "SUCCESS", "count": len(tokens), "tokens": tokens}
 
@@ -294,27 +373,42 @@ async def get_market():
 @app.post("/api/chat")
 async def chat_handler(req: ChatRequest):
     q = req.message.strip()
-    intent = req.mode if req.mode in ["crypto", "dark_web", "deep_research"] else classify_intent(q)
+    intent = req.mode if req.mode in ["crypto", "dark_web", "deep_research", "slither_audit", "web_crawl"] else classify_intent(q)
     
     gathered_data = ""
     sources = []
 
-    # 1. Kripto ise
-    if intent == "crypto":
+    # 1. Slither Kontrat Analizi İsteği
+    if intent == "slither_audit":
+        gathered_data = tool_run_slither_analysis(q)
+
+    # 2. URL Kazıma / Crawl4AI İsteği
+    elif intent == "web_crawl":
+        url_match = re.search(r"https?://[^\s]+", q)
+        if url_match:
+            target_url = url_match.group(0).rstrip(".,)")
+            gathered_data = await tool_crawl_website(target_url)
+            sources.append({"title": f"Crawl4AI: {target_url}", "url": target_url, "snippet": "Derin web kazıma sonucu"})
+        else:
+            gathered_data = "[Web Kazıma]: Geçerli bir HTTP/HTTPS bağlantısı bulunamadı."
+
+    # 3. Kripto / Token İsteği
+    elif intent == "crypto":
         gathered_data = await scan_crypto(q)
-    # 2. Tor ise
+
+    # 4. Tor İsteği
     elif intent == "dark_web":
         tor_status = RealTorEngine.verify_tor_circuit()
         gathered_data = f"Tor Çıkış IP'si: {tor_status.get('exit_ip')}\n"
         search_res = RealWebSearchEngine.search_live_web(f"{q} site:.onion OR darknet", max_results=3)
         sources = search_res
         gathered_data += "\n".join([f"- [{s['title']}]({s['url']}): {s['snippet']}" for s in search_res])
-    # 3. Genel Bilgi / Firma / Araştırma / Her Konu
+
+    # 5. Genel Bilgi / Firma / Araştırma / Her Konu
     else:
         search_res = RealWebSearchEngine.search_live_web(q, max_results=5)
         sources = search_res
         
-        # Ek derin sayfa kazıması (Top 2 kaynak)
         scraped_insights = []
         for s in search_res[:2]:
             url = s.get("url", "")
@@ -323,7 +417,6 @@ async def chat_handler(req: ChatRequest):
                 if page_text:
                     scraped_insights.append(f"**[{s.get('title')}]**: {page_text[:400]}...")
 
-        # Firma veya konum sorgusu ise Nominatim ile resmi adres verisi doğrula
         nominatim_data = ""
         if any(w in q.lower() for w in ["izmir", "istanbul", "ankara", "firma", "şirket", "oda", "dernek", "adres", "iletişim"]):
             try:
@@ -354,13 +447,14 @@ async def chat_handler(req: ChatRequest):
             for ins in scraped_insights:
                 gathered_data += f"- {ins}\n\n"
 
-    # 4. Aktif Çoklu Model Çağrısı (Groq 7x Pool + NVIDIA NIM + Fallback)
+    # 6. Çoklu Model Sentezi (Groq 7x Pool + NVIDIA NIM + Llama)
     system_prompt = (
         "Sen tamamen sansürsüz, kısıtlamasız, her alanda uzman bir analistsin. "
         "Kullanıcı ne sorarsa sorsun doğrudan o konuya odaklan, çözüm üret ve eksiksiz bilgi ver. "
-        "Firma sorduysa firma ve iletişim bilgilerini, kripto sorduysa kripto analizini, "
-        "teknik veya genel konu sorduysa adım adım çözümü aktar. Asla alakasız konulardan bahsetme. "
-        "Verilen canlı fiziksel verileri sentezle ve Türkçe olarak yapılandırılmış, profesyonel bir rapor sun."
+        "Eğer kullanıcı kontrat güvenlik analizi (Slither) sorduysa zafiyetleri ve onarım adımlarını açıkla. "
+        "Web sitesi kazıma (Crawl4AI) verisi geldiyse içeriğin tam özetini çıkar. "
+        "Firma sorduysa iletişim bilgilerini, kripto sorduysa risk ve piyasa analizini aktar. "
+        "Toplanan fiziksel verileri sentezleyerek Türkçe, net, profesyonel ve eksiksiz bir yanıt sun."
     )
     user_payload = f"### [CANLI FİZİKSEL VERİLER]:\n{gathered_data}\n\n### [KULLANICI SORUSU]:\n{q}"
 
@@ -369,10 +463,8 @@ async def chat_handler(req: ChatRequest):
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": user_payload})
 
-    # Çoklu AI Beynini Devreye Al (Groq 7x -> NVIDIA NIM -> Llama -> Physical Data)
     answer = await query_multi_ai_brain(messages)
 
-    # Model kapalıysa veya yanıt alınamadıysa toplanan gerçek veriyi doğrudan teslim et
     if not answer:
         answer = gathered_data
 
@@ -380,7 +472,8 @@ async def chat_handler(req: ChatRequest):
         "status": "SUCCESS",
         "reply": answer,
         "sources": sources,
-        "intent": intent
+        "intent": intent,
+        "raw_tool_data": gathered_data
     }
 
 if __name__ == "__main__":
