@@ -59,12 +59,28 @@ class OpenHandsAgentEngine:
                 raise RuntimeError(f"Ollama yanıt vermedi: HTTP {resp.status_code}")
 
     def extract_python_blocks(self, text: str) -> List[str]:
-        """Model yanıtından python kod bloklarını çeker."""
+        """Model yanıtından python kod bloklarını çeker ve konuşma metinlerini temizler."""
         blocks = re.findall(r"```(?:python|py)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
         clean = [b.strip() for b in blocks if b.strip()]
         if not clean and ("def " in text or "class " in text):
-            clean = [text.strip()]
-        return clean
+            m = re.search(r"(?:^|\n)(?:import |from |def |class )", text)
+            if m:
+                clean = [text[m.start():].strip()]
+            else:
+                clean = [text.strip()]
+
+        def sanitize_block(b: str) -> str:
+            lines = b.splitlines()
+            start_idx = 0
+            for i, line in enumerate(lines):
+                s = line.strip()
+                if s.startswith(("import ", "from ", "def ", "class ", "#", "@", "async def ")):
+                    start_idx = i
+                    break
+            return "\n".join(lines[start_idx:]).strip()
+
+        sanitized = [sanitize_block(b) for b in clean]
+        return [b for b in sanitized if b]
 
     async def execute_autonomous_coding_cycle(self, task_description: str) -> Dict[str, Any]:
         """

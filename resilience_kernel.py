@@ -380,14 +380,20 @@ class OmniCoreToolAdapters:
 
         # B) GitHub REST API ile ara (Fallback)
         try:
-            api_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(search_query)}&sort=stars&order=desc&per_page=5"
-            req = urllib.request.Request(api_url, headers={"User-Agent": "OmniCore-Kernel/2.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            import http.client
+
+            conn = http.client.HTTPSConnection("api.github.com", timeout=10)
+            path = f"/search/repositories?q={urllib.parse.quote(search_query)}&sort=stars&order=desc&per_page=5"
+            conn.request("GET", path, headers={"User-Agent": "OmniCore-Kernel/2.0"})
+            resp = conn.getresponse()
+            if resp.status == 200:
                 data = json.loads(resp.read().decode("utf-8"))
                 items = data.get("items", [])
                 if items:
                     best = items[0]
+                    conn.close()
                     return best["html_url"], {"source": "github_api", "slug": best["full_name"], "stars": best.get("stargazers_count"), "query": search_query}
+            conn.close()
         except Exception:
             pass
 

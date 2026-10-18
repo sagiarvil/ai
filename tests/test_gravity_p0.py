@@ -11,6 +11,7 @@ Kapsam:
 """
 
 import asyncio
+import os
 import platform
 import pytest
 from fastapi.testclient import TestClient
@@ -172,6 +173,9 @@ def test_openhands_end_to_end_task_execution():
     """OpenHands izole ortamda gerçek kod oluşturma, test etme ve doğrulamayı başarıyla tamamlamalıdır."""
     engine = OpenHandsAgentEngine("pytest_openhands_verification")
     # CI ortamında yerel Ollama yoksa skip et, yerelde ise çalıştır
+    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+        pytest.skip("CI ortamında yerel Ollama bulunmaz, gerçek model E2E testi yerel M4 ortamında çalışır.")
+
     try:
         import httpx
         with httpx.Client(timeout=2.0) as cl:
