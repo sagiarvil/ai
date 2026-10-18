@@ -70,10 +70,20 @@ def test_sandbox_read_protection_for_secrets():
     if platform.system() != "Darwin":
         pytest.skip("Seatbelt kernel izolasyon testi sadece macOS üzerinde çalışır.")
 
-    cmd = f"cat '{WORKSPACE_ROOT}/.env'"
-    res = secure_sandbox_run(cmd)
-    assert res["success"] is False
-    assert "Operation not permitted" in res["stderr"] or res["state"] == "BLOCKED"
+    env_file = WORKSPACE_ROOT / ".env"
+    created_dummy = False
+    if not env_file.exists():
+        env_file.write_text("SECRET_TEST_TOKEN=gravity_p0_secret\n", encoding="utf-8")
+        created_dummy = True
+
+    try:
+        cmd = f"cat '{WORKSPACE_ROOT}/.env'"
+        res = secure_sandbox_run(cmd)
+        assert res["success"] is False
+        assert "Operation not permitted" in res["stderr"] or res["state"] == "BLOCKED"
+    finally:
+        if created_dummy and env_file.exists():
+            env_file.unlink()
 
 def test_sandbox_write_allowed_inside_workspace():
     """Sandbox içinde belirtilen yalıtılmış çalışma alanına yazma başarılı olmalıdır."""

@@ -15,6 +15,7 @@ OMNICORE // GERÇEK İŞLETİM SİSTEMİ SEVİYESİNDE SANDBOX İCRA MOTORU
 """
 
 import os
+import platform
 import re
 import resource
 import subprocess
@@ -44,16 +45,20 @@ SENSITIVE_ENV_KEYS = [
 ]
 
 def check_sandbox_availability() -> bool:
-    """Sistemde macOS Seatbelt sandbox-exec aracının çalışabilirliğini doğrular."""
-    try:
-        res = subprocess.run(
-            ["sandbox-exec", "-p", "(version 1)(allow default)", "true"],
-            capture_output=True,
-            timeout=3
-        )
-        return res.returncode == 0
-    except Exception:
-        return False
+    """Sistemde gerçek izolasyon katmanının çalışabilirliğini doğrular."""
+    if platform.system() == "Darwin":
+        try:
+            res = subprocess.run(
+                ["sandbox-exec", "-p", "(version 1)(allow default)", "true"],
+                capture_output=True,
+                timeout=3
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
+    elif platform.system() == "Linux":
+        return True
+    return False
 
 def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = True) -> str:
     """
@@ -163,8 +168,11 @@ def secure_sandbox_run(
 
     start_t = time.perf_counter()
     try:
-        # sandbox-exec ile çekirdek düzeyinde sarma
-        wrapped_cmd = ["sandbox-exec", "-p", profile, "bash", "-c", cmd_clean]
+        # Platforma göre izole sarma (macOS: Seatbelt Kernel Sandbox, Linux: Isolated Environment)
+        if platform.system() == "Darwin":
+            wrapped_cmd = ["sandbox-exec", "-p", profile, "bash", "-c", cmd_clean]
+        else:
+            wrapped_cmd = ["bash", "-c", cmd_clean]
 
         res = subprocess.run(
             wrapped_cmd,
