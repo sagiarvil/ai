@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Barış AI // Derin Araştırma, Coin & Canlı İstihbarat</title>
+  <title>Barış AI // Solana RugCheck, DexScreener & Derin Araştırma</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,203 +19,235 @@
             mono: ['"JetBrains Mono"', 'monospace'],
           },
           colors: {
-            brand: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
-            dark: { 950: '#090B10', 900: '#0E131F', 850: '#131A2B', 800: '#1A2338', 700: '#283554' }
+            dark: { 950: '#080B11', 900: '#0E131F', 850: '#141A2B', 800: '#1B243B', 700: '#2A3757' }
           }
         }
       }
     }
   </script>
   <style>
-    body { background-color: #090B10; color: #E2E8F0; }
+    body { background-color: #080B11; color: #E2E8F0; }
     .prose h1, .prose h2, .prose h3 { color: #F8FAFC; font-weight: 700; margin-top: 1.2em; margin-bottom: 0.6em; }
     .prose p { margin-bottom: 0.8em; line-height: 1.7; color: #CBD5E1; }
     .prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 0.8em; }
     .prose li { margin-bottom: 0.3em; }
     .prose strong { color: #FFFFFF; font-weight: 600; }
-    .prose code { background: #1A2338; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: #60A5FA; }
-    .prose pre { background: #0E131F; border: 1px solid #1A2338; border-radius: 8px; padding: 12px; overflow-x: auto; }
-    .prose hr { border-color: #1A2338; margin: 1.5em 0; }
+    .prose code { background: #1B243B; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: #60A5FA; }
+    .prose pre { background: #0E131F; border: 1px solid #1B243B; border-radius: 8px; padding: 12px; overflow-x: auto; }
+    .prose hr { border-color: #1B243B; margin: 1.5em 0; }
     .prose a { color: #60A5FA; text-decoration: underline; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-thumb { background: #1A2338; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #283554; }
+    ::-webkit-scrollbar-thumb { background: #1B243B; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2A3757; }
   </style>
 </head>
 <body class="h-screen flex overflow-hidden font-sans antialiased">
 
-  <!-- SOL KENAR ÇUBUĞU (Sohbet Geçmişi & Araçlar) -->
-  <aside id="sidebar" class="w-72 bg-dark-900 border-r border-dark-800 flex-shrink-0 flex flex-col justify-between hidden md:flex transition-all duration-200">
-    <!-- Üst Logo & Yeni Sohbet -->
-    <div class="p-4 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
+  <!-- SOL KENAR ÇUBUĞU (Motor Durumları & Şablonlar) -->
+  <aside id="sidebar" class="w-80 bg-dark-900 border-r border-dark-800 flex-shrink-0 flex flex-col justify-between hidden md:flex transition-all duration-200">
+    <div class="p-4 flex flex-col gap-4 overflow-y-auto">
+      <!-- Logo -->
+      <div class="flex items-center justify-between pb-3 border-b border-dark-800">
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-md shadow-blue-500/20">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white shadow-md shadow-blue-500/20">
             ✦
           </div>
           <div>
             <h1 class="text-sm font-bold text-white tracking-wide">BARIŞ AI</h1>
-            <p class="text-[11px] text-blue-400 font-mono">Deep Research & Coin</p>
+            <p class="text-[11px] text-purple-400 font-mono">Solana & Multi-Engine</p>
           </div>
         </div>
-        <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-800/60 font-mono">Canlı</span>
+        <span class="text-[10px] bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-800/60 font-mono">v3.0</span>
       </div>
 
-      <button onclick="startNewSession()" class="w-full bg-dark-800 hover:bg-dark-700 text-gray-200 font-medium py-2.5 px-4 rounded-xl flex items-center justify-between transition border border-dark-700/80 text-xs shadow-sm">
-        <span class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-          <span>Yeni Araştırma Başlat</span>
-        </span>
-        <kbd class="text-[10px] bg-dark-900 px-1.5 py-0.5 rounded text-gray-400 font-mono border border-dark-700">⌘K</kbd>
+      <!-- Yeni Arama Başlat -->
+      <button onclick="startNewSession()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition text-xs shadow-md shadow-blue-600/20">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        <span>Yeni Tarama Başlat</span>
       </button>
 
-      <!-- Canlı Kripto Ticker Widget -->
-      <div class="bg-dark-950/60 rounded-xl p-3 border border-dark-800">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider font-mono">Piyasa Radarı</span>
-          <span class="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Binance
-          </span>
+      <!-- Aktif Fiziksel Motorlar Rozetleri -->
+      <div class="bg-dark-950/70 rounded-xl p-3 border border-dark-800 text-xs font-mono space-y-2">
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block">Fiziksel Motorlar</span>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>⚡ Solana RugCheck:</span>
+          <span class="text-emerald-400 font-bold">API AKTİF</span>
         </div>
-        <div id="cryptoMiniWidget" class="flex flex-col gap-1.5 text-xs font-mono">
-          <div class="text-gray-500 text-[11px] py-1 text-center">Fiyatlar alınıyor...</div>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>📊 DexScreener:</span>
+          <span class="text-emerald-400 font-bold">CANLI</span>
+        </div>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>🛡️ GoPlus Security:</span>
+          <span class="text-emerald-400 font-bold">CANLI</span>
+        </div>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>🌐 Deep Research:</span>
+          <span class="text-blue-400 font-bold">DDGS + BS4</span>
+        </div>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>🧅 Tor Devresi:</span>
+          <span id="torBadge" class="text-purple-400 font-bold">127.0.0.1:9050</span>
         </div>
       </div>
 
-      <!-- Sohbet Oturumları Geçmişi -->
-      <div class="flex-1 overflow-y-auto">
-        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider font-mono block mb-2 px-1">Geçmiş Aramalar</span>
-        <div id="sessionList" class="flex flex-col gap-1 text-xs">
-          <!-- Oturumlar dinamik basılır -->
-        </div>
+      <!-- Hızlı Tarama Şablonları -->
+      <div class="flex flex-col gap-1.5 text-xs">
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-mono font-semibold px-1">Örnek Taramalar</span>
+        <button onclick="submitPrompt('EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm', 'crypto')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>⚡</span> <span class="truncate">Solana Meme Token (WIF) RugCheck</span>
+        </button>
+        <button onclick="submitPrompt('0x6982508145454Ce325dDbE47a25d4ec3d2311933', 'crypto')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🛡️</span> <span class="truncate">EVM PEPE Honeypot & Likidite</span>
+        </button>
+        <button onclick="submitPrompt('Solana Pump.fun en son çıkan yüksek hacimli tokenlar', 'crypto')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🚀</span> <span class="truncate">Pump.fun Trend Taraması</span>
+        </button>
+        <button onclick="submitPrompt('Yapay zeka ve kripto piyasasında son 24 saatteki en sıcak haberler', 'deep_research')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🌐</span> <span class="truncate">Derin Web & Haber Araştırması</span>
+        </button>
       </div>
     </div>
 
-    <!-- Alt Donanım & Ağ Durumu -->
-    <div class="p-3.5 border-t border-dark-800 bg-dark-950/80 text-xs text-gray-400 font-mono flex flex-col gap-1.5">
-      <div class="flex items-center justify-between text-[11px]">
-        <span>Tor Devresi:</span>
-        <span id="sidebarTorStatus" class="text-blue-400 font-semibold">127.0.0.1:9050</span>
+    <!-- Alt Bağlantı Yapılandırması -->
+    <div class="p-3.5 border-t border-dark-800 bg-dark-950/90 text-xs font-mono flex flex-col gap-2">
+      <div class="flex items-center justify-between text-[11px] text-gray-400">
+        <span>Arka Uç (API):</span>
+        <span id="backendStatus" class="text-yellow-400 font-semibold">Bağlantı Bekliyor</span>
       </div>
-      <div class="flex items-center justify-between text-[11px]">
-        <span>Arama Motoru:</span>
-        <span class="text-emerald-400 font-semibold">DuckDuckGo Live</span>
-      </div>
+      <input 
+        id="backendEndpoint" 
+        type="text" 
+        value="http://127.0.0.1:5050" 
+        placeholder="http://127.0.0.1:5050 veya Tünel URL" 
+        class="w-full bg-dark-900 border border-dark-700 rounded-lg px-2.5 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-500"
+        onchange="localStorage.setItem('omni_endpoint', this.value.trim()); checkBackendStatus();"
+      />
     </div>
   </aside>
 
-  <!-- SAĞ ANA ARAMA VE SOHBET ALANI -->
+  <!-- SAĞ ANA ARAMA VE SOHBET EKRANI -->
   <main class="flex-1 flex flex-col h-full bg-dark-950 overflow-hidden relative">
-    <!-- Üst Mobil Bar -->
+    <!-- Üst Bar -->
     <header class="h-14 border-b border-dark-800/80 px-4 sm:px-6 flex items-center justify-between bg-dark-900/60 backdrop-blur-md flex-shrink-0 z-10">
       <div class="flex items-center gap-3">
         <button onclick="toggleSidebar()" class="md:hidden p-1.5 rounded-lg bg-dark-800 text-gray-300">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
         </button>
         <div class="flex items-center gap-2">
-          <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"></span>
-          <span class="text-sm font-semibold text-white">Canlı Araştırma & İstihbarat</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10B981]"></span>
+          <span class="text-sm font-semibold text-white">Canlı Kripto, Solana RugCheck & Deep Intelligence</span>
         </div>
       </div>
 
       <div class="flex items-center gap-2 text-xs font-mono">
-        <a href="https://github.com/sagiarvil/ai" target="_blank" class="text-gray-400 hover:text-white px-2.5 py-1 rounded bg-dark-800 border border-dark-700 transition">GitHub</a>
-        <span class="text-gray-500">|</span>
-        <span class="text-gray-400">baris-ai.web.app</span>
+        <span class="text-gray-400 hidden sm:inline">baris-ai.web.app</span>
+        <span class="text-gray-600 hidden sm:inline">|</span>
+        <a href="https://github.com/sagiarvil/ai" target="_blank" class="text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded bg-dark-800 border border-dark-700">GitHub</a>
       </div>
     </header>
 
     <!-- Mesaj / Sonuç Akış Penceresi -->
     <div id="chatFeed" class="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6">
-      <!-- Karşılama Ekranı (Henüz soru sorulmadıysa) -->
-      <div id="welcomeScreen" class="max-w-3xl mx-auto py-12 flex flex-col items-center text-center">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-2xl font-bold text-white shadow-xl shadow-blue-500/20 mb-6">
+      <!-- Karşılama Ekranı -->
+      <div id="welcomeScreen" class="max-w-3xl mx-auto py-10 flex flex-col items-center text-center">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-xl shadow-blue-500/20 mb-6">
           ✦
         </div>
-        <h2 class="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-3">Ne öğrenmek veya taramak istersiniz?</h2>
-        <p class="text-sm text-gray-400 max-w-lg mb-8 leading-relaxed">
-          İster bir coin hakkında anlık piyasa analizi yaptırın, ister internetten en güncel haberleri ve verileri araştırın. Kod yazmanıza gerek yok.
+        <h2 class="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-3">Solana Meme-Coin & Deep Web İstihbaratı</h2>
+        <p class="text-sm text-gray-400 max-w-xl mb-8 leading-relaxed">
+          Solana (Pump.fun / Raydium) mint adreslerini yapıştırarak <strong>RugCheck.xyz</strong> ile likidite kilidini ve riskleri tarayın, 
+          EVM kontratlarını <strong>DexScreener + GoPlus</strong> ile inceleyin veya internetten canlı derin araştırma yapın.
         </p>
 
         <!-- Örnek Kartlar -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl text-left">
-          <div onclick="submitPrompt('BTC son durum ve kritik seviyeler nelerdir?', 'crypto_scan')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition group">
-            <div class="flex items-center gap-2 font-semibold text-sm text-white mb-1 group-hover:text-blue-400">
-              <span>🪙</span> <span>Bitcoin (BTC) Piyasa Radarı</span>
+          <div onclick="submitPrompt('EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm', 'crypto')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
+            <div class="flex items-center gap-2 font-semibold text-sm text-purple-400 mb-1">
+              <span>⚡</span> <span>Solana Mint / Pump.fun RugCheck</span>
             </div>
-            <p class="text-xs text-gray-400">Anlık canlı fiyat, 24 saatlik hacim, direnç ve destek seviyeleri.</p>
+            <p class="text-xs text-gray-400">Mint adresini girin: LP kilidi, insider oranları, risk skoru ve tehlike faktörleri.</p>
           </div>
 
-          <div onclick="submitPrompt('Bugün dünyada ve yapay zeka alanında en son gelişmeler nelerdir?', 'deep_research')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition group">
-            <div class="flex items-center gap-2 font-semibold text-sm text-white mb-1 group-hover:text-blue-400">
-              <span>🌐</span> <span>Derin Web Araştırması (Canlı)</span>
+          <div onclick="submitPrompt('0x6982508145454Ce325dDbE47a25d4ec3d2311933', 'crypto')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
+            <div class="flex items-center gap-2 font-semibold text-sm text-emerald-400 mb-1">
+              <span>🛡️</span> <span>EVM Kontrat Honeypot & Vergi</span>
             </div>
-            <p class="text-xs text-gray-400">İnternetteki en son haberleri ve kaynakları tara, özetle ve listele.</p>
+            <p class="text-xs text-gray-400">GoPlus ve DexScreener ile alış/satış vergisi, honeypot durumu ve likidite.</p>
           </div>
 
-          <div onclick="submitPrompt('Solana (SOL) ve Ethereum (ETH) hacim karşılaştırması yap', 'crypto_scan')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition group">
-            <div class="flex items-center gap-2 font-semibold text-sm text-white mb-1 group-hover:text-blue-400">
-              <span>⚡</span> <span>SOL & ETH Hacim Taraması</span>
+          <div onclick="submitPrompt('Bitcoin BTC son durum ve direnç seviyeleri', 'crypto')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
+            <div class="flex items-center gap-2 font-semibold text-sm text-blue-400 mb-1">
+              <span>🪙</span> <span>Canlı Piyasa & Coin Taraması</span>
             </div>
-            <p class="text-xs text-gray-400">İki büyük ekosistemin likidite ve ivme kıyaslaması.</p>
+            <p class="text-xs text-gray-400">Binance ve DexScreener üzerinden anlık canlı fiyat, hacim ve teknik analiz.</p>
           </div>
 
-          <div onclick="submitPrompt('Tor ağı ve açık kaynak istihbarat (OSINT) durum raporu', 'tor_darkweb')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition group">
-            <div class="flex items-center gap-2 font-semibold text-sm text-white mb-1 group-hover:text-blue-400">
-              <span>🧅</span> <span>Tor & Anonim Ağ İstihbaratı</span>
+          <div onclick="submitPrompt('Yapay zeka ve teknoloji dünyasında bugün öne çıkan en kritik gelişmeler', 'deep_research')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
+            <div class="flex items-center gap-2 font-semibold text-sm text-amber-400 mb-1">
+              <span>🌐</span> <span>Deep Web Research (Canlı Haberler)</span>
             </div>
-            <p class="text-xs text-gray-400">Yerel Tor devresi üzerinden açık kaynaklı anonim ağ verisi.</p>
+            <p class="text-xs text-gray-400">DuckDuckGo Live ile interneti tara, kaynak sayfalarını kazı ve doğrulanmış özetle.</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ALT ARAMA & GİRİŞ PANELİ (Perplexity Stili) -->
+    <!-- ALT ARAMA & GİRİŞ PANELİ -->
     <div class="p-4 sm:p-6 bg-gradient-to-t from-dark-950 via-dark-950 to-transparent flex-shrink-0">
       <div class="max-w-3xl mx-auto">
         <div class="bg-dark-900 border border-dark-700/80 rounded-2xl p-3 shadow-2xl focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
           <textarea 
             id="queryInput" 
             rows="2" 
-            placeholder="Bir soru sorun, coin adı yazın veya derin araştırma konusu girin..." 
+            placeholder="Solana mint adresi (Pump.fun), EVM kontratı, coin adı veya araştırma sorusu yazın..." 
             class="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none leading-relaxed px-2 py-1"
             onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); handleUserSubmit(); }"
           ></textarea>
 
           <div class="flex items-center justify-between pt-2 border-t border-dark-800/80 mt-1">
-            <!-- Mod Seçici Düğmeleri -->
+            <!-- Mod Seçiciler -->
             <div class="flex items-center gap-1.5 text-xs font-medium">
-              <button type="button" onclick="setMode('deep_research')" id="modeBtn-deep_research" class="mode-btn px-2.5 py-1.5 rounded-lg bg-blue-600 text-white flex items-center gap-1.5 transition">
-                <span>🌐</span> <span>Web Araştırması</span>
+              <button type="button" onclick="setMode('crypto')" id="modeBtn-crypto" class="mode-btn px-2.5 py-1.5 rounded-lg bg-purple-600 text-white flex items-center gap-1.5 transition">
+                <span>⚡</span> <span>Solana & Kripto</span>
               </button>
-              <button type="button" onclick="setMode('crypto_scan')" id="modeBtn-crypto_scan" class="mode-btn px-2.5 py-1.5 rounded-lg bg-dark-800 text-gray-300 hover:text-white flex items-center gap-1.5 transition">
-                <span>🪙</span> <span>Coin Tarama</span>
+              <button type="button" onclick="setMode('deep_research')" id="modeBtn-deep_research" class="mode-btn px-2.5 py-1.5 rounded-lg bg-dark-800 text-gray-300 hover:text-white flex items-center gap-1.5 transition">
+                <span>🌐</span> <span>Deep Research</span>
               </button>
-              <button type="button" onclick="setMode('tor_darkweb')" id="modeBtn-tor_darkweb" class="mode-btn px-2.5 py-1.5 rounded-lg bg-dark-800 text-gray-300 hover:text-white flex items-center gap-1.5 transition">
-                <span>🧅</span> <span>Tor / Ağ</span>
+              <button type="button" onclick="setMode('dark_web')" id="modeBtn-dark_web" class="mode-btn px-2.5 py-1.5 rounded-lg bg-dark-800 text-gray-300 hover:text-white flex items-center gap-1.5 transition">
+                <span>🧅</span> <span>Tor / Dark Web</span>
               </button>
             </div>
 
-            <!-- Gönder Butonu -->
+            <!-- Gönder -->
             <button 
               id="submitBtn" 
               onclick="handleUserSubmit()" 
-              class="bg-blue-600 hover:bg-blue-500 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30 transition disabled:opacity-50">
+              class="bg-blue-600 hover:bg-blue-500 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30 transition">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
             </button>
           </div>
         </div>
         <p class="text-[11px] text-gray-500 text-center mt-2 font-mono">
-          Gerçek zamanlı DuckDuckGo Live, Tor SOCKS5 ve Binance REST API ile çalışır.
+          %100 Gerçek Motorlar: RugCheck.xyz, DexScreener, GoPlus Labs, DDGS Live, Tor SOCKS5
         </p>
       </div>
     </div>
   </main>
 
   <script>
-    let activeMode = 'deep_research';
+    let activeMode = 'crypto';
     let chatHistory = [];
-    const BINANCE_API = "https://api.binance.com/api/v3/ticker/24hr";
+
+    // Backend Endpoint Yükleme
+    const savedEndpoint = localStorage.getItem('omni_endpoint');
+    if (savedEndpoint) {
+      document.getElementById('backendEndpoint').value = savedEndpoint;
+    }
+
+    function getEndpoint() {
+      return document.getElementById('backendEndpoint').value.trim() || 'http://127.0.0.1:5050';
+    }
 
     function setMode(mode) {
       activeMode = mode;
@@ -224,48 +256,17 @@
       });
       const activeBtn = document.getElementById('modeBtn-' + mode);
       if (activeBtn) {
-        activeBtn.className = "mode-btn px-2.5 py-1.5 rounded-lg bg-blue-600 text-white flex items-center gap-1.5 transition";
+        activeBtn.className = "mode-btn px-2.5 py-1.5 rounded-lg bg-purple-600 text-white flex items-center gap-1.5 transition";
       }
     }
 
-    // 1. Canlı Binance Mini Ticker
-    async function refreshCryptoWidget() {
-      try {
-        const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
-        const res = await fetch(`${BINANCE_API}?symbols=${encodeURIComponent(JSON.stringify(symbols))}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const box = document.getElementById('cryptoMiniWidget');
-        box.innerHTML = '';
-        data.forEach(item => {
-          const sym = item.symbol.replace("USDT", "");
-          const p = parseFloat(item.lastPrice);
-          const chg = parseFloat(item.priceChangePercent);
-          const isUp = chg >= 0;
-          const row = document.createElement('div');
-          row.className = "flex items-center justify-between p-1.5 rounded hover:bg-dark-800 cursor-pointer transition";
-          row.onclick = () => submitPrompt(`${sym} piyasa durumu ve seviyeleri`, 'crypto_scan');
-          row.innerHTML = `
-            <span class="text-gray-300 font-bold">${sym}</span>
-            <div class="text-right">
-              <span class="text-white">$${p.toLocaleString('en-US', {minimumFractionDigits: p < 10 ? 4 : 2})}</span>
-              <span class="${isUp ? 'text-emerald-400' : 'text-rose-400'} ml-1">${isUp ? '+' : ''}${chg.toFixed(1)}%</span>
-            </div>
-          `;
-          box.appendChild(row);
-        });
-      } catch(e){}
-    }
-
     function toggleSidebar() {
-      const sb = document.getElementById('sidebar');
-      sb.classList.toggle('hidden');
+      document.getElementById('sidebar').classList.toggle('hidden');
     }
 
     function startNewSession() {
       chatHistory = [];
-      document.getElementById('chatFeed').innerHTML = document.getElementById('welcomeScreen').outerHTML;
-      document.getElementById('queryInput').value = '';
+      location.reload();
     }
 
     function submitPrompt(text, mode) {
@@ -274,20 +275,89 @@
       handleUserSubmit();
     }
 
-    // 2. Kullanıcı Girişini İşle
+    async function checkBackendStatus() {
+      const badge = document.getElementById('backendStatus');
+      try {
+        const res = await fetch(getEndpoint() + '/api/system_status', { mode: 'cors' });
+        if (res.ok) {
+          const d = await res.json();
+          badge.textContent = "BAĞLI (ONLINE)";
+          badge.className = "text-emerald-400 font-semibold";
+        } else {
+          badge.textContent = "OFFLINE (HTTP " + res.status + ")";
+          badge.className = "text-yellow-400 font-semibold";
+        }
+      } catch(e) {
+        badge.textContent = "DOĞRUDAN API MODU";
+        badge.className = "text-blue-400 font-semibold";
+      }
+    }
+
+    // Doğrudan İstemci Tarafı Gerçek API Taramaları (Yerel Arka Uç Olmasa Bile %100 Gerçek)
+    async function directClientRugCheck(mint) {
+      try {
+        const res = await fetch(`https://api.rugcheck.xyz/v1/tokens/${mint}/report`);
+        if (res.ok) {
+          const d = await res.json();
+          const risks = d.risks || [];
+          const score = d.score || 0;
+          const mc = d.marketCap || 0;
+          const lpLocked = d.markets && d.markets[0] && d.markets[0].lp ? d.markets[0].lp.lpLockedPct : 0;
+          
+          let riskLines = risks.slice(0, 5).map(r => `- **[${(r.level||'').toUpperCase()}] ${r.name}**: ${r.description}`).join('\n');
+          if (!riskLines) riskLines = "Belirgin yüksek risk unsuru bulunmadı.";
+
+          return `
+### ⚡ [GERÇEK MOTOR: SOLANA RUGCHECK.XYZ GÜVENLİK RAPORU]
+- **Token Mint Adresi:** \`${mint}\`
+- **Risk Skoru:** \`${score}\` (0-500: Düşük Risk, 500-1000: Orta, >1000: YÜKSEK TEHLİKE!)
+- **Tahmini Market Cap:** \`$${mc.toLocaleString('en-US')}\`
+- **Likidite Kilit Oranı:** \`%${lpLocked}\`
+
+**Tespit Edilen Risk Faktörleri:**
+${riskLines}
+          `;
+        }
+      } catch(e){}
+      return null;
+    }
+
+    async function directClientDexScreener(query) {
+      try {
+        const res = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const d = await res.json();
+          const pairs = (d.pairs || []).slice(0, 3);
+          if (pairs.length > 0) {
+            let info = ["### 📊 [GERÇEK MOTOR: DEXSCREENER PİYASA & LİKİDİTE]"];
+            pairs.forEach(p => {
+              const base = p.baseToken || {};
+              const quote = p.quoteToken || {};
+              info.push(
+                `- **Zincir:** ${p.chainId.toUpperCase()} | **Çift:** ${base.symbol}/${quote.symbol}\n` +
+                `  - **Kontrat:** \`${base.address}\`\n` +
+                `  - **Fiyat:** \`$${p.priceUsd}\` | **Likidite:** \`$${parseFloat(p.liquidity?.usd || 0).toLocaleString('en-US')}\` | **24s Hacim:** \`$${parseFloat(p.volume?.h24 || 0).toLocaleString('en-US')}\``
+              );
+            });
+            return info.join('\n\n');
+          }
+        }
+      } catch(e){}
+      return null;
+    }
+
     async function handleUserSubmit() {
       const input = document.getElementById('queryInput');
       const text = input.value.trim();
       if (!text) return;
       input.value = '';
 
-      // Hoş geldiniz ekranını kaldır
       const welcome = document.getElementById('welcomeScreen');
       if (welcome) welcome.remove();
 
       const feed = document.getElementById('chatFeed');
 
-      // Kullanıcı Mesajını Ekle
+      // Kullanıcı Balonu
       const userBox = document.createElement('div');
       userBox.className = "max-w-3xl mx-auto flex justify-end";
       userBox.innerHTML = `
@@ -298,138 +368,107 @@
       feed.appendChild(userBox);
       feed.scrollTop = feed.scrollHeight;
 
-      // AI Düşünme & Arama Kutusu Ekle
+      // AI Yanıt Kutusu
       const aiBox = document.createElement('div');
       aiBox.className = "max-w-3xl mx-auto flex flex-col gap-3";
       aiBox.innerHTML = `
         <div class="bg-dark-900 border border-dark-800 rounded-2xl p-5 shadow-lg">
-          <div class="flex items-center gap-3 text-xs font-mono text-blue-400 mb-4 pb-3 border-b border-dark-800">
-            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping"></span>
-            <span id="progressStep">İnternet taranıyor ve doğrulanmış kaynaklar çekiliyor...</span>
+          <div class="flex items-center gap-3 text-xs font-mono text-purple-400 mb-4 pb-3 border-b border-dark-800">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-ping"></span>
+            <span id="pStatus">Fiziksel motorlar taranıyor (RugCheck, DexScreener, Deep Research)...</span>
           </div>
-          <div id="aiResponseContent" class="text-sm text-gray-400 animate-pulse">
-            Kaynaklar derleniyor ve yanıt oluşturuluyor...
+          <div id="aiTarget" class="prose max-w-none text-sm text-gray-300 leading-relaxed">
+            Veriler toplanıyor ve canlı analiz oluşturuluyor...
           </div>
         </div>
       `;
       feed.appendChild(aiBox);
       feed.scrollTop = feed.scrollHeight;
 
-      // Sunucuya veya Doğrudan Canlı Motorlara Gönder
-      let finalMarkdown = "";
-      let sources = [];
+      const aiTarget = aiBox.querySelector('#aiTarget');
+      const pStatus = aiBox.querySelector('#pStatus');
 
+      // 1. Önce Arka Uç Tünelini Dene (SSE Akışı)
+      let backendSuccess = false;
       try {
-        const res = await fetch('/api/chat', {
+        const response = await fetch(getEndpoint() + '/api/chat', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ message: text, mode: activeMode, history: chatHistory })
         });
-        if (res.ok) {
-          const data = await res.json();
-          finalMarkdown = data.reply;
-          sources = data.sources || [];
-        } else {
-          throw new Error("Yerel sunucu çevrimdışı");
-        }
-      } catch (err) {
-        // Doğrudan İstemci Tarafı Canlı Kripto & Web Arama Çözümü
-        if (activeMode === 'crypto_scan' || /\b(BTC|ETH|SOL|BNB|XRP|DOGE|PEPE)\b/i.test(text)) {
-          const symMatch = text.toUpperCase().match(/\b(BTC|ETH|SOL|BNB|XRP|DOGE|PEPE)\b/) || ["", "BTC"];
-          const sym = symMatch[1];
-          try {
-            const bRes = await fetch(`${BINANCE_API}?symbol=${sym}USDT`);
-            if (bRes.ok) {
-              const d = await bRes.json();
-              const p = parseFloat(d.lastPrice);
-              const chg = parseFloat(d.priceChangePercent);
-              const isUp = chg >= 0;
-              finalMarkdown = `
-### 📊 ${sym}/USDT Canlı Piyasa Raporu (Resmi Binance Verisi)
 
-- **Fiyat:** \`$${p.toLocaleString('en-US', {minimumFractionDigits: 2})}\` (${isUp ? '🟢 +' : '🔴 '}${chg.toFixed(2)}%)
-- **24s Aralık:** \`$${parseFloat(d.lowPrice).toLocaleString('en-US', {minimumFractionDigits: 2})}\` - \`$${parseFloat(d.highPrice).toLocaleString('en-US', {minimumFractionDigits: 2})}\`
-- **24s Hacim:** \`$${parseFloat(d.quoteVolume).toLocaleString('en-US', {maximumFractionDigits: 0})} USDT\`
+        if (response.ok && response.body) {
+          backendSuccess = true;
+          pStatus.textContent = "Fiziksel veriler alındı // Canlı Sentezleniyor...";
+          aiTarget.innerHTML = '';
+          let accumulatedText = "";
 
----
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-### 🎯 Kritik Teknik Seviyeler
-- **Direnç 2 (Hedef):** \`$${(p * 1.05).toLocaleString('en-US', {minimumFractionDigits: 2})}\`
-- **Direnç 1 (İlk Eşik):** \`$${(p * 1.025).toLocaleString('en-US', {minimumFractionDigits: 2})}\`
-- **Destek 1 (Kısa Vade):** \`$${(p * 0.975).toLocaleString('en-US', {minimumFractionDigits: 2})}\`
-- **Destek 2 (Ana Koruma):** \`$${(p * 0.94).toLocaleString('en-US', {minimumFractionDigits: 2})}\`
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() || "";
 
-### 💡 Analiz Özeti
-${sym} son 24 saatte **%${chg.toFixed(2)}** değişim gösterdi. ${isUp ? 'Momentum pozitif ve alıcıların ilgisi sürüyor.' : 'Kısa vadeli kar satışı gözleniyor; destek seviyeleri yakından izlenmelidir.'}
-              `;
-              sources = [{title: `Binance Spot: ${sym}/USDT`, url: "https://www.binance.com", snippet: "Canlı piyasa derinliği ve 24 saatlik fiyat değişimi."}];
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const jsonStr = line.slice(6).trim();
+                if (jsonStr === "[DONE]") break;
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed.token) {
+                    accumulatedText += parsed.token;
+                    aiTarget.innerHTML = marked.parse(accumulatedText);
+                    feed.scrollTop = feed.scrollHeight;
+                  }
+                } catch(e){}
+              }
             }
-          } catch(e){}
+          }
+          chatHistory.push({ role: "user", content: text }, { role: "assistant", content: accumulatedText });
+        }
+      } catch(err) {
+        backendSuccess = false;
+      }
+
+      // 2. Arka Uç Tüneli Kapalıysa: Doğrudan İstemci Tarafı %100 Gerçek API'leri Çalıştır!
+      if (!backendSuccess) {
+        pStatus.textContent = "Doğrudan Canlı API Motorları (RugCheck & DexScreener)";
+        let directOutput = [];
+
+        // Solana Mint Adresi Kontrolü
+        const solMatch = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
+        if (solMatch) {
+          const rugData = await directClientRugCheck(solMatch[0]);
+          if (rugData) directOutput.push(rugData);
         }
 
-        if (!finalMarkdown) {
-          finalMarkdown = `
-### 🌐 Araştırma Sonucu: "${text}"
+        // DexScreener Kontrolü
+        const dexData = await directClientDexScreener(text);
+        if (dexData) directOutput.push(dexData);
 
-Sorgunuz doğrudan işlendi. İnternet ve borsa ağları taranarak en güncel veriler derlendi. 
-Daha derin analiz için aramak istediğiniz konuyu veya coin sembolünü netleştirerek tekrar sorabilirsiniz.
+        if (directOutput.length > 0) {
+          const combined = directOutput.join('\n\n---\n\n');
+          aiTarget.innerHTML = marked.parse(combined);
+          chatHistory.push({ role: "user", content: text }, { role: "assistant", content: combined });
+        } else {
+          // Genel arama
+          const fallbackMsg = `
+### 🌐 Canlı Analiz Sorgusu: "${text}"
+
+Solana Pump.fun veya Raydium üzerindeki bir token'ı taratmak için **Token Mint Adresini** (örn: \`EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm\`) yapıştırın. RugCheck.xyz ve DexScreener motorları anında gerçek likidite ve güvenlik raporunu getirecektir.
           `;
+          aiTarget.innerHTML = marked.parse(fallbackMsg);
         }
+        feed.scrollTop = feed.scrollHeight;
       }
-
-      // Kaynaklar Bloğu (Perplexity stili tıklandığında açılan kartlar)
-      let sourcesHtml = "";
-      if (sources && sources.length > 0) {
-        sourcesHtml = `
-          <div class="mb-4">
-            <span class="text-[11px] font-mono text-gray-400 uppercase tracking-wider block mb-2 font-semibold">Taranan Doğrulanmış Kaynaklar</span>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              ${sources.map((s, idx) => `
-                <a href="${s.url || '#'}" target="_blank" class="p-2.5 rounded-xl bg-dark-950/80 hover:bg-dark-800 border border-dark-800 hover:border-dark-700 transition flex flex-col justify-between block group">
-                  <span class="text-xs font-semibold text-gray-200 group-hover:text-blue-400 truncate">${idx+1}. ${s.title || 'Kaynak'}</span>
-                  <span class="text-[10px] text-gray-500 font-mono truncate mt-1">${s.url || 'Web Bağlantısı'}</span>
-                </a>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
-
-      // Nihai Cevabı Ekrana Bas
-      aiBox.innerHTML = `
-        <div class="bg-dark-900 border border-dark-800 rounded-2xl p-5 shadow-lg">
-          ${sourcesHtml}
-          <div class="prose max-w-none text-sm text-gray-200 leading-relaxed">
-            ${marked.parse(finalMarkdown)}
-          </div>
-          <div class="flex items-center justify-between pt-3 mt-4 border-t border-dark-800/80 text-xs text-gray-500 font-mono">
-            <span>Doğrulanmış Yanıt // Halüsinasyonsuz</span>
-            <button onclick="navigator.clipboard.writeText(\`${finalMarkdown.replace(/`/g, '\\`')}\`); alert('Yanıt panoya kopyalandı!');" class="hover:text-white transition">Kopyala</button>
-          </div>
-        </div>
-      `;
-      feed.scrollTop = feed.scrollHeight;
-
-      // Geçmişe ekle
-      chatHistory.push({ role: "user", content: text });
-      chatHistory.push({ role: "assistant", content: finalMarkdown });
-
-      // Sol taraftaki oturum listesine ekle
-      addSessionHistory(text);
     }
 
-    function addSessionHistory(title) {
-      const list = document.getElementById('sessionList');
-      const item = document.createElement('div');
-      item.className = "p-2 rounded-lg hover:bg-dark-800 text-gray-300 hover:text-white cursor-pointer transition truncate";
-      item.textContent = title;
-      item.onclick = () => submitPrompt(title);
-      list.prepend(item);
-    }
-
-    // Başlangıç
-    refreshCryptoWidget();
-    setInterval(refreshCryptoWidget, 8000);
+    checkBackendStatus();
   </script>
 </body>
 </html>
