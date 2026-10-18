@@ -31,7 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine
+from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine, get_masked_httpx_client
 
 # Crawl4AI import kontrolü
 try:
@@ -202,7 +202,7 @@ def tool_run_slither_analysis(solidity_code: str) -> str:
 # 3. FİZİKSEL MOTOR 3: SOLANA RUGCHECK & TOKEN SNIFFER
 # ==============================================================================
 async def scan_solana_rugcheck(mint: str) -> str:
-    async with httpx.AsyncClient(timeout=6.0) as client:
+    async with get_masked_httpx_client(timeout=8.0) as client:
         try:
             resp = await client.get(f"https://api.rugcheck.xyz/v1/tokens/{mint}/report")
             if resp.status_code == 200:
@@ -246,7 +246,7 @@ async def scan_crypto(query: str) -> str:
         parts.append(await scan_solana_rugcheck(sol_m.group(0)))
 
     term = eth_m.group(0) if eth_m else (sol_m.group(0) if sol_m else query)
-    async with httpx.AsyncClient(timeout=6.0) as client:
+    async with get_masked_httpx_client(timeout=8.0) as client:
         try:
             resp = await client.get(f"https://api.dexscreener.com/latest/dex/search?q={term}")
             if resp.status_code == 200:
@@ -425,10 +425,10 @@ async def chat_handler(req: ChatRequest):
         if any(w in q.lower() for w in ["izmir", "istanbul", "ankara", "firma", "şirket", "oda", "dernek", "adres", "iletişim"]):
             try:
                 nom_query = urllib.parse.quote(q)
-                async with httpx.AsyncClient(timeout=4.0) as nclient:
+                async with get_masked_httpx_client(timeout=6.0) as nclient:
                     nresp = await nclient.get(
                         f"https://nominatim.openstreetmap.org/search?q={nom_query}&format=json&addressdetails=1&limit=2",
-                        headers={"User-Agent": "BarisAI/2.0"}
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"}
                     )
                     if nresp.status_code == 200:
                         njson = nresp.json()
