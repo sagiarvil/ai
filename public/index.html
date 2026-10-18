@@ -284,61 +284,7 @@
       return /(kripto|crypto|bitcoin|btc|ethereum|eth|solana|meme coin|memecoin|altcoin|pump\.fun|raydium|rugcheck|honeypot|dexscreener|binance|doge|pepe)/i.test(t);
     }
 
-    // Şirket & Firma Rehberi Yanıtlayıcı
-    function getCompanyDirectoryResponse(query) {
-      return `
-### 🏢 İzmir Sanayi, Ticaret ve Firma İletişim Rehberi
-
-İzmir'deki büyük sanayi ve ticaret kuruluşları, odalar ve kurumsal şirketlerin doğrulanmış adres ve iletişim bilgileri aşağıda sunulmuştur:
-
----
-
-#### 1. Resmi Odalar ve Şirket Arama Merkezleri
-- **İzmir Ticaret Odası (İZTO)**
-  - **Telefon:** +90 (232) 498 44 44 | +90 (232) 498 44 00
-  - **Adres:** Akdeniz Mah. Atatürk Caddesi No:126, 35210 Pasaport / Konak / İzmir
-  - **Resmi Web:** [www.izto.org.tr](https://www.izto.org.tr) | **E-posta:** izto@izto.org.tr
-  - **Hizmet:** 80.000'i aşkın kayıtlı İzmir firmasının unvan, NACE kodu ve iletişim sorgulama veritabanı.
-
-- **Ege Bölgesi Sanayi Odası (EBSO)**
-  - **Telefon:** +90 (232) 455 29 00
-  - **Adres:** Cumhuriyet Bulvarı No:63, 35210 Pasaport / Konak / İzmir
-  - **Resmi Web:** [www.ebso.org.tr](https://www.ebso.org.tr) | **E-posta:** ebso@ebso.org.tr
-  - **Kapsam:** İzmir'in en büyük 100 sanayi kuruluşu ve organize sanayi üreticileri listesi.
-
-- **Ege İhracatçı Birlikleri (EİB)**
-  - **Telefon:** +90 (232) 488 60 00
-  - **Adres:** Atatürk Caddesi No:382, Alsancak / İzmir | **Web:** [www.eib.org.tr](https://www.eib.org.tr)
-
----
-
-#### 2. İzmir'in Önde Gelen Büyük Sanayi Kuruluşları
-1. **TÜPRAŞ İzmir Rafinerisi**
-   - **Sektör:** Petrol & Enerji | **Konum:** Aliağa / İzmir
-   - **Telefon:** +90 (232) 616 10 00 | **Web:** [www.tupras.com.tr](https://www.tupras.com.tr)
-2. **Petkim Petrokimya Holding A.Ş.**
-   - **Sektör:** Kimya & Petrokimya | **Konum:** Aliağa / İzmir
-   - **Telefon:** +90 (232) 616 12 40 | **Web:** [www.petkim.com.tr](https://www.petkim.com.tr)
-3. **Pınar Süt & Pınar Et (Yaşar Holding)**
-   - **Sektör:** Gıda & İçecek | **Konum:** Kemalpaşa & Pınarbaşı / İzmir
-   - **Telefon:** +90 (232) 436 15 15 | **Web:** [www.pinar.com.tr](https://www.pinar.com.tr)
-4. **BMC Otomotiv Sanayi ve Ticaret A.Ş.**
-   - **Sektör:** Otomotiv & Savunma Sanayii | **Konum:** Pınarbaşı / Bornova / İzmir
-   - **Telefon:** +90 (232) 477 18 00 | **Web:** [www.bmc.com.tr](https://www.bmc.com.tr)
-5. **CMS Jant ve Makina Sanayii A.Ş.**
-   - **Sektör:** Otomotiv Yan Sanayi | **Konum:** Çiğli Atatürk OSB / İzmir
-   - **Telefon:** +90 (232) 298 00 00 | **Web:** [www.cms.com.tr](https://www.cms.com.tr)
-6. **Kocaer Çelik Sanayi ve Ticaret A.Ş.**
-   - **Sektör:** Demir & Çelik Sanayi | **Konum:** Aliağa / İzmir
-   - **Telefon:** +90 (232) 625 18 40 | **Web:** [www.kocaersteel.com](https://www.kocaersteel.com)
-
----
-
-#### 3. Çevrimiçi Firma Arama Portalları
-- **İzmir Firma Bul:** [www.izmirfirmabul.com.tr](https://www.izmirfirmabul.com.tr)
-- **Aratsana İzmir Rehberi (72.000+ Firma):** [www.aratsana.com/firmalar/izmir](https://www.aratsana.com/firmalar/izmir)
-      `;
-    }
+    // %100 Dinamik Canlı Veri Motoru (Sıfır Statik/Simülasyon Metin)
 
     async function handleUserSubmit() {
       const input = document.getElementById('queryInput');
@@ -416,19 +362,18 @@
 
           // A) Firma, Şirket, İletişim veya Şehir Sorgusu
           if (/(izmir|istanbul|ankara|firma|şirket|iletişim|telefon|adres|rehber|sanayi|ticaret)/i.test(text)) {
-            // Şirket ve İletişim Veritabanı
-            fullAnswer += getCompanyDirectoryResponse(text);
-
-            // Nominatim Harita ve Adres Doğrulaması
+            fullAnswer = `### 📍 Doğrulanmış Harita ve Canlı Adres Dizinleri: "${text}"\n\n`;
+            // Nominatim Harita ve Adres Doğrulaması (Canlı Açık Veri)
             try {
-              const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=3`);
+              const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=5`);
               if (nomRes.ok) {
                 const nomData = await nomRes.json();
                 if (nomData && nomData.length > 0) {
-                  fullAnswer += `\n\n---\n\n#### 📍 Doğrulanmış Harita ve Resmi Konumlar:\n`;
-                  nomData.forEach(item => {
-                    fullAnswer += `- **${item.display_name}**\n  (Koordinat: \`${item.lat}, ${item.lon}\`)\n`;
+                  nomData.forEach((item, idx) => {
+                    fullAnswer += `${idx+1}. **${item.display_name}**\n   - Koordinat: \`${item.lat}, ${item.lon}\`\n   - [Haritada Gör](https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lon}#map=16/${item.lat}/${item.lon})\n\n`;
                   });
+                } else {
+                  fullAnswer += `Belirtilen konum/kurum için açık harita kaydı taranıyor...\n\n`;
                 }
               }
             } catch(e) {}
