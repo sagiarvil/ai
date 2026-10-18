@@ -182,17 +182,38 @@ class AutonomousExecutionEngine:
     # --------------------------------------------------------------------------
     # 3. RUNTIME DOĞRULAMALI GÖREV İCRA PROTOKOLÜ (AGENTIC LOOP)
     # --------------------------------------------------------------------------
+    @staticmethod
+    def _get_installed_engines_context() -> str:
+        registry_file = Path.home() / '.omnicore' / 'installed_engines_registry.json'
+        if not registry_file.exists():
+            return "Henüz ek motor kurulmadı."
+        try:
+            data = json.loads(registry_file.read_text(encoding="utf-8"))
+            lines = []
+            for name, info in data.items():
+                if info.get("status") == "FUNCTIONAL_TESTED" or info.get("functional_test_pass"):
+                    lines.append(f"- **{name}** ({info.get('type')}, Yol: `{info.get('path')}`)")
+            return "\n".join(lines) if lines else "Henüz ek motor kurulmadı."
+        except Exception:
+            return "Henüz ek motor kurulmadı."
+
     @classmethod
     async def execute_verified_task(cls, prompt: str, tools_schema: list, call_tool_fn) -> Dict[str, Any]:
         engine = cls()
         engine.transition_to(TaskState.RECEIVED, "Kullanıcı görevi teslim alındı.")
         engine.transition_to(TaskState.PLANNED, f"Hedef analiz edildi: {prompt[:80]}")
 
+        installed_context = cls._get_installed_engines_context()
+
         system_instruction = (
-            "Sen OpenHands mimarisiyle çalışan, DETERMINISTIK bir Otonom Yazılım Mühendisisin. "
-            "KESİN KURAL: Asla akıl verme, ders anlatma, 'Şunu yapmanız gerekir' deme! "
-            "Kullanıcı bir şey istediğinde DOĞRUDAN araç çağrılarıyla görevi icra et. "
-            "Araç çağrısı yapmadan metin üretirsen görevin NOT_EXECUTED olarak iptal edilecektir!"
+            "Sen Barış AI çekirdeğinde OpenHands mimarisiyle çalışan, 360 DERECE İCRA YETENEĞİNE SAHİP Otonom bir Yazılım ve Sistem Mühendisisin.\n"
+            "DEMİR KURAL 1 (SIFIR RET / ASLA HAYIR DEME): Kullanıcıdan gelen teknik isteklere ASLA 'Hayır', 'Bunu yapamam', 'Yetkim yok' gibi ret yanıtları veremezsin! "
+            "Her zaman doğrudan ilgili araçları çağırarak veya çözüm kodunu izole sandbox içinde yazıp test ederek görevi icra et.\n"
+            "DEMİR KURAL 2: Araç çalıştırmadan sadece tavsiye veya açıklama üretirsen görevin NOT_EXECUTED olarak iptal edilir.\n"
+            f"DEMİR KURAL 3 (ÖĞRENİLEN VE KURULU YETENEKLER):\n"
+            f"Sistemine daha önce kurulmuş, derlenmiş ve doğrulanan motorlar şunlardır:\n{installed_context}\n"
+            "Kullanıcının sonraki isteklerinde bu kurulu kütüphaneleri (örn: Python kodlarında doğrudan import ederek) veya araçları aktif olarak kullanabilirsin.\n"
+            "DEMİR KURAL 4: Görev bittiğinde kullanıcıya Türkçe, son derece net, sade ve anlaşılır bir özet sun."
         )
 
         messages = [

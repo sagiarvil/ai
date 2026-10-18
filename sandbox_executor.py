@@ -122,13 +122,27 @@ def verify_sandbox_runtime_probe(target_dir: Path, allow_network: bool = True) -
 def get_sanitized_env() -> Dict[str, str]:
     """Hassas anahtarları süzerek güvenli bir ortam değişkenleri sözlüğü üretir."""
     safe_env = {}
-    allowed_keys = ["PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM"]
+    allowed_keys = ["PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TMPDIR", "TERM", "PYTHONPATH"]
     for k, v in os.environ.items():
         if any(bad in k.upper() for bad in SENSITIVE_ENV_KEYS):
             continue
         if k in allowed_keys or k.startswith("LC_"):
             safe_env[k] = v
-    safe_env["PATH"] = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
+
+    # Kurulu motorları dinamik olarak PYTHONPATH'e ekle (Öğrenilen kütüphaneleri kullanabilme kabiliyeti)
+    installed_engines_dir = OMNICORE_HOME / 'installed_engines'
+    installed_paths = []
+    if installed_engines_dir.exists():
+        installed_paths = [str(d) for d in installed_engines_dir.iterdir() if d.is_dir()]
+
+    current_pythonpath = os.environ.get("PYTHONPATH", "")
+    all_python_paths = installed_paths + ([current_pythonpath] if current_pythonpath else [])
+    safe_env["PYTHONPATH"] = ":".join(all_python_paths)
+
+    # Kurulu CLI ikililerini PATH'e ekle
+    omnicore_bin = OMNICORE_HOME / 'bin'
+    omnicore_bin.mkdir(parents=True, exist_ok=True)
+    safe_env["PATH"] = f"{omnicore_bin}:" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
     safe_env["SANDBOX_CONTAINED"] = "1"
     return safe_env
 
