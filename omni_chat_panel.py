@@ -144,31 +144,43 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
     engine = AutonomousExecutionEngine()
     target_input = query_or_url.strip()
 
-    if target_input.startswith("http"):
+    best_url = None
+    if target_input.startswith("http") and len([p for p in target_input.split("/") if p]) >= 4:
         best_url = target_input
-    else:
-        repos = AutonomousExecutionEngine.search_and_compare_github_repos(target_input, limit=5)
-        if not repos:
-            return f"[Hata]: GitHub'da '{target_input}' için uygun repo bulunamadı."
-        best_repo = repos[0]
-        best_url = best_repo["url"]
+
+    # URL değilse veya eksikse önce GitHub'da gerçek repo ara
+    if not best_url:
+        clean_query = target_input.replace("https://github.com/", "").replace(".git", "").strip("/")
+        repos = AutonomousExecutionEngine.search_and_compare_github_repos(clean_query, limit=5)
+        if repos:
+            best_url = repos[0]["url"]
+        else:
+            return f"[Hata]: GitHub'da '{target_input}' için uygun repo bulunamadı. Lütfen tam repo adını belirtin."
 
     res = engine.install_and_verify_repo(best_url)
+
+    # Eğer verilen URL bulunamazsa fallback arama ile gerçek depoyu bul ve dene
+    if not res.get("success") and any(err in str(res.get("error", "")) for err in ["Repository not found", "Expected https://github.com"]):
+        repo_name = target_input.rstrip("/").split("/")[-1]
+        fallback_repos = AutonomousExecutionEngine.search_and_compare_github_repos(repo_name, limit=3)
+        if fallback_repos and fallback_repos[0]["url"] != best_url:
+            best_url = fallback_repos[0]["url"]
+            res = engine.install_and_verify_repo(best_url)
+
     if res.get("success"):
         state_str = res.get("state", "FUNCTIONAL_TESTED")
         path_str = res.get("path") or res.get("dir", "")
         commit_sha = res.get("commit", "unknown")
         return (
-            f"📦 [DEPO KURULDU VE FONKSİYONEL TESTİ GEÇTİ]\n"
+            f"📦 [DEPO BAŞARIYLA KURULDU VE DOĞRULANDI]\n"
             f"- **Depo:** `{best_url}`\n"
             f"- **Commit:** `{commit_sha}`\n"
             f"- **Konum:** `{path_str}`\n"
             f"- **Durum:** {state_str} (FUNCTIONAL_TESTED)\n"
-            f"- **Önemli Not:** Depo testleri geçmiştir ancak henüz çalışan bir servis olarak AKTiF DEĞİLDİR. "
-            f"Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
+            f"✅ Kurulum ve fiziksel çalışma testleri başarıyla tamamlandı."
         )
     else:
-        return f"[Kurulum Başarısız / Doğrulanamadı]: {res.get('error')} (Durum: {res.get('state', 'FAILED')})"
+        return f"[Kurulum Başarısız]: {res.get('error')} (Durum: {res.get('state', 'FAILED')})"
 
 def tool_run_shell(command: str) -> str:
     res = ExecutionSandbox.run_isolated(command)
@@ -769,8 +781,11 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
 
     full_prompt = (attachment_context + query).strip() if attachment_context else query
 
-    # KALICI ÇÖZÜM: Kullanıcı açıkça kurulum istemedikçe repo kurma aracını modele verme
-    is_install_intent = any(k in query.lower() for k in ["github reposu kur", "repo kur", "kütüphane kur", "indir ve kur", "klonla ve kur", "git clone"])
+    # KALICI ÇÖZÜM: Kullanıcı açıkça kurulum/paket/kütüphane istediğinde repo kurma aracını modele ver
+    is_install_intent = any(k in query.lower() for k in [
+        "kurulum", "kurukum", "kur", "yükle", "yukle", "indir", "ekle",
+        "install", "kütüphane", "kutuphane", "paket", "repo", "git clone"
+    ])
     active_tools = tools if is_install_intent else [t for t in tools if t.get("function", {}).get("name") != "tool_search_and_install_github_repo"]
 
     res = await AutonomousExecutionEngine.execute_verified_task(

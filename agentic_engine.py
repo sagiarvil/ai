@@ -57,9 +57,9 @@ class TaskState(str, enum.Enum):
 
 class ExecutionSandbox:
     @classmethod
-    def run_isolated(cls, cmd: str, cwd: Optional[Path] = None, timeout: int = 120) -> Dict[str, Any]:
+    def run_isolated(cls, cmd: str, cwd: Optional[Path] = None, timeout: int = 120, allow_network: bool = False) -> Dict[str, Any]:
         """Sandbox executor katmanına güvenli delege eder."""
-        return secure_sandbox_run(cmd, cwd=cwd, timeout=timeout)
+        return secure_sandbox_run(cmd, cwd=cwd, timeout=timeout, allow_network=allow_network)
 
 class AutonomousExecutionEngine:
     def __init__(self, task_id: Optional[str] = None):
@@ -116,7 +116,7 @@ class AutonomousExecutionEngine:
         Çoklu arama yapar; sadece yıldız değil lisans, güncellik ve Apple Silicon uyumunu puanlar.
         """
         cmd = f"gh search repos '{query}' --limit {limit} --json fullName,url,stargazersCount,updatedAt,description,licenseKey"
-        res = ExecutionSandbox.run_isolated(cmd, timeout=30)
+        res = ExecutionSandbox.run_isolated(cmd, timeout=30, allow_network=True)
         if not res["success"] or not res["stdout"]:
             return []
         try:
