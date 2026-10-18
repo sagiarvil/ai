@@ -323,7 +323,7 @@ class AutonomousExecutionEngine:
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.BLOCKED.value,
-                "reply": "Deterministik izin hatası ikinci kez tekrarlandığı için görev BLOCKED durumuna geçirildi ve döngü durduruldu.",
+                "reply": "Deterministik işlem hatası tekrarlandığı için görev BLOCKED durumuna geçirildi ve döngü durduruldu.",
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
                 "verified": False

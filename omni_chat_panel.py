@@ -415,13 +415,23 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
                 f"- **Aşamalar:**\n{stages_block}\n"
                 f"- **Önemli Not:** Depo sandbox içinde derlenmiş ve testleri geçmiştir; ancak henüz çalışan bir arka plan servisi olarak AKTİF DEĞİLDİR (FUNCTIONAL_TESTED ≠ ACTIVE). Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
             )
+        stages_ev = data.get("evidence", [])
         stage = data.get("stage", "UNKNOWN")
         exit_code = data.get("exit_code", -1)
+        if stage == "UNKNOWN" and stages_ev:
+            for s in reversed(stages_ev):
+                if s.get("exit_code") != 0 or s.get("stage") in ["DEPENDENCIES", "BUILD", "FUNCTIONAL_TEST"]:
+                    stage = s.get("stage", stage)
+                    exit_code = s.get("exit_code", exit_code)
+                    break
+            if stage == "UNKNOWN":
+                stage = stages_ev[-1].get("stage", "UNKNOWN")
+                exit_code = stages_ev[-1].get("exit_code", exit_code)
+
         target_path = data.get("target_path", "")
         error_reason = data.get("error") or report.message
         error_kind_str = report.error_kind.value if report.error_kind else "UNKNOWN"
 
-        stages_ev = data.get("evidence", [])
         stage_lines = []
         for s in stages_ev:
             stg = s.get("stage")

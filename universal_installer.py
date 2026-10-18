@@ -276,11 +276,7 @@ def install_repo(url: str) -> dict[str, Any]:
                 if test is None or not test.get('success'):
                     test = run(f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"', source, 180)
         elif kind == 'node':
-            if not (source / 'package-lock.json').exists():
-                return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
-                        'repo': safe_url, 'commit': sha, 'error': 'package-lock.json required; not activated', 'evidence': evidence}
-
-            # Native modül denetimi: npm ci --ignore-scripts native modülleri eksik bırakabilir
+            # Native modül denetimi: native modül içeren paketler sandboxta derleme engeline takılabilir
             has_native_binding = (source / 'binding.gyp').is_file() or any(source.glob('**/binding.gyp'))
             pkg_raw = (source / 'package.json').read_text(encoding='utf-8')
             pkg = json.loads(pkg_raw)
@@ -288,6 +284,7 @@ def install_repo(url: str) -> dict[str, Any]:
             has_postinstall = 'postinstall' in scripts or 'install' in scripts
 
             if has_native_binding or (has_postinstall and 'gyp' in scripts.get('postinstall', '').lower()):
+                evidence.append({'stage': 'DEPENDENCIES', 'exit_code': 1, 'stderr': 'Native modules/build detected; npm ci --ignore-scripts leaves native modules incomplete'})
                 return {
                     'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                     'repo': safe_url, 'commit': sha,
@@ -295,7 +292,14 @@ def install_repo(url: str) -> dict[str, Any]:
                     'evidence': evidence
                 }
 
-            deps = run('npm ci --ignore-scripts --no-audit --no-fund', source, 600, network=True)
+            # Bağımlılık kurulumu: package-lock.json varsa npm ci, yoksa npm install
+            if (source / 'package-lock.json').exists():
+                deps = run('npm ci --ignore-scripts --no-audit --no-fund', source, 600, network=True)
+            elif (source / 'yarn.lock').exists():
+                deps = run('yarn install --ignore-scripts --frozen-lockfile || yarn install --ignore-scripts', source, 600, network=True)
+            else:
+                deps = run('npm install --ignore-scripts --no-audit --no-fund', source, 600, network=True)
+
             evidence.append({'stage': 'DEPENDENCIES', 'exit_code': deps.get('exit_code'), 'stderr': deps.get('stderr', '')[-900:]})
             if not deps.get('success'):
                 return _fail('DEPENDENCIES', deps.get('stderr', '')[-900:], evidence, job_id)
@@ -315,6 +319,7 @@ def install_repo(url: str) -> dict[str, Any]:
                 test_script = 'npm run test:unit'
 
             if not test_script:
+                evidence.append({'stage': 'FUNCTIONAL_TEST', 'exit_code': 1, 'stderr': 'No npm test script; not activated'})
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                         'repo': safe_url, 'commit': sha, 'error': 'No npm test script; not activated', 'evidence': evidence}
             test = run(test_script, source, 180)
