@@ -24,7 +24,6 @@ from typing import Dict, Any, List, Optional
 import httpx
 
 from sandbox_executor import secure_sandbox_run
-from verification_gate import IndependentVerificationGate
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
@@ -135,81 +134,11 @@ class AutonomousExecutionEngine:
     # --------------------------------------------------------------------------
     # 2. DOĞRULANMIŞ KURULUM & FİZİKSEL ÇALIŞMA PROBE'U (INSTALL & VERIFY)
     # --------------------------------------------------------------------------
-    def install_and_verify_repo(self, repo_url: str, test_command: Optional[str] = None) -> Dict[str, Any]:
-        self.transition_to(TaskState.INSTALLING, f"Klonlama ve bağımlılık kurulumu başlatıldı: {repo_url}")
-
-        repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-        target_dir = TOOLS_DIR / repo_name
-
-        # Rollback yığını hazırla
-        if target_dir.exists():
-            backup_dir = TOOLS_DIR / f"{repo_name}_bak_{int(time.time())}"
-            shutil.copytree(target_dir, backup_dir)
-            self.rollback_stack.append(("restore_dir", str(target_dir), str(backup_dir)))
-        else:
-            self.rollback_stack.append(("delete_dir", str(target_dir)))
-
-        # Klonlama
-        if not (target_dir / ".git").exists():
-            c_res = ExecutionSandbox.run_isolated(f"git clone --depth 1 '{repo_url}' '{target_dir}'", timeout=90)
-            if not c_res["success"]:
-                self.add_evidence("GIT_CLONE", f"Klonlama başarısız (exit_code: {c_res['exit_code']}): {c_res['stderr']}", False)
-                self.rollback()
-                self.transition_to(TaskState.FAILED, "Git klonlama başarısız.")
-                return {"success": False, "error": c_res["stderr"]}
-            self.add_evidence("GIT_CLONE", f"Depo izole alana klonlandı: {target_dir}", True)
-
-        # Bağımlılık Denetimi
-        req_file = target_dir / "requirements.txt"
-        pkg_file = target_dir / "package.json"
-
-        if req_file.exists():
-            p_res = ExecutionSandbox.run_isolated("python3 -m pip install -r requirements.txt --break-system-packages", cwd=target_dir, timeout=180)
-            if not p_res["success"]:
-                self.add_evidence("PIP_INSTALL", f"Pip kurulum hatası (exit_code: {p_res['exit_code']}): {p_res['stderr']}", False)
-                self.rollback()
-                self.transition_to(TaskState.FAILED, "Python bağımlılıkları kurulamadı.")
-                return {"success": False, "error": p_res["stderr"]}
-            self.add_evidence("PIP_INSTALL", "Python bağımlılıkları başarıyla kuruldu.", True)
-        elif pkg_file.exists():
-            n_res = ExecutionSandbox.run_isolated("npm install", cwd=target_dir, timeout=180)
-            if not n_res["success"]:
-                self.add_evidence("NPM_INSTALL", f"Npm kurulum hatası (exit_code: {n_res['exit_code']}): {n_res['stderr']}", False)
-                self.rollback()
-                self.transition_to(TaskState.FAILED, "Node.js bağımlılıkları kurulamadı.")
-                return {"success": False, "error": n_res["stderr"]}
-            self.add_evidence("NPM_INSTALL", "Node.js bağımlılıkları kuruldu.", True)
-
-        # Bağımsız Doğrulama Kapısı (TESTING) - ASLA SAHTE DEĞİL
-        self.transition_to(TaskState.TESTING, "IndependentVerificationGate ile fiziksel doğrulama yürütülüyor.")
-
-        gate_res = IndependentVerificationGate.verify_runtime_execution(target_dir=target_dir, custom_test_cmd=test_command)
-        if not gate_res.get("verified"):
-            self.add_evidence(
-                "RUNTIME_TEST",
-                f"Bağımsız doğrulayıcı reddetti (exit_code: {gate_res.get('exit_code')}): {gate_res.get('reason')}",
-                False,
-                gate_res.get("output")
-            )
-            self.rollback()
-            self.transition_to(TaskState.FAILED, f"Kurulan motor doğrulama kapısından geçemedi: {gate_res.get('reason')}")
-            return {"success": False, "error": gate_res.get("reason")}
-
-        self.add_evidence("RUNTIME_TEST", f"Bağımsız Doğrulama PASS: {gate_res.get('command')}", True, gate_res.get("output"))
-
-        # Aktivasyon & Tescil (ACTIVATING -> VERIFIED)
-        self.transition_to(TaskState.ACTIVATING, "Motor aktif kayıt kütüğüne tescil ediliyor.")
-        self._register_engine(repo_name, repo_url, str(target_dir))
-        self.installed_artifacts.append(repo_name)
-
-        self.transition_to(TaskState.VERIFIED, "Motor kurulumu, bağımlılıkları ve runtime testi %100 PASS.")
-        return {
-            "success": True,
-            "engine": repo_name,
-            "dir": str(target_dir),
-            "state": self.state.value,
-            "evidences": self.evidences
-        }
+    def install_and_verify_repo(self, repo_url: str, test_command=None) -> dict:
+        from universal_installer import install_repo
+        if test_command is not None:
+            return {'success': False, 'state': 'BLOCKED', 'error': 'Arbitrary test commands disallowed; use adapter acceptance policy'}
+        return install_repo(repo_url)
 
     def _register_engine(self, name: str, url: str, path_str: str):
         try:

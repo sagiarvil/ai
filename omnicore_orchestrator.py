@@ -62,14 +62,14 @@ class OpenHandsAgentRuntime:
     async def call_model(self, prompt: str, system_prompt: str = "") -> str:
         """Yerel M4 Mistral-24B modeline canlı çıkarım isteği gönderir."""
         full_p = f"System: {system_prompt}\nUser: {prompt}" if system_prompt else prompt
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 OLLAMA_GENERATE_URL,
                 json={
                     "model": DEFAULT_MODEL,
                     "prompt": full_p,
                     "stream": False,
-                    "options": {"num_thread": 8, "temperature": 0.1, "num_predict": 600}
+                    "options": {"num_thread": 8, "temperature": 0.1, "num_predict": 350}
                 }
             )
             if resp.status_code == 200:
@@ -77,8 +77,13 @@ class OpenHandsAgentRuntime:
             raise RuntimeError(f"Model servisi HTTP {resp.status_code} döndü.")
 
     def parse_code_blocks(self, text: str) -> List[str]:
-        blocks = re.findall(r"```(?:python)?(.*?)```", text, re.DOTALL)
-        return [b.strip() for b in blocks if b.strip()]
+        blocks = re.findall(r"```(?:python|py)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        clean_blocks = [b.strip() for b in blocks if b.strip()]
+        if not clean_blocks:
+            # Fallback: Eğer model kod bloğu tırnakları koymadıysa ama Python kodu ürettiyse
+            if "def " in text or "class " in text or "import " in text:
+                clean_blocks = [text.strip()]
+        return clean_blocks
 
     def execute_terminal_in_sandbox(self, command: str) -> Dict[str, Any]:
         """Komutu izole sandbox ortamında çalıştırır ve belleğe kaydeder."""
@@ -144,13 +149,13 @@ async def execution_node(state: AgentWorkflowState) -> AgentWorkflowState:
     runtime = OpenHandsAgentRuntime(task_id, sandbox_dir)
 
     prompt = (
-        f"You are an OpenHands autonomous coding agent. Task: {goal}\n"
-        "Generate two distinct Python code blocks:\n"
-        "Block 1: Implementation module 'solution.py'\n"
-        "Block 2: Comprehensive unit test 'test_solution.py' using unittest\n"
-        "Ensure both code blocks are wrapped in ```python ... ```."
+        f"Goal: {goal}\n"
+        "Generate two concise Python code blocks:\n"
+        "Block 1: 'solution.py' (concise implementation)\n"
+        "Block 2: 'test_solution.py' (concise unittest)\n"
+        "Wrap each in ```python ... ```."
     )
-    system_prompt = "You write clean, modular, zero-defect Python code with complete unit tests."
+    system_prompt = "You write concise, zero-defect Python code with unittest."
 
     try:
         model_out = await runtime.call_model(prompt, system_prompt)
@@ -199,11 +204,17 @@ async def execution_node(state: AgentWorkflowState) -> AgentWorkflowState:
             if len(fix_blocks) >= 2:
                 sol_file.write_text(fix_blocks[0], encoding="utf-8")
                 test_file.write_text(fix_blocks[1], encoding="utf-8")
-                run_res = runtime.execute_terminal_in_sandbox("python3 -m unittest test_solution.py")
-                state["execution_steps"].append({
-                    "step": "self_healing_retry",
-                    "exit_code": run_res.get("exit_code")
-                })
+            elif len(fix_blocks) == 1:
+                if "unittest" in fix_blocks[0]:
+                    test_file.write_text(fix_blocks[0], encoding="utf-8")
+                else:
+                    sol_file.write_text(fix_blocks[0], encoding="utf-8")
+
+            run_res = runtime.execute_terminal_in_sandbox("python3 -m unittest test_solution.py")
+            state["execution_steps"].append({
+                "step": "self_healing_retry",
+                "exit_code": run_res.get("exit_code")
+            })
 
         if run_res.get("exit_code") == 0:
             state["tests_passed"] = 1

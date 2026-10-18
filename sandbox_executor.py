@@ -60,12 +60,12 @@ def check_sandbox_availability() -> bool:
         return True
     return False
 
-def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = True) -> str:
+def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -> str:
     """
     macOS Seatbelt kernel politikası üretir.
-    - Yazma: SADECE sandbox_path ve geçici tmp dizinlerine izin verilir.
-    - Okuma: Sistem kütüphanelerine ve temel projelere izin verilir, ancak sırlar (.env, .ssh) kilitlenir.
-    - Ağ: allow_network=False ise tamamen bloke edilir.
+    - Yazma: SADECE staging/sandbox çalışma ağacı ve /tmp dizinine izin verilir. Proje köküne ve korumalı dosyalara yazma kesinlikle reddedilir.
+    - Okuma: Sistem kütüphanelerine izin verilir, ancak sırlar (.env, .ssh, .aws) kesinlikle reddedilir.
+    - Ağ: Varsayılan olarak (deny network*), yalnızca açıkça allow_network=True istendiğinde izin verilir.
     """
     network_rule = "(allow network*)" if allow_network else "(deny network*)"
     home = Path.home()
@@ -75,14 +75,22 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = True) ->
 {network_rule}
 
 ;; 1. DOSYA SİSTEMİ YAZMA KISITLAMALARI
-;; Ana disk ve proje köküne yazma kesinlikle YASAK
+;; Proje köküne ve ev dizinine yazma kesinlikle YASAK
 (deny file-write* (subpath "{WORKSPACE_ROOT}"))
 (deny file-write* (subpath "{home}"))
 
-;; Sadece izole sandbox_workspace ve /tmp alanına yazılabilir
+;; Sadece izole staging/sandbox alanı ve geçici dizinlere yazılabilir
 (allow file-write* (subpath "{sandbox_path}"))
+(allow file-write* (subpath "{SANDBOX_DIR}"))
 (allow file-write* (subpath "/private/tmp"))
 (allow file-write* (subpath "/private/var/folders"))
+
+;; Korumalı proje dosyaları ve git dizini (kesin red)
+(deny file-write* (subpath "{WORKSPACE_ROOT}/omni_chat_panel.py"))
+(deny file-write* (subpath "{WORKSPACE_ROOT}/agentic_engine.py"))
+(deny file-write* (subpath "{WORKSPACE_ROOT}/sandbox_executor.py"))
+(deny file-write* (subpath "{WORKSPACE_ROOT}/universal_installer.py"))
+(deny file-write* (subpath "{WORKSPACE_ROOT}/.git"))
 
 ;; 2. HASSAS SIR VE BİLGİ OKUMA ENGELLEME
 (deny file-read* (subpath "{WORKSPACE_ROOT}/.env"))
@@ -119,7 +127,7 @@ def secure_sandbox_run(
     command: str,
     cwd: Optional[Path] = None,
     timeout: int = 90,
-    allow_network: bool = True
+    allow_network: bool = False
 ) -> Dict[str, Any]:
     """
     Komutu gerçek işletim sistemi seviyesinde Seatbelt sandbox katmanında çalıştırır.
@@ -152,12 +160,18 @@ def secure_sandbox_run(
             "elapsed": 0.0
         }
 
-    # 3. Yalıtılmış çalışma dizini
     target_dir = SANDBOX_DIR
     if cwd:
         candidate = Path(cwd).resolve()
-        # Eğer belirtilen dizin sandbox_dir veya tools altında ise izin ver, aksi halde sandbox_dir'e kilitle
-        if str(candidate).startswith(str(SANDBOX_DIR)) or str(candidate).startswith(str(WORKSPACE_ROOT / "tools")):
+        import tempfile
+        sys_tmp = tempfile.gettempdir()
+        allowed_roots = [
+            str(SANDBOX_DIR),
+            str(WORKSPACE_ROOT / "tools"),
+            sys_tmp,
+            str(Path(sys_tmp).resolve())
+        ]
+        if any(str(candidate).startswith(r) for r in allowed_roots):
             target_dir = candidate
 
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -189,6 +203,7 @@ def secure_sandbox_run(
         is_denied = "Operation not permitted" in (res.stderr or "") or res.returncode == 126
         state = "VERIFIED" if res.returncode == 0 else ("BLOCKED" if is_denied else "FAILED")
 
+        is_darwin = platform.system() == "Darwin"
         return {
             "success": res.returncode == 0,
             "exit_code": res.returncode,
@@ -196,7 +211,8 @@ def secure_sandbox_run(
             "stdout": (res.stdout or "").strip(),
             "stderr": (res.stderr or "").strip(),
             "cwd": str(target_dir),
-            "isolated": True,
+            "isolated": is_darwin,
+            "seatbelt_applied": is_darwin,
             "elapsed": elapsed
         }
     except subprocess.TimeoutExpired:

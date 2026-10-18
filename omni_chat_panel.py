@@ -135,16 +135,21 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
         best_url = best_repo["url"]
 
     res = engine.install_and_verify_repo(best_url)
-    if res["success"]:
+    if res.get("success"):
+        state_str = res.get("state", "FUNCTIONAL_TESTED")
+        path_str = res.get("path") or res.get("dir", "")
+        commit_sha = res.get("commit", "unknown")
         return (
-            f"✅ [MOTOR OTONOM VE DOĞRULANMIŞ OLARAK KURULDU]\n"
+            f"📦 [DEPO KURULDU VE FONKSİYONEL TESTİ GEÇTİ]\n"
             f"- **Depo:** `{best_url}`\n"
-            f"- **Konum:** `{res['dir']}`\n"
-            f"- **Durum:** {res['state']} (100% PASS)\n"
-            f"- **Kanıt:** Bağımlılıklar kuruldu ve bağımsız runtime çalışma probe testi tamamlandı."
+            f"- **Commit:** `{commit_sha}`\n"
+            f"- **Konum:** `{path_str}`\n"
+            f"- **Durum:** {state_str} (FUNCTIONAL_TESTED)\n"
+            f"- **Önemli Not:** Depo testleri geçmiştir ancak henüz çalışan bir servis olarak AKTiF DEĞİLDİR. "
+            f"Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
         )
     else:
-        return f"[Kurulum Başarısız - Rollback Yapıldı]: {res.get('error')}"
+        return f"[Kurulum Başarısız / Doğrulanamadı]: {res.get('error')} (Durum: {res.get('state', 'FAILED')})"
 
 def tool_run_shell(command: str) -> str:
     res = ExecutionSandbox.run_isolated(command)

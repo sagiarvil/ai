@@ -20,6 +20,8 @@ class IndependentVerificationGate:
     FORBIDDEN_REGEX_PATTERNS = [
         r"sys\.exit\(0\)",
         r"exit\(0\)",
+        r"^\s*true\s*$",
+        r"^\s*:\s*$",
         r"\|\|\s*(true|:|ls\b)",
         r"^ls(\s+-[a-zA-Z0-9]+)?(\s+.*)?$",
         r"echo\s+['\"]?(ok|pass|success)['\"]?$"

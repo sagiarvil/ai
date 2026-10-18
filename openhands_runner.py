@@ -38,7 +38,7 @@ class OpenHandsAgentEngine:
             "Block 2: test_token_vault.py using unittest to test token_vault.\n"
             "Ensure python code is inside ```python ... ``` blocks."
         )
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 OLLAMA_GENERATE_URL,
                 json={
@@ -48,7 +48,7 @@ class OpenHandsAgentEngine:
                     "options": {
                         "num_thread": 8,
                         "temperature": 0.1,
-                        "num_predict": 500
+                        "num_predict": 300
                     }
                 }
             )
@@ -60,8 +60,11 @@ class OpenHandsAgentEngine:
 
     def extract_python_blocks(self, text: str) -> List[str]:
         """Model yanıtından python kod bloklarını çeker."""
-        blocks = re.findall(r"```(?:python)?(.*?)```", text, re.DOTALL)
-        return [b.strip() for b in blocks if b.strip()]
+        blocks = re.findall(r"```(?:python|py)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        clean = [b.strip() for b in blocks if b.strip()]
+        if not clean and ("def " in text or "class " in text):
+            clean = [text.strip()]
+        return clean
 
     async def execute_autonomous_coding_cycle(self, task_description: str) -> Dict[str, Any]:
         """
