@@ -60,10 +60,13 @@ def classify(root: Path) -> str:
         return 'go'
     if (root / 'Dockerfile').is_file() or (root / 'compose.yaml').is_file():
         return 'container'
-        # Web3, Frontend, HTML, JS, Solidity, Shell veya script araç reposu (yalnızca README olanlar hariç)
-    has_static_code = any(root.glob('*.html')) or any(root.glob('*.sol')) or any(root.glob('*.sh')) or any(root.glob('*.jsx')) or any(root.glob('*.tsx')) or any(root.glob('*.mjs')) or any(root.glob('*.js'))
-    if has_static_code:
-        return 'static_tool'
+        # Web3, Frontend, HTML, JS, Solidity, Shell veya script araç reposu (alt klasörler dahil)
+    code_exts = {'.html', '.sol', '.sh', '.jsx', '.tsx', '.mjs', '.js', '.ts', '.css'}
+    for p in root.rglob('*'):
+        if '.git' in p.parts:
+            continue
+        if p.is_file() and p.suffix.lower() in code_exts:
+            return 'static_tool'
     return 'unsupported' 
 
 
@@ -213,6 +216,7 @@ def install_repo(url: str) -> dict[str, Any]:
                 tokens = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|\d+', name)
                 if not tokens:
                     tokens = [w for w in name.replace('-', ' ').replace('_', ' ').split() if w]
+                words = [w for w in tokens if not w.isdigit() and len(w) >= 3]
                 stop_words = {'invalid', 'repo', 'owner', 'test', 'sample', 'demo', 'temp', 'dummy', 'xyz', 'abc', 'none', 'null'}
                 meaningful_words = [w for w in words if w.lower() not in stop_words and len(w) >= 3]
 
