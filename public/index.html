@@ -70,12 +70,16 @@
       <div class="bg-dark-950/70 rounded-xl p-3 border border-dark-800 text-xs font-mono space-y-2">
         <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block">Fiziksel Canlı Motorlar</span>
         <div class="flex items-center justify-between text-gray-300">
-          <span>🌐 İnternet & Web Scraper:</span>
-          <span class="text-emerald-400 font-bold">AKTİF</span>
+          <span>⚙️ Otonom Ajan (ReAct):</span>
+          <span class="text-emerald-400 font-bold">9 ARAÇ (AKTİF)</span>
         </div>
         <div class="flex items-center justify-between text-gray-300">
-          <span>🏢 Kurumsal Firma Rehberi:</span>
+          <span>🌐 Web Scraper (Crawl4AI):</span>
           <span class="text-blue-400 font-bold">CANLI</span>
+        </div>
+        <div class="flex items-center justify-between text-gray-300">
+          <span>🛡️ Slither Güvenlik Analizi:</span>
+          <span class="text-indigo-400 font-bold">SOLC 0.8.20</span>
         </div>
         <div class="flex items-center justify-between text-gray-300">
           <span>⚡ Solana & Kripto Radarı:</span>
@@ -89,18 +93,18 @@
 
       <!-- Her Sektörden Hızlı Örnekler -->
       <div class="flex flex-col gap-1.5 text-xs">
-        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-mono font-semibold px-1">Örnek Araştırma Konuları</span>
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-mono font-semibold px-1">Örnek Araştırma & Kurulum</span>
+        <button onclick="submitPrompt('tools dizinini incele ve içine örnek bir Python sağlık kontrolü betiği yazıp çalıştır')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>⚙️</span> <span class="truncate">Otonom Betik Yazma & Çalıştırma</span>
+        </button>
+        <button onclick="submitPrompt('pip ile rich kütüphanesini kur ve python ile import ederek sürümünü doğrula')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>📦</span> <span class="truncate">Otonom Paket Kurulumu (pip)</span>
+        </button>
         <button onclick="submitPrompt('İzmirdeki sanayi ve ticaret firmalarının iletişim bilgilerini listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>🏢</span> <span class="truncate">İzmir Firma ve Sanayi Rehberi</span>
         </button>
         <button onclick="submitPrompt('Türkiye ve dünyada bugün öne çıkan en son haberler')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>📰</span> <span class="truncate">Son Dakika Gündem & Haberler</span>
-        </button>
-        <button onclick="submitPrompt('Yapay zeka modellerinin işletmelerde verimlilik artırma stratejileri')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🧠</span> <span class="truncate">Yapay Zeka & Stratejik Yönetim</span>
-        </button>
-        <button onclick="submitPrompt('Son çıkan yeni tokenları ve rugcheck risk durumlarını listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🎯</span> <span class="truncate">Canlı Token Sniffer (Boosts & RugCheck)</span>
         </button>
         <button onclick="submitPrompt('pragma solidity ^0.8.20;\ncontract Vault {\n    mapping(address => uint) public balances;\n    function deposit() public payable { balances[msg.sender] += msg.value; }\n    function withdraw() public {\n        uint bal = balances[msg.sender];\n        require(bal > 0);\n        (bool s,) = msg.sender.call{value: bal}(\"\");\n        require(s);\n        balances[msg.sender] = 0;\n    }\n}')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>🛡️</span> <span class="truncate">Slither Akıllı Kontrat Güvenlik Analizi</span>
@@ -108,11 +112,8 @@
         <button onclick="submitPrompt('https://ethereum.org web sayfasını Crawl4AI ile derin kazı ve özetle')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>🕷️</span> <span class="truncate">Crawl4AI Derin Web Kazıma</span>
         </button>
-        <button onclick="submitPrompt('EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>⚡</span> <span class="truncate">Solana Token RugCheck & LP Taraması</span>
-        </button>
-        <button onclick="submitPrompt('Bitcoin BTC ve piyasa trendi son durum')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🪙</span> <span class="truncate">Kripto Para Piyasa Özeti</span>
+        <button onclick="submitPrompt('Son çıkan yeni tokenları ve rugcheck risk durumlarını listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🎯</span> <span class="truncate">Canlı Token Sniffer (Boosts & RugCheck)</span>
         </button>
       </div>
     </div>
