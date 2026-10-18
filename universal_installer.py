@@ -218,20 +218,48 @@ def install_repo(url: str) -> dict[str, Any]:
                     tokens = [w for w in name.replace('-', ' ').replace('_', ' ').split() if w]
                 words = [w for w in tokens if not w.isdigit() and len(w) >= 3]
                 stop_words = {'invalid', 'repo', 'owner', 'test', 'sample', 'demo', 'temp', 'dummy', 'xyz', 'abc', 'none', 'null'}
-                meaningful_words = [w for w in words if w.lower() not in stop_words and len(w) >= 3]
+
+                # Bileşik kelime ayrıştırma (örn: Allwalletdrainer -> wallet, drainer)
+                compound_keywords = [
+                    'wallet', 'drainer', 'drain', 'crypto', 'stealer', 'bot', 'sniper',
+                    'checker', 'generator', 'arbitrage', 'trading', 'solana', 'ethereum',
+                    'bsc', 'uniswap', 'multisig', 'token', 'airdrop', 'bridge', 'contract',
+                    'web3', 'calculator', 'analyzer', 'scanner', 'parser', 'crawler'
+                ]
+                expanded_words = list(words)
+                for w in words:
+                    w_lower = w.lower()
+                    matched = [kw for kw in compound_keywords if kw in w_lower and kw != w_lower]
+                    if matched:
+                        expanded_words.extend(matched)
+
+                seen = set()
+                clean_words = []
+                for w in expanded_words:
+                    wl = w.lower()
+                    if wl not in seen and wl not in stop_words and len(wl) >= 3:
+                        seen.add(wl)
+                        clean_words.append(w)
+
+                compound_matched = [kw for kw in compound_keywords if kw in name.lower()]
+                if 'drainer' in compound_matched and 'drain' in compound_matched:
+                    compound_matched.remove('drain')
 
                 queries = []
-                if meaningful_words:
-                    queries.append(' '.join(meaningful_words))
-                    if len(meaningful_words) >= 2:
-                        queries.append(' '.join(meaningful_words[:2]))
+                if compound_matched:
+                    queries.append(' '.join(compound_matched))
+                if clean_words:
+                    queries.append(' '.join(clean_words))
+                    if len(clean_words) >= 2:
+                        queries.append(' '.join(clean_words[:2]))
+                        queries.append(' '.join(clean_words[-2:]))
 
-                alt_url = None
+                candidate_urls = []
                 # Seviye 1: gh CLI ile yıldız sıralı arama
                 for q in queries:
                     try:
                         gh_p = subprocess.run(
-                            ['gh', 'search', 'repos', q, '--sort', 'stars', '--limit', '3', '--json', 'url,name'],
+                            ['gh', 'search', 'repos', q, '--sort', 'stars', '--limit', '8', '--json', 'url,name'],
                             capture_output=True, text=True, timeout=15
                         )
                         if gh_p.returncode == 0 and gh_p.stdout.strip():
@@ -240,21 +268,18 @@ def install_repo(url: str) -> dict[str, Any]:
                             for it in items:
                                 candidate_url = it.get('url')
                                 candidate_name = it.get('name', '').lower()
-                                # Anlamsal benzerlik: Adayın adı meaningful_words'ten en az birini içermeli
-                                if candidate_url and any(mw.lower() in candidate_name or candidate_name in mw.lower() for mw in meaningful_words):
-                                    alt_url = candidate_url
-                                    break
-                            if alt_url:
-                                break
+                                if candidate_url and candidate_url not in candidate_urls:
+                                    if any(mw.lower() in candidate_name or candidate_name in mw.lower() for mw in clean_words):
+                                        candidate_urls.append(candidate_url)
                     except Exception:
                         pass
 
-                # Seviye 2: GitHub REST API ile doğrudan HTTPS araması (gh CLI yoksa veya rate limit varsa)
-                if not alt_url and queries:
+                # Seviye 2: GitHub REST API ile doğrudan HTTPS araması
+                if len(candidate_urls) < 3 and queries:
                     for q in queries:
                         try:
                             import urllib.request, urllib.parse, json as _json
-                            api_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(q)}&sort=stars&order=desc&per_page=5"
+                            api_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(q)}&sort=stars&order=desc&per_page=8"
                             req = urllib.request.Request(api_url, headers={"User-Agent": "OmniCore-Universal-Agent/3.0"})
                             with urllib.request.urlopen(req, timeout=10) as resp:
                                 if resp.status == 200:
@@ -263,34 +288,38 @@ def install_repo(url: str) -> dict[str, Any]:
                                     for it in api_items:
                                         candidate_url = it.get('html_url')
                                         candidate_name = it.get('name', '').lower()
-                                        if candidate_url and any(mw.lower() in candidate_name or candidate_name in mw.lower() for mw in meaningful_words):
-                                            alt_url = candidate_url
-                                            break
-                                    if alt_url:
-                                        break
+                                        if candidate_url and candidate_url not in candidate_urls:
+                                            if any(mw.lower() in candidate_name or candidate_name in mw.lower() for mw in clean_words):
+                                                candidate_urls.append(candidate_url)
                         except Exception:
                             pass
 
-                if alt_url and alt_url != safe_url:
+                # Adayları sırayla dene: İçinde gerçek kod olan (classify != unsupported) alternatifi seç
+                for alt_candidate in candidate_urls:
+                    if alt_candidate == safe_url:
+                        continue
                     shutil.rmtree(source, ignore_errors=True)
                     try:
-                        alt_owner, alt_name, alt_safe = parse_github(alt_url)
+                        alt_owner, alt_name, alt_safe = parse_github(alt_candidate)
                         clone_alt = run(f"git clone --depth 1 --no-recurse-submodules '{alt_safe}' '{source}'", task_dir, 180, network=True)
                         if clone_alt.get('success') and (source / '.git').is_dir():
-                            owner, name, safe_url = alt_owner, alt_name, alt_safe
-                            final = (DEPLOYED / f'{owner}--{name}').resolve()
-                            previous = (DEPLOYED / f'.backup-{owner}--{name}-{job_id}').resolve()
-                            evidence.append({
-                                'stage': 'CLONE_RECOVERED',
-                                'exit_code': 0,
-                                'original_url': url,
-                                'active_alternative': alt_url,
-                                'target_path': str(source)
-                            })
-                            clone = clone_alt
-                            recovered = True
+                            # İçi boş veya yalnızca README olan depoyu atla, kod içeren depoyu al
+                            if classify(source) != 'unsupported':
+                                owner, name, safe_url = alt_owner, alt_name, alt_safe
+                                final = (DEPLOYED / f'{owner}--{name}').resolve()
+                                previous = (DEPLOYED / f'.backup-{owner}--{name}-{job_id}').resolve()
+                                evidence.append({
+                                    'stage': 'CLONE_RECOVERED',
+                                    'exit_code': 0,
+                                    'original_url': url,
+                                    'active_alternative': alt_candidate,
+                                    'target_path': str(source)
+                                })
+                                clone = clone_alt
+                                recovered = True
+                                break
                     except Exception:
-                        pass
+                        continue
 
             if not recovered:
                 fail_reason = clone_stderr if clone_stderr else 'Clone failed'
@@ -412,23 +441,25 @@ def install_repo(url: str) -> dict[str, Any]:
             # Bağımlılık kurulumu: İzole yerel cache ve legacy-peer-deps ile EPERM / çakışma korumalı kurulum
             local_cache = (task_dir / '.npm-cache').resolve()
             local_cache.mkdir(parents=True, exist_ok=True)
+            npm_env = f"npm_config_cache='{local_cache}' npm_config_fund=false npm_config_audit=false"
             npm_base_flags = f"--ignore-scripts --no-audit --no-fund --legacy-peer-deps --cache '{local_cache}'"
+            pnpm_flags = f"--ignore-scripts --no-frozen-lockfile --store-dir '{local_cache}/pnpm-store'"
 
             is_pnpm = (source / 'pnpm-lock.yaml').exists() or (source / 'pnpm-workspace.yaml').exists() or 'workspace:' in pkg_raw
             if is_pnpm:
-                deps = run("pnpm install --ignore-scripts --no-frozen-lockfile || npx pnpm install --ignore-scripts --no-frozen-lockfile", source, 600, network=True)
+                deps = run(f"pnpm install {pnpm_flags} || npx pnpm install {pnpm_flags}", source, 600, network=True)
             elif (source / 'package-lock.json').exists():
-                deps = run(f'npm ci {npm_base_flags}', source, 600, network=True)
+                deps = run(f'{npm_env} npm ci {npm_base_flags}', source, 600, network=True)
                 if not deps.get('success'):
-                    deps = run(f'npm install {npm_base_flags}', source, 600, network=True)
+                    deps = run(f'{npm_env} npm install {npm_base_flags}', source, 600, network=True)
             elif (source / 'yarn.lock').exists():
                 deps = run(f"yarn install --ignore-scripts --frozen-lockfile --cache-folder '{local_cache}' || yarn install --ignore-scripts --cache-folder '{local_cache}'", source, 600, network=True)
             else:
-                deps = run(f'npm install {npm_base_flags}', source, 600, network=True)
+                deps = run(f'{npm_env} npm install {npm_base_flags}', source, 600, network=True)
 
             # Fallback: Eğer workspace:* veya pnpm protokolü hatası alındıysa pnpm ile otomatik kurtar
             if not deps.get('success') and any(err in deps.get('stderr', '') for err in ['EUNSUPPORTEDPROTOCOL', 'workspace:', 'pnpm']):
-                deps_pnpm = run("pnpm install --ignore-scripts --no-frozen-lockfile || npx pnpm install --ignore-scripts --no-frozen-lockfile", source, 600, network=True)
+                deps_pnpm = run(f"pnpm install {pnpm_flags} || npx pnpm install {pnpm_flags}", source, 600, network=True)
                 if deps_pnpm.get('success'):
                     deps = deps_pnpm
                     evidence.append({'stage': 'DEPENDENCIES_PNPM_RECOVERED', 'note': 'pnpm workspace protocol recovered'})

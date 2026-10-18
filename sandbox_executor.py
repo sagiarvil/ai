@@ -92,6 +92,9 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
 (allow file-write*
     (subpath "{sandbox_path}")
     (subpath "{OMNICORE_HOME}")
+    (subpath "{home}/.npm")
+    (subpath "{home}/.pnpm-store")
+    (subpath "{home}/.cache")
     (subpath "/private/tmp")
     (subpath "/private/var/folders")
     (subpath "/dev")
@@ -139,10 +142,19 @@ def get_sanitized_env() -> Dict[str, str]:
     all_python_paths = installed_paths + ([current_pythonpath] if current_pythonpath else [])
     safe_env["PYTHONPATH"] = ":".join(all_python_paths)
 
-    # Kurulu CLI ikililerini PATH'e ekle
+    # Kurulu CLI ikililerini, Homebrew ve NVM ikili yollarını PATH'e ekle
     omnicore_bin = OMNICORE_HOME / 'bin'
     omnicore_bin.mkdir(parents=True, exist_ok=True)
-    safe_env["PATH"] = f"{omnicore_bin}:" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
+    extra_paths = [str(omnicore_bin), "/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"]
+    nvm_dir = Path.home() / ".nvm/versions/node"
+    if nvm_dir.is_dir():
+        for node_ver in nvm_dir.iterdir():
+            bin_path = node_ver / "bin"
+            if bin_path.is_dir():
+                extra_paths.append(str(bin_path))
+
+    existing_path = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
+    safe_env["PATH"] = ":".join(extra_paths) + ":" + existing_path
     safe_env["SANDBOX_CONTAINED"] = "1"
     return safe_env
 
