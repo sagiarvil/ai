@@ -284,6 +284,7 @@
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
+      <button id="wakeWordToggleBtn" onclick="toggleWakeWord()" class="voice-btn" style="background:#161b22;" title="Sadece 'Jarvis' dediğinizde devreye girsin (çevre seslerini engeller)">🎯 Jarvis Şartı: Kapalı</button>
       <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
       <div class="status-pill">
         <span class="status-dot"></span>
@@ -482,9 +483,26 @@
       };
     }
 
-    // --- MİKROFON İLE SESLİ KOMUT (STT) ---
+    // --- MİKROFON İLE SESLİ KOMUT (STT) & ÇEVRE SESİ KORUMASI ---
     let recognition = null;
     let isListening = false;
+    let requireWakeWord = localStorage.getItem('require_wake_word') === 'true';
+
+    function updateWakeWordBtn() {
+      const btn = document.getElementById('wakeWordToggleBtn');
+      if (btn) {
+        btn.textContent = requireWakeWord ? '🎯 Jarvis Şartı: Açık' : '🎯 Jarvis Şartı: Kapalı';
+        btn.style.borderColor = requireWakeWord ? '#06b6d4' : '#1e2430';
+        btn.style.color = requireWakeWord ? '#06b6d4' : '#e6edf3';
+      }
+    }
+    updateWakeWordBtn();
+
+    function toggleWakeWord() {
+      requireWakeWord = !requireWakeWord;
+      localStorage.setItem('require_wake_word', requireWakeWord ? 'true' : 'false');
+      updateWakeWordBtn();
+    }
 
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -499,7 +517,9 @@
           micBtn.classList.add('listening');
           micBtn.textContent = '🔴';
         }
-        input.placeholder = 'Dinleniyor... Konuşun...';
+        input.placeholder = requireWakeWord
+          ? '🛡️ Dinleniyor... ("Jarvis" ile başlayarak konuşun)...'
+          : 'Dinleniyor... Konuşun...';
       };
 
       recognition.onresult = (event) => {
@@ -507,12 +527,29 @@
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
-        if (transcript.trim()) {
-          input.value = transcript.trim();
-          input.dispatchEvent(new Event('input'));
-          input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
-          setTimeout(() => sendAction(), 200);
+        const text = transcript.trim();
+
+        // 1. Gürültü Filtresi: Çok kısa veya fısıltı sesleri yok say (Noise Gate)
+        if (text.length < 3) {
+          input.placeholder = 'Gürültü yok sayıldı (< 3 karakter)...';
+          return;
         }
+
+        // 2. Wake-word (Jarvis Şartı) Filtresi:
+        if (requireWakeWord) {
+          const lower = text.toLowerCase();
+          const hasWakeWord = lower.includes('jarvis') || lower.includes('jarjis') || lower.includes('barış') || lower.includes('baris') || lower.includes('patron');
+          if (!hasWakeWord) {
+            input.value = '';
+            input.placeholder = '🛡️ Çevre sesi filtrelendi ("Jarvis" kelimesi bekleniyor)...';
+            return;
+          }
+        }
+
+        input.value = text;
+        input.dispatchEvent(new Event('input'));
+        input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
+        setTimeout(() => sendAction(), 200);
       };
 
       recognition.onerror = (event) => {
