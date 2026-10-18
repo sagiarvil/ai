@@ -439,6 +439,27 @@ async def root():
         return FileResponse(str(INDEX_HTML))
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 
+@app.get("/favicon.ico")
+async def favicon_ico():
+    ico = PUBLIC_DIR / 'favicon.ico'
+    if ico.exists():
+        return FileResponse(str(ico), media_type="image/x-icon")
+    raise HTTPException(status_code=404)
+
+@app.get("/favicon.png")
+async def favicon_png():
+    png = PUBLIC_DIR / 'favicon.png'
+    if png.exists():
+        return FileResponse(str(png), media_type="image/png")
+    raise HTTPException(status_code=404)
+
+@app.get("/logo.png")
+async def logo_png():
+    logo = PUBLIC_DIR / 'logo.png'
+    if logo.exists():
+        return FileResponse(str(logo), media_type="image/png")
+    raise HTTPException(status_code=404)
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ONLINE", "service": "OmniCore"}
