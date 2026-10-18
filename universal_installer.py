@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -203,10 +204,8 @@ def install_repo(url: str) -> dict[str, Any]:
             'seatbelt_applied': clone.get('seatbelt_applied', False)
         })
         if not clone.get('success') or not (source / '.git').is_dir():
-            # Eğer repo bulunamadıysa (silinmiş/askıya alınmış repo), akıllı gevşetmeli aramayla canlı alternatif ara ve kur
             recovered = False
             if any(err in clone_stderr.lower() for err in ['not found', 'fatal:', 'could not read']):
-                # CamelCase ve bileşik kelimeleri ayır (örn: Allwalletdrainer -> All wallet drainer)
                 tokens = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|\d+', name)
                 if not tokens:
                     tokens = [w for w in name.replace('-', ' ').replace('_', ' ').split() if w]
@@ -221,7 +220,10 @@ def install_repo(url: str) -> dict[str, Any]:
                 alt_url = None
                 for q in queries:
                     try:
-                        gh_p = subprocess.run(['gh', 'search', 'repos', q, '--sort', 'stars', '--limit', '3', '--json', 'url'], capture_output=True, text=True, timeout=10)
+                        gh_p = subprocess.run(
+                            ['gh', 'search', 'repos', q, '--sort', 'stars', '--limit', '3', '--json', 'url'],
+                            capture_output=True, text=True, timeout=15
+                        )
                         if gh_p.returncode == 0 and gh_p.stdout.strip():
                             import json as _json
                             items = _json.loads(gh_p.stdout)
@@ -239,6 +241,7 @@ def install_repo(url: str) -> dict[str, Any]:
                         if clone_alt.get('success') and (source / '.git').is_dir():
                             owner, name, safe_url = alt_owner, alt_name, alt_safe
                             final = (DEPLOYED / f'{owner}--{name}').resolve()
+                            previous = (DEPLOYED / f'.backup-{owner}--{name}-{job_id}').resolve()
                             evidence.append({
                                 'stage': 'CLONE_RECOVERED',
                                 'exit_code': 0,
