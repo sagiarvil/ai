@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-10-18 15:35:42",
+  "browser": "Google Chrome (Local Binary)",
+  "network": "Yerel İnternet",
+  "url": "http://127.0.0.1:7070",
+  "title": "Purple I2P Webconsole",
+  "content_length": 566,
+  "content": "i2pd webconsole\nMain page\n\nRouter commands\nLocal Destinations\nTunnels\nTransit Tunnels\nTransports\nI2P tunnels\nSAM sessions\n\nUptime: 26 seconds\nNetwork status: Firewalled\nTunnel creation success rate: 62%\nReceived: 27.97 KiB (0.48 KiB/s)\nSent: 29.64 KiB (0.82 KiB/s)\nTransit: 0.00 KiB (0.00 KiB/s)\nData path: /opt/homebrew/var/lib/i2pd\n\nHidden content. Press on text to see.\nRouters: 78   Floodfills: 37   LeaseSets: 0\nClient Tunnels: 8   Transit Tunnels: 0\n\n\nServices\nHTTP Proxy\tEnabled\nSOCKS Proxy\tEnabled\nBOB\tDisabled\nSAM\tEnabled\nI2CP\tDisabled\nI2PControl\tDisabled\n\n"
+}

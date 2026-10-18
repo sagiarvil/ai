@@ -1,123 +1,106 @@
 <!DOCTYPE html>
-<html lang="tr" class="dark">
+<html lang="tr" class="dark h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Barış AI // Evrensel Canlı Araştırma, İstihbarat & Bilgi Motoru</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <title>Barış AI // Evrensel Canlı Bilgi & İstihbarat Sistemi</title>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
             mono: ['"JetBrains Mono"', 'monospace'],
           },
           colors: {
-            dark: { 950: '#07090E', 900: '#0D111A', 850: '#131825', 800: '#1A2234', 700: '#283550' }
+            dark: {
+              950: '#06080d',
+              900: '#0c1017',
+              850: '#111722',
+              800: '#161e2e',
+              700: '#232f45',
+            }
           }
         }
       }
     }
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    body { background-color: #07090E; color: #E2E8F0; }
-    .prose h1, .prose h2, .prose h3 { color: #F8FAFC; font-weight: 700; margin-top: 1.2em; margin-bottom: 0.6em; }
-    .prose p { margin-bottom: 0.8em; line-height: 1.75; color: #CBD5E1; }
-    .prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 0.8em; }
-    .prose li { margin-bottom: 0.4em; }
-    .prose strong { color: #FFFFFF; font-weight: 600; }
-    .prose code { background: #1A2234; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: #60A5FA; }
-    .prose pre { background: #0D111A; border: 1px solid #1A2234; border-radius: 8px; padding: 12px; overflow-x: auto; }
-    .prose hr { border-color: #1A2234; margin: 1.5em 0; }
-    .prose a { color: #60A5FA; text-decoration: underline; font-weight: 500; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-thumb { background: #1A2234; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #283550; }
+    ::-webkit-scrollbar-track { background: #06080d; }
+    ::-webkit-scrollbar-thumb { background: #232f45; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+    .prose pre { background-color: #0c1017 !important; border: 1px solid #161e2e; border-radius: 0.75rem; }
+    .prose code { color: #60a5fa !important; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+    .prose h1, .prose h2, .prose h3 { color: #f8fafc !important; font-weight: 700; }
+    .prose p, .prose li { color: #cbd5e1 !important; }
   </style>
 </head>
-<body class="h-screen flex overflow-hidden font-sans antialiased">
+<body class="h-full bg-dark-950 text-gray-100 font-sans flex overflow-hidden antialiased select-text">
 
-  <!-- SOL KENAR ÇUBUĞU (Kapsamlı Navigasyon & Durum) -->
-  <aside id="sidebar" class="w-80 bg-dark-900 border-r border-dark-800 flex-shrink-0 flex flex-col justify-between hidden md:flex transition-all duration-200">
-    <div class="p-4 flex flex-col gap-4 overflow-y-auto">
-      <!-- Logo -->
-      <div class="flex items-center justify-between pb-3 border-b border-dark-800">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white shadow-md shadow-blue-500/20">
-            ✦
-          </div>
-          <div>
-            <h1 class="text-sm font-bold text-white tracking-wide">BARIŞ AI</h1>
-            <p class="text-[11px] text-emerald-400 font-mono">Mistral-24B Yerel SSD</p>
-          </div>
+  <!-- SOL PANEL / HIZLI RADAR & GEÇMİŞ -->
+  <aside id="sidebar" class="w-80 bg-dark-900 border-r border-dark-800 flex flex-col justify-between hidden md:flex flex-shrink-0 z-20">
+    <div class="p-4 flex flex-col h-full overflow-hidden">
+      <!-- Logo ve Başlık -->
+      <div class="flex items-center gap-3 pb-4 border-b border-dark-800">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-black text-xl">
+          Ω
         </div>
-        <span class="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-800 font-mono">Yerel M4</span>
+        <div>
+          <h1 class="font-bold text-sm text-white tracking-wide flex items-center gap-2">
+            BARIŞ AI
+            <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">M4 LOCAL</span>
+          </h1>
+          <p class="text-[11px] text-gray-400 font-mono">Mistral-24B Abliterated</p>
+        </div>
       </div>
 
-      <!-- Yeni Soru Başlat -->
-      <button onclick="startNewSession()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition text-xs shadow-md shadow-blue-600/20">
+      <!-- Yeni Oturum Butonu -->
+      <button onclick="startNewSession()" class="mt-4 w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all duration-200">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-        <span>Yeni Soru / Araştırma Başlat</span>
+        Yeni Analiz & Oturum
       </button>
 
-      <!-- Canlı Motor Paneli -->
-      <div class="bg-dark-950/70 rounded-xl p-3 border border-dark-800 text-xs font-mono space-y-2">
-        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block">Fiziksel Canlı Motorlar</span>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>🧠 Yerel Beyin:</span>
-          <span class="text-emerald-400 font-bold">MISTRAL-24B (METAL)</span>
+      <!-- Aktif Motorlar Listesi -->
+      <div class="mt-4 px-2 py-2 bg-dark-850 border border-dark-800 rounded-xl text-[11px] font-mono">
+        <div class="text-gray-400 font-semibold mb-1 flex items-center justify-between">
+          <span>FİZİKSEL MOTORLAR:</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         </div>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>⚙️ Otonom Ajan (ReAct):</span>
-          <span class="text-emerald-400 font-bold">9 ARAÇ (AKTİF)</span>
-        </div>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>🌐 Web Scraper (Crawl4AI):</span>
-          <span class="text-blue-400 font-bold">CANLI</span>
-        </div>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>🛡️ Slither Güvenlik Analizi:</span>
-          <span class="text-indigo-400 font-bold">SOLC 0.8.20</span>
-        </div>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>⚡ Solana & Kripto Radarı:</span>
-          <span class="text-purple-400 font-bold">RUGCHECK</span>
-        </div>
-        <div class="flex items-center justify-between text-gray-300">
-          <span>🧅 Tor SOCKS5 Ağı:</span>
-          <span class="text-amber-400 font-bold">127.0.0.1:9050</span>
-        </div>
+        <ul class="text-gray-300 space-y-1 text-[10px]">
+          <li>• Yerel Mistral-24B (Apple M4 GPU)</li>
+          <li>• Google Chrome & Safari Yerel Ağ</li>
+          <li>• I2P (Invisible Internet - i2pd)</li>
+          <li>• Tor SOCKS5 (127.0.0.1:9050)</li>
+          <li>• Crawl4AI Canlı Web Kazıma</li>
+          <li>• Slither Akıllı Kontrat Analizi</li>
+          <li>• GitHub Otonom Repo Kurucu</li>
+        </ul>
       </div>
 
-      <!-- Her Sektörden Hızlı Örnekler -->
-      <div class="flex flex-col gap-1.5 text-xs">
-        <span class="text-[10px] text-gray-400 uppercase tracking-wider font-mono font-semibold px-1">Örnek Araştırma & Kurulum</span>
-        <button onclick="submitPrompt('tools dizinini incele ve içine örnek bir Python sağlık kontrolü betiği yazıp çalıştır')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>⚙️</span> <span class="truncate">Otonom Betik Yazma & Çalıştırma</span>
+      <!-- Örnek Sorgular / Şablonlar -->
+      <div class="mt-4 flex-1 overflow-y-auto space-y-2 text-xs font-mono pr-1">
+        <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold px-1">Örnek Araç Tetikleyicileri</div>
+        
+        <button onclick="submitPrompt('Chrome tarayıcısını kullanarak https://httpbin.org/ip adresine bağlan ve veriyi kaydet')" class="w-full text-left p-2 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🌐</span> <span class="truncate">Chrome Yerel Tarayıcı Testi</span>
         </button>
-        <button onclick="submitPrompt('pip ile rich kütüphanesini kur ve python ile import ederek sürümünü doğrula')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>📦</span> <span class="truncate">Otonom Paket Kurulumu (pip)</span>
+        <button onclick="submitPrompt('I2P ağını kullanarak http://127.0.0.1:7070 adresini ziyaret et ve konsolu kaydet')" class="w-full text-left p-2 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🔒</span> <span class="truncate">I2P Gizlilik Ağı Testi</span>
         </button>
-        <button onclick="submitPrompt('İzmirdeki sanayi ve ticaret firmalarının iletişim bilgilerini listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🏢</span> <span class="truncate">İzmir Firma ve Sanayi Rehberi</span>
+        <button onclick="submitPrompt('pragma solidity ^0.8.20;\ncontract Vault {\n    mapping(address => uint) public balances;\n    function withdraw() public {\n        uint bal = balances[msg.sender];\n        (bool s,) = msg.sender.call{value: bal}(\"\");\n        balances[msg.sender] = 0;\n    }\n}')" class="w-full text-left p-2 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+          <span>🛡️</span> <span class="truncate">Slither Akıllı Kontrat Denetimi</span>
         </button>
-        <button onclick="submitPrompt('Türkiye ve dünyada bugün öne çıkan en son haberler')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>📰</span> <span class="truncate">Son Dakika Gündem & Haberler</span>
-        </button>
-        <button onclick="submitPrompt('pragma solidity ^0.8.20;\ncontract Vault {\n    mapping(address => uint) public balances;\n    function deposit() public payable { balances[msg.sender] += msg.value; }\n    function withdraw() public {\n        uint bal = balances[msg.sender];\n        require(bal > 0);\n        (bool s,) = msg.sender.call{value: bal}(\"\");\n        require(s);\n        balances[msg.sender] = 0;\n    }\n}')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🛡️</span> <span class="truncate">Slither Akıllı Kontrat Güvenlik Analizi</span>
-        </button>
-        <button onclick="submitPrompt('https://ethereum.org web sayfasını Crawl4AI ile derin kazı ve özetle')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
+        <button onclick="submitPrompt('https://ethereum.org web sayfasını Crawl4AI ile derin kazı ve özetle')" class="w-full text-left p-2 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
           <span>🕷️</span> <span class="truncate">Crawl4AI Derin Web Kazıma</span>
-        </button>
-        <button onclick="submitPrompt('Son çıkan yeni tokenları ve rugcheck risk durumlarını listele')" class="text-left p-2.5 rounded-xl bg-dark-950/50 hover:bg-dark-800 border border-dark-800/80 text-gray-300 hover:text-white transition flex items-center gap-2">
-          <span>🎯</span> <span class="truncate">Canlı Token Sniffer (Boosts & RugCheck)</span>
         </button>
       </div>
     </div>
@@ -126,14 +109,14 @@
     <div class="p-3.5 border-t border-dark-800 bg-dark-950/90 text-xs font-mono flex flex-col gap-2">
       <div class="flex items-center justify-between text-[11px] text-gray-400">
         <span>Arka Uç Motoru:</span>
-        <span id="backendStatus" class="text-emerald-400 font-semibold">Bağlantı Hazır</span>
+        <span id="backendStatus" class="text-yellow-400 font-semibold">Kontrol Ediliyor...</span>
       </div>
       <input 
         id="backendEndpoint" 
         type="text" 
-        value="http://127.0.0.1:5050" 
-        placeholder="http://127.0.0.1:5050 veya Tünel URL" 
-        class="w-full bg-dark-900 border border-dark-700 rounded-lg px-2.5 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-500"
+        value="" 
+        placeholder="http://127.0.0.1:5050" 
+        class="w-full bg-dark-900 border border-dark-700 rounded-lg px-2.5 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-500 font-mono"
         onchange="localStorage.setItem('omni_endpoint', this.value.trim()); checkBackendStatus();"
       />
     </div>
@@ -149,91 +132,77 @@
         </button>
         <div class="flex items-center gap-2">
           <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]"></span>
-          <span class="text-sm font-semibold text-white">Barış AI // Evrensel Canlı Bilgi & İstihbarat Sistemi</span>
+          <span class="text-sm font-semibold text-white">Barış AI // %100 Fiziksel İcra & Otonom İstihbarat</span>
         </div>
       </div>
 
       <div class="flex items-center gap-2 text-xs font-mono">
-        <span class="text-gray-400 hidden sm:inline">baris-ai.web.app</span>
+        <span class="text-gray-400 hidden sm:inline">Yerel Port: 5050</span>
         <span class="text-gray-600 hidden sm:inline">|</span>
         <a href="https://github.com/sagiarvil/ai" target="_blank" class="text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded bg-dark-800 border border-dark-700">GitHub</a>
       </div>
     </header>
 
-    <!-- Mesaj / Sonuç Akış Penceresi -->
-    <div id="chatFeed" class="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6">
-      <div id="welcomeScreen" class="max-w-3xl mx-auto py-10 flex flex-col items-center text-center">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-xl shadow-blue-500/20 mb-6">
-          ✦
+    <!-- Mesaj Alanı -->
+    <div id="chatFeed" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+      
+      <!-- Hoşgeldin / Bilgi Kartı -->
+      <div id="welcomeScreen" class="max-w-3xl mx-auto my-auto text-center py-10 px-4">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-xl shadow-blue-500/10 text-white font-black text-3xl">
+          Ω
         </div>
-        <h2 class="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-3">Ne Araştırmak İstiyorsunuz?</h2>
-        <p class="text-sm text-gray-400 max-w-xl mb-8 leading-relaxed">
-          Sadece kripto değil; şirket iletişim bilgileri, genel kültür, hukuk, tarih, güncel haberler, teknik konular ve derin ağ araştırmaları dahil her sorunuza canlı internet verileriyle net ve doğrudan çözüm üretir.
+        <h2 class="text-2xl font-bold text-white mb-2">Barış AI Otonom İcra Paneli</h2>
+        <p class="text-sm text-gray-400 max-w-lg mx-auto mb-6">
+          Sistem doğrudan Apple M4 Metal GPU üzerinde koşan yerel <span class="text-blue-400 font-mono font-semibold">Mistral-24B (Abliterated)</span> modeli tarafından yönetilir. Sıfır simülasyon, sıfır sahte veri; tüm komutlar fiziksel araçlarla icra edilir.
         </p>
 
-        <!-- Kategori Kartları -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl text-left">
-          <div onclick="submitPrompt('İzmirdeki sanayi ve ticaret firmalarının iletişim bilgilerini listele')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
-            <div class="flex items-center gap-2 font-semibold text-sm text-blue-400 mb-1">
-              <span>🏢</span> <span>Firma & Sektör Rehberleri</span>
-            </div>
-            <p class="text-xs text-gray-400">Şehir, sektör, adres, telefon ve yetkili iletişim bilgileri.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto text-left text-xs font-mono">
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-800">
+            <span class="text-blue-400 font-bold block mb-1">🌐 Yerel Tarayıcılar</span>
+            Chrome, Safari ve I2P üzerinden yerel internete bağlanarak gerçek web sayfalarını açar ve kaydeder.
           </div>
-
-          <div onclick="submitPrompt('Bugün teknoloji ve dünyada öne çıkan son gelişmeler nelerdir?')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
-            <div class="flex items-center gap-2 font-semibold text-sm text-emerald-400 mb-1">
-              <span>🌐</span> <span>Güncel Haberler & Canlı Web</span>
-            </div>
-            <p class="text-xs text-gray-400">İnternetteki son sayfaları tarar, doğrulanmış kaynak bağlantılarıyla özetler.</p>
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-800">
+            <span class="text-emerald-400 font-bold block mb-1">📦 GitHub Repo Kurucu</span>
+            GitHub'daki repoları otonom olarak `tools/` altına klonlar, bağımlılıklarını kurar ve sisteme mühürler.
           </div>
-
-          <div onclick="submitPrompt('Yapay zeka modellerinin çalışma prensipleri ve en son yenilikler')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
-            <div class="flex items-center gap-2 font-semibold text-sm text-amber-400 mb-1">
-              <span>🧠</span> <span>Akademik & Genel Araştırma</span>
-            </div>
-            <p class="text-xs text-gray-400">Bilimsel, felsefi, hukuki ve teknik sorulara derinlemesine analiz.</p>
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-800">
+            <span class="text-purple-400 font-bold block mb-1">🛡️ Slither Statik Güvenlik</span>
+            Solidity akıllı kontrat kodlarını derleyip derin güvenlik açıklarını (reentrancy vb.) raporlar.
           </div>
-
-          <div onclick="submitPrompt('Solana RugCheck ve Bitcoin güncel piyasa durumu')" class="p-4 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-dark-700 cursor-pointer transition">
-            <div class="flex items-center gap-2 font-semibold text-sm text-purple-400 mb-1">
-              <span>⚡</span> <span>Kripto & Token Radarı</span>
-            </div>
-            <p class="text-xs text-gray-400">Pump.fun RugCheck, DexScreener likidite ve anlık borsa fiyatları.</p>
+          <div class="p-3 rounded-xl bg-dark-900 border border-dark-800">
+            <span class="text-amber-400 font-bold block mb-1">🕷️ Crawl4AI Motoru</span>
+            Dinamik web sitelerinden Markdown formatında tam içerik kazır.
           </div>
         </div>
       </div>
+
     </div>
 
-    <!-- ALT ARAMA & GİRİŞ PANELİ -->
-    <div class="p-4 sm:p-6 bg-gradient-to-t from-dark-950 via-dark-950 to-transparent flex-shrink-0">
-      <div class="max-w-3xl mx-auto">
-        <div class="bg-dark-900 border border-dark-700/80 rounded-2xl p-3 shadow-2xl focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+    <!-- Alt Girdi Alanı -->
+    <div class="p-4 sm:p-5 border-t border-dark-800 bg-dark-900/40 backdrop-blur-md flex-shrink-0">
+      <div class="max-w-3xl mx-auto relative flex flex-col gap-2">
+        <div class="flex items-end gap-2 bg-dark-900 border border-dark-800 focus-within:border-blue-500 rounded-2xl p-2 transition-all shadow-xl">
           <textarea 
-            id="queryInput" 
-            rows="2" 
-            placeholder="Herhangi bir soru yazın (örn: İzmir firmaları, son dakika haberleri, Solana mint adresi, tarih)..." 
+            id="queryInput"
+            rows="2"
+            placeholder="Doğrudan icra emri verin (örn: 'Chrome ile şu sayfaya git', 'GitHub'dan şu repoyu kur', 'Solidity kodunu denetle')..." 
             class="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none leading-relaxed px-2 py-1"
-            onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); handleUserSubmit(); }"
+            onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleUserSubmit(); }"
           ></textarea>
-
-          <div class="flex items-center justify-between pt-2 border-t border-dark-800/80 mt-1">
-            <div class="flex items-center gap-2 text-xs font-mono text-gray-400">
-              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>Canlı Soru-Cevap & Deep Search</span>
-            </div>
-
-            <!-- Gönder Butonu -->
-            <button 
-              id="submitBtn" 
-              onclick="handleUserSubmit()" 
-              class="bg-blue-600 hover:bg-blue-500 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30 transition">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-            </button>
-          </div>
+          
+          <button 
+            id="sendBtn"
+            onclick="handleUserSubmit()"
+            class="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-md shadow-blue-600/30 transition flex-shrink-0 disabled:opacity-50"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+          </button>
         </div>
-        <p class="text-[11px] text-gray-500 text-center mt-2 font-mono">
-          Canlı İnternet Arama, Şirket Rehberleri, Tor SOCKS5 ve Borsa API'leri ile %100 gerçek veriler.
-        </p>
+
+        <div class="flex items-center justify-between text-[11px] text-gray-500 font-mono px-2">
+          <span>%100 Fiziksel İcra • Sıfır Simülasyon</span>
+          <span>Shift + Enter: Yeni Satır</span>
+        </div>
       </div>
     </div>
   </main>
@@ -241,13 +210,21 @@
   <script>
     let chatHistory = [];
 
-    const savedEndpoint = localStorage.getItem('omni_endpoint');
-    if (savedEndpoint) {
-      document.getElementById('backendEndpoint').value = savedEndpoint;
+    function getEndpoint() {
+      const stored = localStorage.getItem('omni_endpoint');
+      if (stored) return stored;
+      // Eğer sayfa zaten yerel port üzerinden sunuluyorsa (örn: http://127.0.0.1:5050)
+      if (window.location.port === "5050") {
+        return window.location.origin;
+      }
+      return 'http://127.0.0.1:5050';
     }
 
-    function getEndpoint() {
-      return document.getElementById('backendEndpoint').value.trim() || 'http://127.0.0.1:5050';
+    function initEndpointInput() {
+      const input = document.getElementById('backendEndpoint');
+      if (input) {
+        input.value = getEndpoint();
+      }
     }
 
     function toggleSidebar() {
@@ -266,54 +243,46 @@
 
     async function checkBackendStatus() {
       const badge = document.getElementById('backendStatus');
+      const ep = getEndpoint();
       try {
-        const res = await fetch(getEndpoint() + '/api/system_status', { mode: 'cors' });
+        const res = await fetch(ep + '/api/system_status', { mode: 'cors' });
         if (res.ok) {
-          badge.textContent = "ONLINE (Bağlı)";
+          const data = await res.json();
+          badge.textContent = `ONLINE (${data.hardware || 'M4 Metal'})`;
           badge.className = "text-emerald-400 font-semibold";
         } else {
           badge.textContent = "OFFLINE";
           badge.className = "text-yellow-400 font-semibold";
         }
       } catch(e) {
-        badge.textContent = "CANLI İSTEMCİ AĞI";
-        badge.className = "text-blue-400 font-semibold";
+        badge.textContent = "OFFLINE (Ulaşılamadı)";
+        badge.className = "text-red-400 font-semibold";
       }
     }
-
-    // Akıllı İstemci Tarafı Niyet Tespiti
-    function isCryptoTopic(text) {
-      const t = text.toLowerCase();
-      if (/0x[a-f0-9]{40}/i.test(text)) return true;
-      if (/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/.test(text) && (text.split(' ').length <= 2 || /(token|mint|sol|pump|raydium|rug|ca|coin)/i.test(t))) return true;
-      return /(kripto|crypto|bitcoin|btc|ethereum|eth|solana|meme coin|memecoin|altcoin|pump\.fun|raydium|rugcheck|honeypot|dexscreener|binance|doge|pepe)/i.test(t);
-    }
-
-    // %100 Dinamik Canlı Veri Motoru (Sıfır Statik/Simülasyon Metin)
 
     async function handleUserSubmit() {
       const input = document.getElementById('queryInput');
       const text = input.value.trim();
       if (!text) return;
+
       input.value = '';
+      input.style.height = 'auto';
 
       const welcome = document.getElementById('welcomeScreen');
       if (welcome) welcome.remove();
 
       const feed = document.getElementById('chatFeed');
 
-      // Kullanıcı Balonu
+      // Kullanıcı Mesajı
       const userBox = document.createElement('div');
       userBox.className = "max-w-3xl mx-auto flex justify-end";
       userBox.innerHTML = `
         <div class="bg-blue-600 text-white text-sm font-medium py-3 px-5 rounded-2xl rounded-tr-sm shadow-md leading-relaxed">
-          ${text}
+          ${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
         </div>
       `;
       feed.appendChild(userBox);
       feed.scrollTop = feed.scrollHeight;
-
-      const isCrypto = isCryptoTopic(text);
 
       // AI Yanıt Kutusu
       const aiBox = document.createElement('div');
@@ -322,10 +291,10 @@
         <div class="bg-dark-900 border border-dark-800 rounded-2xl p-5 shadow-lg">
           <div class="flex items-center gap-3 text-xs font-mono text-blue-400 mb-4 pb-3 border-b border-dark-800">
             <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping"></span>
-            <span id="pStatus">${isCrypto ? 'Kripto ve Token verileri taranıyor...' : 'Canlı internet ve kaynaklar taranıyor...'}</span>
+            <span id="pStatus">Yerel Mistral-24B motoru araçları çalıştırıyor...</span>
           </div>
-          <div id="aiTarget" class="prose max-w-none text-sm text-gray-300 leading-relaxed">
-            Veriler taranıyor ve doğrulanmış yanıt hazırlanıyor...
+          <div id="aiTarget" class="prose max-w-none text-sm text-gray-300 leading-relaxed font-sans">
+            İstek yerel Apple M4 GPU'suna iletiliyor ve fiziksel araçlar icra ediliyor...
           </div>
         </div>
       `;
@@ -335,10 +304,12 @@
       const aiTarget = aiBox.querySelector('#aiTarget');
       const pStatus = aiBox.querySelector('#pStatus');
 
-      // 1. Önce Doğrudan Yerel Arka Ucu (omni_chat_panel.py) Dene
+      // Doğrudan Yerel Arka Ucu (omni_chat_panel.py) Çağır
       let backendSuccess = false;
+      const targetEndpoint = getEndpoint();
+
       try {
-        const response = await fetch(getEndpoint() + '/api/chat', {
+        const response = await fetch(targetEndpoint + '/api/chat', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ message: text, history: chatHistory })
@@ -346,10 +317,21 @@
 
         if (response.ok) {
           const data = await response.json();
-          if (data.reply) {
+          if (data && (data.reply || data.execution_steps)) {
             backendSuccess = true;
-            pStatus.textContent = "Doğrulanmış Canlı Sentez Tamamlandı";
-            aiTarget.innerHTML = marked.parse(data.reply);
+            pStatus.textContent = "✅ Doğrulanmış Fiziksel İcra Tamamlandı";
+            
+            let htmlOut = "";
+            if (data.execution_steps && data.execution_steps.length > 0) {
+              htmlOut += "#### ⚙️ Çalıştırılan Fiziksel Araçlar:\n";
+              data.execution_steps.forEach(st => {
+                htmlOut += `- **Araç:** \`${st.tool}\` | **Parametre:** \`${JSON.stringify(st.args)}\`\n`;
+              });
+              htmlOut += "\n---\n\n";
+            }
+            htmlOut += data.reply || "İşlem başarıyla tamamlandı.";
+
+            aiTarget.innerHTML = marked.parse(htmlOut);
             chatHistory.push({ role: "user", content: text }, { role: "assistant", content: data.reply });
             feed.scrollTop = feed.scrollHeight;
           }
@@ -358,121 +340,23 @@
         backendSuccess = false;
       }
 
-      // 2. Arka Uç Bağlantısı Yoksa: Doğrudan İstemci Tarafı Evrensel Çözüm Motoru
+      // KESİN VE DÜRÜST HATA: SIFIR SAHTE SIMÜLASYON
       if (!backendSuccess) {
-        if (!isCrypto) {
-          pStatus.textContent = "Canlı Web & Bilgi Sentezi";
-          
-          let fullAnswer = "";
-
-          // A) Firma, Şirket, İletişim veya Şehir Sorgusu
-          if (/(izmir|istanbul|ankara|firma|şirket|iletişim|telefon|adres|rehber|sanayi|ticaret)/i.test(text)) {
-            fullAnswer = `### 📍 Doğrulanmış Harita ve Canlı Adres Dizinleri: "${text}"\n\n`;
-            // Nominatim Harita ve Adres Doğrulaması (Canlı Açık Veri)
-            try {
-              const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=5`);
-              if (nomRes.ok) {
-                const nomData = await nomRes.json();
-                if (nomData && nomData.length > 0) {
-                  nomData.forEach((item, idx) => {
-                    fullAnswer += `${idx+1}. **${item.display_name}**\n   - Koordinat: \`${item.lat}, ${item.lon}\`\n   - [Haritada Gör](https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lon}#map=16/${item.lat}/${item.lon})\n\n`;
-                  });
-                } else {
-                  fullAnswer += `Belirtilen konum/kurum için açık harita kaydı taranıyor...\n\n`;
-                }
-              }
-            } catch(e) {}
-          } 
-          // B) Genel Bilgi / Bilim / Teknoloji / Tarih / Her Konu
-          else {
-            try {
-              // 1. Wikipedia Arama (Tüm sorgu ile)
-              const cleanQuery = text.replace(/^(bana|lütfen|hakkında|nedir|nasıl|bilgi ver)\s+/gi, '').trim() || text;
-              const wRes = await fetch(`https://tr.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleanQuery)}&limit=4&namespace=0&format=json&origin=*`);
-              
-              let foundTitle = "";
-              let titles = [];
-              let urls = [];
-              if (wRes.ok) {
-                const wData = await wRes.json();
-                titles = wData[1] || [];
-                urls = wData[3] || [];
-                if (titles.length > 0) foundTitle = titles[0];
-              }
-
-              // 2. İlk başlığın detaylı özet metnini çek
-              let introSummary = "";
-              if (foundTitle) {
-                try {
-                  const extRes = await fetch(`https://tr.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(foundTitle)}&format=json&origin=*`);
-                  if (extRes.ok) {
-                    const extData = await extRes.json();
-                    const pages = extData.query?.pages || {};
-                    const pageId = Object.keys(pages)[0];
-                    if (pageId && pages[pageId]?.extract) {
-                      introSummary = pages[pageId].extract;
-                    }
-                  }
-                } catch(e) {}
-              }
-
-              fullAnswer = `### 🌐 Araştırma ve Çözüm Raporu: "${text}"\n\n`;
-              if (introSummary) {
-                fullAnswer += `#### 📖 Açıklama ve Genel Bakış:\n${introSummary}\n\n---\n\n`;
-              }
-
-              if (titles.length > 0) {
-                fullAnswer += `#### 📌 Doğrulanmış Kaynaklar ve İlgili Başlıklar:\n`;
-                titles.forEach((t, i) => {
-                  fullAnswer += `- **[${t}](${urls[i]})**: Doğrulanmış ansiklopedik açık bilgi ve referans.\n`;
-                });
-              } else {
-                fullAnswer += `Sorgunuz ("${text}") için doğrudan web bilgi dizini ve araştırma motoru aktiftir. Sorunuzu daha spesifik bir anahtar kelime veya kurum adı ile detaylandırabilirsiniz.`;
-              }
-            } catch(err) {
-              fullAnswer = `### 🌐 Araştırma Sonucu: "${text}"\n\nSorgu kaydedildi. Canlı bilgi taraması için sorgunuza özel kurum, kişi veya konu anahtar kelimelerini kullanabilirsiniz.`;
-            }
-          }
-
-          aiTarget.innerHTML = marked.parse(fullAnswer);
-          chatHistory.push({ role: "user", content: text }, { role: "assistant", content: fullAnswer });
-        } else {
-          // Kripto sorgusu
-          pStatus.textContent = "Kripto Radarı // RugCheck & DexScreener";
-          let out = [];
-
-          // Solana Mint kontrolü
-          const solMatch = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
-          if (solMatch) {
-            try {
-              const rRes = await fetch(`https://api.rugcheck.xyz/v1/tokens/${solMatch[0]}/report`);
-              if (rRes.ok) {
-                const d = await rRes.json();
-                out.push(`### ⚡ [SOLANA RUGCHECK RAPORU]\n- **Mint:** \`${solMatch[0]}\`\n- **Risk Skoru:** ${d.score || 0}\n- **Market Cap:** $${(d.marketCap||0).toLocaleString('en-US')}\n- **LP Kilit:** %${d.markets?.[0]?.lp?.lpLockedPct || 0}`);
-              }
-            } catch(e){}
-          }
-
-          // DexScreener kontrolü
-          try {
-            const dRes = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(text)}`);
-            if (dRes.ok) {
-              const dData = await dRes.json();
-              const p = (dData.pairs || [])[0];
-              if (p) {
-                out.push(`### 📊 [DEXSCREENER PİYASA]\n- **Çift:** ${p.baseToken?.symbol}/${p.quoteToken?.symbol} (${p.chainId})\n- **Fiyat:** $${p.priceUsd} | **24s Hacim:** $${parseFloat(p.volume?.h24||0).toLocaleString('en-US')}`);
-              }
-            }
-          } catch(e){}
-
-          const finalCrypto = out.length ? out.join('\n\n---\n\n') : `### 🪙 Kripto Sorgusu: "${text}" için canlı eşleşme bulunamadı.`;
-          aiTarget.innerHTML = marked.parse(finalCrypto);
-          chatHistory.push({ role: "user", content: text }, { role: "assistant", content: finalCrypto });
-        }
+        pStatus.textContent = "❌ Bağlantı Başarısız // Yerel Motor Çevrimdışı";
+        aiTarget.innerHTML = marked.parse(
+          `### ⚠️ [YEREL OMNICORE MOTORUNA BAĞLANILAMADI]\n\n` +
+          `Sistem simülasyon veya sahte veri üretmeyi reddetti. İsteğiniz yerel M4 GPU motoruna (\`${targetEndpoint}\`) iletilemedi.\n\n` +
+          `**Sorun Giderme:**\n` +
+          `1. Mac'inizde arka uç servisinin çalıştığını doğrulayın: \`python3 omni_chat_panel.py\`\n` +
+          `2. Tarayıcınız HTTPS (baris-ai.web.app) üzerinden yerel HTTP (127.0.0.1:5050) bağlantısını *Mixed Active Content* gerekçesiyle engelliyor olabilir.\n\n` +
+          `**Kesin Çözüm:** Arayüzü doğrudan yerel sunucu üzerinden açın:\n` +
+          `👉 **[http://127.0.0.1:5050](http://127.0.0.1:5050)**`
+        );
         feed.scrollTop = feed.scrollHeight;
       }
     }
 
+    initEndpointInput();
     checkBackendStatus();
   </script>
 </body>

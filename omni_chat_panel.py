@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 OMNICORE // LOKAL MISTRAL-24B + OTONOM FİZİKSEL İCRA MOTORU (SIFIR YÖNERGE - TAM İCRA)
-Barış AI (https://baris-ai.web.app) için tam entegre, yerel ve araç çağıran (Tool-Calling) arka uç.
-Kural: Kullanıcıya akıl ve yönerge vermek KESİNLİKLE YASAKTIR. Tüm kurulum ve komutlar doğrudan araçlarla icra edilir.
+Barış AI için tam entegre, yerel ve araç çağıran (Tool-Calling) arka uç ve yerel web paneli.
 """
 
 import asyncio
@@ -17,6 +16,7 @@ from typing import List, Dict, Any, Optional
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -24,6 +24,9 @@ from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine, g
 from browser_controller import LocalBrowserEngine
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+PUBLIC_DIR = WORKSPACE_ROOT / 'public'
+INDEX_HTML = PUBLIC_DIR / 'index.html'
+
 TOOLS_DIR = WORKSPACE_ROOT / 'tools'
 TOOLS_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / 'active_engines.json'
@@ -214,7 +217,6 @@ def tool_read_file(filepath: str) -> str:
 # FİZİKSEL MOTOR 3: BROWSER KONTROLCÜSÜ (CHROME, SAFARI, I2P, TOR)
 # ==============================================================================
 async def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False, use_i2p: bool = False) -> str:
-    """Yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak sayfayı açar, veriyi çeker ve kaydeder."""
     try:
         res = await LocalBrowserEngine.open_and_extract(
             url=url,
@@ -239,7 +241,6 @@ async def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor:
         return f"[Tarayıcı Çalıştırma Hatası]: {str(e)}"
 
 def tool_list_browser_sessions() -> str:
-    """Daha önce açılan ve kaydedilen yerel tarayıcı oturumlarını listeler."""
     try:
         sessions = LocalBrowserEngine.list_sessions()
         if not sessions:
@@ -292,7 +293,7 @@ async def engine_crypto_scanner(query: str) -> str:
     eth_match = re.search(r"0x[a-fA-F0-9]{40}", query)
 
     if sol_match and not eth_match:
-        mint = sol_match.group(0)
+        mint = sol_match.group(0).strip()
         async with get_masked_httpx_client(timeout=10.0) as client:
             try:
                 r = await client.get(f"https://api.rugcheck.xyz/v1/tokens/{mint}/report")
@@ -310,7 +311,7 @@ async def engine_crypto_scanner(query: str) -> str:
             except Exception:
                 pass
 
-    term = eth_match.group(0) if eth_match else (sol_match.group(0) if sol_match else query)
+    term = eth_match.group(0) if eth_match else (sol_match.group(0).strip() if sol_match else query)
     async with get_masked_httpx_client(timeout=10.0) as client:
         try:
             resp = await client.get(f"https://api.dexscreener.com/latest/dex/search?q={term}")
@@ -444,6 +445,8 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def root():
+    if INDEX_HTML.exists():
+        return FileResponse(str(INDEX_HTML))
     return {
         "service": "OmniCore Local Mistral-24B Engine",
         "status": "ONLINE",
