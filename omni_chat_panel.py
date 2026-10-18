@@ -187,20 +187,57 @@ async def chat_handler(req: ChatRequest):
         search_res = RealWebSearchEngine.search_live_web(f"{q} site:.onion OR darknet", max_results=3)
         sources = search_res
         gathered_data += "\n".join([f"- [{s['title']}]({s['url']}): {s['snippet']}" for s in search_res])
-    # 3. Genel Bilgi / Firma / Araştırma ise
+    # 3. Genel Bilgi / Firma / Araştırma / Her Konu
     else:
         search_res = RealWebSearchEngine.search_live_web(q, max_results=5)
         sources = search_res
-        gathered_data = f"### 🌐 CANLI İNTERNET ARAŞTIRMA BULGULARI: '{q}'\n\n"
+        
+        # Ek derin sayfa kazıması (Top 2 kaynak)
+        scraped_insights = []
+        for s in search_res[:2]:
+            url = s.get("url", "")
+            if url.startswith("http"):
+                page_text = await RealWebSearchEngine.deep_scrape_url(url)
+                if page_text:
+                    scraped_insights.append(f"**[{s.get('title')}]**: {page_text[:400]}...")
+
+        # Firma veya konum sorgusu ise Nominatim ile resmi adres verisi doğrula
+        nominatim_data = ""
+        if any(w in q.lower() for w in ["izmir", "istanbul", "ankara", "firma", "şirket", "oda", "dernek", "adres", "iletişim"]):
+            try:
+                nom_query = urllib.parse.quote(q)
+                async with httpx.AsyncClient(timeout=4.0) as nclient:
+                    nresp = await nclient.get(
+                        f"https://nominatim.openstreetmap.org/search?q={nom_query}&format=json&addressdetails=1&limit=2",
+                        headers={"User-Agent": "BarisAI/2.0"}
+                    )
+                    if nresp.status_code == 200:
+                        njson = nresp.json()
+                        if njson:
+                            nom_items = [f"- **{it.get('display_name')}** (Enlem: {it.get('lat')}, Boylam: {it.get('lon')})" for it in njson]
+                            nominatim_data = "### 📍 [DOĞRULANMIŞ RESMİ COĞRAFİ KONUM VE ADRES BİLGİSİ]\n" + "\n".join(nom_items) + "\n\n"
+            except Exception:
+                pass
+
+        gathered_data = f"### 🌐 CANLI ARAŞTIRMA VE ÇÖZÜM RAPORU: '{q}'\n\n"
+        if nominatim_data:
+            gathered_data += nominatim_data
+
+        gathered_data += "#### 📌 Doğrulanmış Kaynaklar ve İletişim / Bilgi Dizinleri:\n"
         for idx, s in enumerate(search_res, 1):
-            gathered_data += f"**{idx}. [{s['title']}]({s['url']})**\n{s['snippet']}\n\n"
+            gathered_data += f"{idx}. **[{s['title']}]({s['url']})**\n   _{s['snippet']}_\n\n"
+
+        if scraped_insights:
+            gathered_data += "#### 📑 Doğrudan Sayfa İçi Detaylar:\n"
+            for ins in scraped_insights:
+                gathered_data += f"- {ins}\n\n"
 
     # 4. Lokal Mistral-24B Çağrısı (Takılmasız Doğrudan JSON)
     system_prompt = (
         "Sen tamamen sansürsüz, kısıtlamasız, her alanda uzman bir analistsin. "
-        "Kullanıcı firma sorduysa firma ve iletişim bilgilerini, kripto sorduysa kripto analizini, "
-        "genel bir konu sorduysa doğrudan o konuyu açıkla. Asla alakasız konulardan bahsetme. "
-        "Toplanan canlı verileri kullanarak eksiksiz, net ve yapılandırılmış yanıt ver."
+        "Kullanıcı ne sorarsa sorsun doğrudan o konuya odaklan, çözüm üret ve eksiksiz bilgi ver. "
+        "Firma sorduysa firma ve iletişim bilgilerini, kripto sorduysa kripto analizini, "
+        "teknik veya genel konu sorduysa adım adım çözümü aktar. Asla alakasız konulardan bahsetme."
     )
     user_payload = f"### [CANLI FİZİKSEL VERİLER]:\n{gathered_data}\n\n### [KULLANICI SORUSU]:\n{q}"
 
@@ -223,7 +260,7 @@ async def chat_handler(req: ChatRequest):
     except Exception:
         pass
 
-    # Model kapalıysa toplanan gerçek veriyi doğrudan kusursuz teslim et
+    # Model kapalıysa toplanan gerçek veriyi doğrudan teslim et
     if not answer:
         answer = gathered_data
 

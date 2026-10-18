@@ -94,15 +94,16 @@ class RealWebSearchEngine:
         if not url.startswith("http"):
             return ""
         try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, verify=False) as client:
                 resp = await client.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 })
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
                     for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
                         tag.decompose()
-                    paragraphs = [p.get_text().strip() for p in soup.find_all("p") if len(p.get_text().strip()) > 30]
+                    paragraphs = [p.get_text().strip() for p in soup.find_all(["p", "div", "li"]) if len(p.get_text().strip()) > 35]
                     return " ".join(paragraphs[:6])[:1200]
         except Exception:
             pass

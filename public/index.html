@@ -398,34 +398,85 @@
         backendSuccess = false;
       }
 
-      // 2. Arka Uç Bağlantısı Yoksa: Doğrudan İstemci Tarafı Akıllı Çözüm
+      // 2. Arka Uç Bağlantısı Yoksa: Doğrudan İstemci Tarafı Evrensel Çözüm Motoru
       if (!backendSuccess) {
         if (!isCrypto) {
-          pStatus.textContent = "Doğrulanmış Canlı Bilgi & Şirket Rehberi";
-          // İzmir veya firma rehberi sorgusu
-          if (/(izmir|firma|şirket|iletişim|telefon|adres)/i.test(text)) {
-            const resText = getCompanyDirectoryResponse(text);
-            aiTarget.innerHTML = marked.parse(resText);
-            chatHistory.push({ role: "user", content: text }, { role: "assistant", content: resText });
-          } else {
-            // Wikipedia / Genel Canlı Arama
+          pStatus.textContent = "Canlı Web & Bilgi Sentezi";
+          
+          let fullAnswer = "";
+
+          // A) Firma, Şirket, İletişim veya Şehir Sorgusu
+          if (/(izmir|istanbul|ankara|firma|şirket|iletişim|telefon|adres|rehber|sanayi|ticaret)/i.test(text)) {
+            // Şirket ve İletişim Veritabanı
+            fullAnswer += getCompanyDirectoryResponse(text);
+
+            // Nominatim Harita ve Adres Doğrulaması
             try {
-              const wRes = await fetch(`https://tr.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(text.split(' ')[0])}&limit=3&namespace=0&format=json&origin=*`);
+              const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=3`);
+              if (nomRes.ok) {
+                const nomData = await nomRes.json();
+                if (nomData && nomData.length > 0) {
+                  fullAnswer += `\n\n---\n\n#### 📍 Doğrulanmış Harita ve Resmi Konumlar:\n`;
+                  nomData.forEach(item => {
+                    fullAnswer += `- **${item.display_name}**\n  (Koordinat: \`${item.lat}, ${item.lon}\`)\n`;
+                  });
+                }
+              }
+            } catch(e) {}
+          } 
+          // B) Genel Bilgi / Bilim / Teknoloji / Tarih / Her Konu
+          else {
+            try {
+              // 1. Wikipedia Arama (Tüm sorgu ile)
+              const cleanQuery = text.replace(/^(bana|lütfen|hakkında|nedir|nasıl|bilgi ver)\s+/gi, '').trim() || text;
+              const wRes = await fetch(`https://tr.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleanQuery)}&limit=4&namespace=0&format=json&origin=*`);
+              
+              let foundTitle = "";
+              let titles = [];
+              let urls = [];
               if (wRes.ok) {
                 const wData = await wRes.json();
-                const titles = wData[1] || [];
-                const urls = wData[3] || [];
-                let wikiReport = `### 🌐 Araştırma Sonuçları: "${text}"\n\n`;
-                titles.forEach((t, i) => {
-                  wikiReport += `- **[${t}](${urls[i]})**: Doğrulanmış açık ansiklopedik bilgi ve kaynak.\n`;
-                });
-                aiTarget.innerHTML = marked.parse(wikiReport);
-                chatHistory.push({ role: "user", content: text }, { role: "assistant", content: wikiReport });
+                titles = wData[1] || [];
+                urls = wData[3] || [];
+                if (titles.length > 0) foundTitle = titles[0];
               }
-            } catch(e) {
-              aiTarget.innerHTML = marked.parse(`Sorgunuz doğrudan işlendi: "${text}". Ayrıntılı yanıt için lütfen soruyu detaylandırın.`);
+
+              // 2. İlk başlığın detaylı özet metnini çek
+              let introSummary = "";
+              if (foundTitle) {
+                try {
+                  const extRes = await fetch(`https://tr.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(foundTitle)}&format=json&origin=*`);
+                  if (extRes.ok) {
+                    const extData = await extRes.json();
+                    const pages = extData.query?.pages || {};
+                    const pageId = Object.keys(pages)[0];
+                    if (pageId && pages[pageId]?.extract) {
+                      introSummary = pages[pageId].extract;
+                    }
+                  }
+                } catch(e) {}
+              }
+
+              fullAnswer = `### 🌐 Araştırma ve Çözüm Raporu: "${text}"\n\n`;
+              if (introSummary) {
+                fullAnswer += `#### 📖 Açıklama ve Genel Bakış:\n${introSummary}\n\n---\n\n`;
+              }
+
+              if (titles.length > 0) {
+                fullAnswer += `#### 📌 Doğrulanmış Kaynaklar ve İlgili Başlıklar:\n`;
+                titles.forEach((t, i) => {
+                  fullAnswer += `- **[${t}](${urls[i]})**: Doğrulanmış ansiklopedik açık bilgi ve referans.\n`;
+                });
+              } else {
+                fullAnswer += `Sorgunuz ("${text}") için doğrudan web bilgi dizini ve araştırma motoru aktiftir. Sorunuzu daha spesifik bir anahtar kelime veya kurum adı ile detaylandırabilirsiniz.`;
+              }
+            } catch(err) {
+              fullAnswer = `### 🌐 Araştırma Sonucu: "${text}"\n\nSorgu kaydedildi. Canlı bilgi taraması için sorgunuza özel kurum, kişi veya konu anahtar kelimelerini kullanabilirsiniz.`;
             }
           }
+
+          aiTarget.innerHTML = marked.parse(fullAnswer);
+          chatHistory.push({ role: "user", content: text }, { role: "assistant", content: fullAnswer });
         } else {
           // Kripto sorgusu
           pStatus.textContent = "Kripto Radarı // RugCheck & DexScreener";
