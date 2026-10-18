@@ -273,6 +273,59 @@
     }
     .char-counter.warning { color: var(--orange); }
     .char-counter.danger { color: var(--red); font-weight: bold; }
+    /* --- JARVIS NEON AUDIO EQUALIZER --- */
+    .visualizer-container {
+      max-width: 960px;
+      margin: 0 auto 6px auto;
+      background: #0d1117;
+      border: 1px solid #1f2937;
+      border-radius: 6px;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.08);
+      transition: all 0.3s;
+      cursor: pointer;
+      user-select: none;
+    }
+    .visualizer-container:hover {
+      border-color: #06b6d4;
+      background: #0f172a;
+    }
+    .visualizer-container.active {
+      border-color: #06b6d4;
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.35);
+      background: #0b1329;
+    }
+    .visualizer-canvas {
+      flex: 1;
+      height: 38px;
+      width: 100%;
+      border-radius: 4px;
+      background: #07090e;
+    }
+    .visualizer-meta {
+      font-size: 11px;
+      font-family: var(--mono);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 150px;
+      text-align: right;
+    }
+    .visualizer-status {
+      font-weight: 600;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .visualizer-db {
+      color: #06b6d4;
+      font-size: 10px;
+    }
   </style>
 </head>
 <body>
@@ -306,6 +359,14 @@
 
   <footer>
     <div id="attachmentTray" class="attachment-tray"></div>
+    <div id="visualizerContainer" class="visualizer-container" onclick="enableAudioAndListen()" title="Canlı Renkli Ekolayzırı ve Sesli Dinlemeyi Başlatmak / Açmak İçin Tıklayın">
+      <div style="font-size:16px; color:#06b6d4;" title="Canlı Ses Dalga Analizi">⚡</div>
+      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="38"></canvas>
+      <div class="visualizer-meta">
+        <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#64748b;">⚫</span> <span id="vStatusText">Mikrofon Kapalı (Tıklayın)</span></div>
+        <div id="visualizerDb" class="visualizer-db">Ekolayzırı Başlatmak İçin Dokunun</div>
+      </div>
+    </div>
     <div class="input-box">
       <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
       <button type="button" class="tool-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle (PDF, Word, Görsel, Kod)">📎</button>
@@ -487,11 +548,201 @@
       }
     }
 
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
+    // --- JARVIS CANLI NEON SES EKOLAYZIRI (WEB AUDIO API & FFT) ---
+    const visualizerCanvas = document.getElementById('audioVisualizer');
+    const visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
+    const vContainer = document.getElementById('visualizerContainer');
+    const vStatusDot = document.getElementById('vStatusDot');
+    const vStatusText = document.getElementById('vStatusText');
+    const vDb = document.getElementById('visualizerDb');
+
+    let audioContext = null;
+    let analyserNode = null;
+    let micStream = null;
+    let freqData = null;
+    let isAudioEngineStarted = false;
+
+    // Tepe noktası yerçekimi (Peak hold) dizisi
+    const BAR_COUNT = 32;
+    let peakValues = new Array(BAR_COUNT).fill(0);
+    let idleAngle = 0;
+
+    // Fütüristik İki Tonlu Uyanma Chime (880Hz -> 1320Hz)
+    function playWakeChime() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = audioContext || new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const now = ctx.currentTime;
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.12);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      } catch(e) {}
     }
+
+    async function initAudioEngine() {
+      if (isAudioEngineStarted && audioContext && audioContext.state === 'running') return true;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+          if (vStatusText) vStatusText.textContent = 'Tarayıcı Ses API Desteklemiyor';
+          return false;
+        }
+        if (!audioContext) {
+          audioContext = new AudioCtx();
+        }
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        if (!micStream) {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: false,
+              autoGainControl: true
+            }
+          });
+        }
+
+        const source = audioContext.createMediaStreamSource(micStream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 64;
+        analyserNode.smoothingTimeConstant = 0.72;
+        source.connect(analyserNode);
+
+        freqData = new Uint8Array(analyserNode.frequencyBinCount);
+        isAudioEngineStarted = true;
+
+        if (vStatusDot) vStatusDot.textContent = '🟢';
+        if (vStatusText) {
+          vStatusText.textContent = 'Canlı Ekolayzır & Jarvis Aktif';
+          vStatusText.style.color = '#10b981';
+        }
+        if (vDb) vDb.textContent = 'Mikrofon odadaki sesleri dinliyor';
+        return true;
+      } catch (err) {
+        console.warn('Web Audio API başlatma hatası:', err);
+        if (vStatusDot) vStatusDot.textContent = '🔴';
+        if (vStatusText) {
+          vStatusText.textContent = 'Mikrofon İzni Gerekli (Tıklayın)';
+          vStatusText.style.color = '#f85149';
+        }
+        if (vDb) vDb.textContent = 'Tarayıcıda mikrofona izin verin';
+        return false;
+      }
+    }
+
+    function renderVisualizer() {
+      if (!visualizerCtx || !visualizerCanvas) return;
+      requestAnimationFrame(renderVisualizer);
+
+      const width = visualizerCanvas.width;
+      const height = visualizerCanvas.height;
+
+      visualizerCtx.clearRect(0, 0, width, height);
+
+      // Koyu HUD Zemin
+      visualizerCtx.fillStyle = 'rgba(7, 9, 14, 0.96)';
+      visualizerCtx.fillRect(0, 0, width, height);
+
+      const barCount = BAR_COUNT;
+      const barWidth = Math.floor(width / barCount) - 3;
+      let x = 4;
+      let sum = 0;
+
+      // DURUM 1: Mikrofon henüz başlatılmadıysa canlı Fütüristik Neon Nabız Dalgası çiz
+      if (!isAudioEngineStarted || !analyserNode || !freqData) {
+        idleAngle += 0.05;
+        for (let i = 0; i < barCount; i++) {
+          const waveHeight = Math.sin(idleAngle + (i * 0.25)) * 6 + 10;
+          const grad = visualizerCtx.createLinearGradient(0, height - waveHeight, 0, height);
+          grad.addColorStop(0, '#06b6d4');
+          grad.addColorStop(1, '#1e293b');
+          visualizerCtx.fillStyle = grad;
+          visualizerCtx.fillRect(x, height - waveHeight - 2, barWidth, waveHeight);
+          x += barWidth + 3;
+        }
+        return;
+      }
+
+      // DURUM 2: Mikrofon Aktif ve Gerçek Frekans Verisi Geliyor
+      analyserNode.getByteFrequencyData(freqData);
+      const bufferLength = analyserNode.frequencyBinCount;
+
+      for (let i = 0; i < barCount; i++) {
+        const dataIndex = Math.min(bufferLength - 1, Math.floor(i * (bufferLength / barCount)));
+        const rawVal = freqData[dataIndex] || 0;
+        sum += rawVal;
+
+        const val = rawVal;
+        const barHeight = Math.max(3, (val / 255) * (height - 6));
+
+        // Peak Hold & Gravity
+        if (barHeight >= peakValues[i]) {
+          peakValues[i] = barHeight;
+        } else {
+          peakValues[i] = Math.max(3, peakValues[i] - 0.7);
+        }
+
+        // Dinamik Çok Katmanlı Neon Gradient
+        const grad = visualizerCtx.createLinearGradient(0, height - barHeight, 0, height);
+        if (val > 140) {
+          grad.addColorStop(0, '#f43f5e'); // Neon Pembe/Kırmızı
+          grad.addColorStop(0.4, '#a855f7'); // Neon Mor
+          grad.addColorStop(1, '#06b6d4'); // Cyan
+        } else if (val > 60) {
+          grad.addColorStop(0, '#06b6d4'); // Neon Cyan
+          grad.addColorStop(0.6, '#3b82f6'); // Mavi
+          grad.addColorStop(1, '#10b981'); // Zümrüt Yeşili
+        } else {
+          grad.addColorStop(0, '#38bdf8'); // Açık Mavi
+          grad.addColorStop(1, '#0f172a'); // Koyu Zemin
+        }
+
+        visualizerCtx.fillStyle = grad;
+        visualizerCtx.fillRect(x, height - barHeight - 2, barWidth, barHeight);
+
+        // Zıplayan Tepe Noktası (Peak Cap)
+        visualizerCtx.fillStyle = val > 120 ? '#ffffff' : (val > 50 ? '#67e8f9' : '#475569');
+        visualizerCtx.fillRect(x, height - peakValues[i] - 4, barWidth, 1.8);
+
+        x += barWidth + 3;
+      }
+
+      const avg = sum / barCount;
+      const pct = Math.min(100, Math.round((avg / 95) * 100));
+
+      if (avg > 14) {
+        if (vContainer) vContainer.classList.add('active');
+        if (vStatusDot) vStatusDot.textContent = '🟢';
+        if (vStatusText) {
+          vStatusText.textContent = '⚡ Canlı Ses Titreşimi: Algılanıyor';
+          vStatusText.style.color = '#06b6d4';
+        }
+        if (vDb) vDb.textContent = "Şiddet: %" + pct + " (Jarvis dinliyor)";
+      } else {
+        if (vContainer) vContainer.classList.remove('active');
+        if (vStatusDot) vStatusDot.textContent = alwaysListen ? '🟡' : '⚫';
+        if (vStatusText) {
+          vStatusText.textContent = alwaysListen ? 'Jarvis Uyanık (Oda Sessiz)' : 'Mikrofon Pasif';
+          vStatusText.style.color = '#94a3b8';
+        }
+        if (vDb) vDb.textContent = alwaysListen ? '"Jarvis..." sesinizi bekliyor' : 'Dinleme kapalı';
+      }
+    }
+
+    // Sayfa açılır açılmaz render döngüsünü başlat
+    requestAnimationFrame(renderVisualizer);
 
     // --- MİKROFON İLE KESİNTİSİZ HANDS-FREE JARVIS DİNLEME MİMARİSİ ---
     let recognition = null;
@@ -499,6 +750,8 @@
     let alwaysListen = localStorage.getItem('always_listen') !== 'false'; // Varsayılan olarak AÇIK
     let isSpeakingNow = false;
     let restartTimer = null;
+    let wakeChimedForTurn = false;
+    let speechDebounceTimer = null;
 
     function updateWakeWordBtn() {
       const btn = document.getElementById('wakeWordToggleBtn');
@@ -515,7 +768,7 @@
       localStorage.setItem('always_listen', alwaysListen ? 'true' : 'false');
       updateWakeWordBtn();
       if (alwaysListen) {
-        startContinuousListening();
+        enableAudioAndListen();
       } else {
         stopContinuousListening();
       }
@@ -530,9 +783,11 @@
 
       recognition.onstart = () => {
         isListening = true;
+        wakeChimedForTurn = false;
         if (micBtn) {
           micBtn.classList.add('listening');
           micBtn.textContent = '🔴';
+          micBtn.title = 'Jarvis sizi dinliyor... Konuşun veya tıklayıp kapatın';
         }
         input.placeholder = alwaysListen
           ? '🎯 Jarvis uyanık! "Jarvis..." diye seslendiğiniz anda dinler...'
@@ -550,26 +805,46 @@
           }
         }
         const text = (finalTranscript || interim).trim();
-        if (!text || text.length < 3) return;
+        if (!text || text.length < 2) return;
 
         const lower = text.toLowerCase();
-        const hasWakeWord = lower.includes('jarvis') || lower.includes('jarjis') || lower.includes('barış') || lower.includes('baris') || lower.includes('patron');
+        const wakeWords = ['jarvis', 'jarjis', 'carvis', 'yarvis', 'barış', 'baris', 'patron', 'hey jarvis', 'merhaba jarvis', 'alo jarvis'];
+        const hasWakeWord = wakeWords.some(w => lower.includes(w));
 
         if (alwaysListen) {
           if (hasWakeWord) {
+            // Uyanma Chime'ı
+            if (!wakeChimedForTurn) {
+              playWakeChime();
+              wakeChimedForTurn = true;
+            }
+            if (vContainer) vContainer.classList.add('active');
+            if (vStatusDot) vStatusDot.textContent = '🔵';
+            if (vStatusText) {
+              vStatusText.textContent = '🎯 JARVIS DEVREDE!';
+              vStatusText.style.color = '#38bdf8';
+            }
             input.value = text;
             input.dispatchEvent(new Event('input'));
-            input.placeholder = '⚡ Jarvis emri aldı, işleniyor...';
-            // Geçici olarak mikrofonu durdurup komutu gönder
-            try { recognition.stop(); } catch(e){}
-            setTimeout(() => sendAction(), 200);
+            input.placeholder = '⚡ Jarvis emri dinliyor... Cümlenizi tamamlayın...';
+
+            clearTimeout(speechDebounceTimer);
+            const waitTime = finalTranscript ? 250 : 650;
+            speechDebounceTimer = setTimeout(() => {
+              wakeChimedForTurn = false;
+              try { recognition.stop(); } catch(e){}
+              sendAction();
+            }, waitTime);
           } else {
             input.placeholder = '🛡️ Çevre sesi elendi ("Jarvis" bekleniyor)...';
           }
         } else {
           input.value = text;
           input.dispatchEvent(new Event('input'));
-          setTimeout(() => sendAction(), 300);
+          clearTimeout(speechDebounceTimer);
+          speechDebounceTimer = setTimeout(() => {
+            sendAction();
+          }, 500);
         }
       };
 
@@ -581,6 +856,7 @@
 
       recognition.onend = () => {
         isListening = false;
+        wakeChimedForTurn = false;
         if (micBtn) {
           micBtn.classList.remove('listening');
           micBtn.textContent = '🎙️';
@@ -592,7 +868,7 @@
             try {
               recognition.start();
             } catch(e) {}
-          }, 400);
+          }, 350);
         }
       };
     } else {
@@ -602,7 +878,8 @@
       }
     }
 
-    function startContinuousListening() {
+    async function startContinuousListening() {
+      await initAudioEngine();
       if (!recognition) return;
       try {
         recognition.start();
@@ -614,6 +891,7 @@
     function stopContinuousListening() {
       if (!recognition) return;
       clearTimeout(restartTimer);
+      clearTimeout(speechDebounceTimer);
       try {
         recognition.stop();
       } catch(e) {}
@@ -624,7 +902,17 @@
       input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et... (Enter ile gönder)';
     }
 
-    function toggleMic() {
+    async function enableAudioAndListen() {
+      const ok = await initAudioEngine();
+      if (ok && alwaysListen) {
+        startContinuousListening();
+      } else if (ok && !alwaysListen) {
+        startContinuousListening();
+      }
+    }
+
+    async function toggleMic() {
+      await initAudioEngine();
       if (!recognition) {
         alert('Tarayıcınız ses tanıma (Web Speech API) özelliğini desteklemiyor.');
         return;
@@ -636,14 +924,14 @@
       }
     }
 
-    // Sayfaya ilk kullanıcı etkileşiminde mikrofonu otomatik uyandır
-    document.addEventListener('click', () => {
-      if (alwaysListen && !isListening && !isSpeakingNow && recognition) {
-        try { recognition.start(); } catch(e) {}
-      }
-    }, { once: true });
+    // Sayfaya ilk kullanıcı etkileşiminde (tıklama, dokunma, tuş) mikrofonu ve ekolayzırı otomatik uyandır
+    ['pointerdown', 'keydown', 'touchstart'].forEach(evt => {
+      document.addEventListener(evt, () => {
+        enableAudioAndListen();
+      }, { once: true });
+    });
 
-    function quickFill(txt) {
+        function quickFill(txt) {
       input.value = txt;
       input.dispatchEvent(new Event('input'));
       input.focus();
