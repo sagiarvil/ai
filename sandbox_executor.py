@@ -92,6 +92,7 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
     (subpath "/dev")
 )
 (deny file-write* (subpath "{WORKSPACE_ROOT}"))
+(deny file-write* (subpath "{home}/omnicore-auditor"))
 (deny file-write* (subpath "{home}/.ssh"))
 (deny file-write* (subpath "{home}/.aws"))
 (deny file-read* (subpath "{WORKSPACE_ROOT}/.env"))

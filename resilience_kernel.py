@@ -180,6 +180,9 @@ class OmniCoreToolAdapters:
                 return False
             if target.name.startswith(".env") or ".git" in target.parts:
                 return False
+            # Merkezi Auditor ve kabul kriterleri dokunulamaz
+            if "omnicore-auditor" in str(target) or str(target).startswith("/Users/macair1/omnicore-auditor"):
+                return False
             return True
 
         async def action(args: dict[str, Any]) -> ToolOutcome:

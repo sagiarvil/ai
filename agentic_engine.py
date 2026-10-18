@@ -320,14 +320,50 @@ class AutonomousExecutionEngine:
         # Tüm adımlar bağımsız başarıyla bitti mi?
         all_passed = all(ev.get("success", False) for ev in engine.evidences)
         if all_passed and execution_steps:
-            engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla doğrulandı.")
+            # GERÇEK OMNICORE MERKEZİ AUDIT ENTEGRASYONU (Otomatik Denetim Kapısı)
+            audit_meta = None
+            try:
+                autotrigger_bin = Path("/Users/macair1/omnicore-auditor/autotrigger.py")
+                if autotrigger_bin.is_file():
+                    audit_p = subprocess.run(
+                        [sys.executable, str(autotrigger_bin), "--project", "ai", "--trigger", "task_complete", "--task-id", engine.task_id],
+                        capture_output=True, text=True, timeout=90
+                    )
+                    if audit_p.returncode == 0:
+                        try:
+                            audit_meta = json.loads(audit_p.stdout)
+                            engine.evidences.append({
+                                "type": "central_audit_gate",
+                                "success": True,
+                                "audit_id": audit_meta.get("audit_id"),
+                                "status": audit_meta.get("status"),
+                                "report_file": audit_meta.get("report_file")
+                            })
+                        except Exception:
+                            pass
+                    else:
+                        engine.transition_to(TaskState.BLOCKED, "Merkezi OmniCore denetim kapısı geçilemedi.")
+                        return {
+                            "task_id": engine.task_id,
+                            "status": TaskState.BLOCKED.value,
+                            "reply": f"Görev icra edildi fakat merkezi denetim onaylamadı:\n{audit_p.stderr}",
+                            "execution_steps": execution_steps,
+                            "evidences": engine.evidences,
+                            "verified": False,
+                            "audit_status": "BLOCKED"
+                        }
+            except Exception as e:
+                engine.evidences.append({"type": "central_audit_gate", "success": False, "error": str(e)})
+
+            engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla ve merkezi denetimle doğrulandı.")
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.VERIFIED.value,
                 "reply": final_reply or "Görev tüm adımlarıyla başarıyla icra edildi ve doğrulandı.",
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
-                "verified": True
+                "verified": True,
+                "audit_meta": audit_meta
             }
         else:
             engine.transition_to(TaskState.PARTIAL, "Bazı adımlar hata verdi veya kısmen tamamlandı.")
