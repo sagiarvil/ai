@@ -180,7 +180,7 @@ class InstallerStaticTests(unittest.TestCase):
             (local_git / "requirements.txt").write_text("# clean\n", encoding="utf-8")
 
             # Git repo başlat
-            os.system(f"git -C '{local_git}' init -q && git -C '{local_git}' add . && git -C '{local_git}' commit -qm 'init'")
+            os.system(f"git -C '{local_git}' init -q && git -C '{local_git}' config user.email 'ci@test.local' && git -C '{local_git}' config user.name 'CI' && git -C '{local_git}' add . && git -C '{local_git}' commit -qm 'init'")
             rev = os.popen(f"git -C '{local_git}' rev-parse HEAD").read().strip()
             self.assertEqual(len(rev), 40)
 
