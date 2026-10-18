@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Barış AI // Ultra-Fast Engineering Console & Jarvis</title>
+  <title>AI Engineering Studio</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="shortcut icon" href="/favicon.ico">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -18,7 +18,7 @@
       --pill-bg: #ffffff;
       --pill-border: #dfe3e7;
       --pill-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-      --msg-user-bg: #e9eef6;
+      --msg-user-bg: #f0f4f9;
       --accent: #1a73e8;
       --sans: "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
@@ -53,10 +53,16 @@
       letter-spacing: -0.2px;
     }
     .brand-logo {
-      width: 28px;
-      height: 28px;
+      height: 46px;
+      width: auto;
+      max-height: 48px;
       object-fit: contain;
-      border-radius: 4px;
+      display: block;
+      cursor: pointer;
+      transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .brand-logo:hover {
+      transform: scale(1.06);
     }
     .header-actions {
       display: flex;
@@ -109,7 +115,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 0 20px 60px 20px;
+      padding: 0 20px 40px 20px;
       width: 100%;
       max-width: 820px;
       margin: 0 auto;
@@ -123,16 +129,16 @@
       margin-bottom: 28px;
       text-align: center;
     }
-    /* CHAT BUBBLES */
+    /* CHAT BUBBLES - GEMINI TARZI */
     .msg-user {
       align-self: flex-end;
       background: var(--msg-user-bg);
       color: var(--text);
-      padding: 12px 18px;
-      border-radius: 22px 22px 4px 22px;
-      font-size: 15px;
-      line-height: 1.5;
-      max-width: 78%;
+      padding: 14px 20px;
+      border-radius: 22px;
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 68%;
       white-space: pre-wrap;
       word-break: break-word;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -155,6 +161,24 @@
       color: var(--accent);
       margin-bottom: 6px;
     }
+    .msg-ai-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 8px 0;
+    }
+    .loading-sparkle {
+      font-size: 18px;
+      animation: spin-pulse 1.8s infinite linear;
+      display: inline-block;
+    }
+    @keyframes spin-pulse {
+      0% { transform: rotate(0deg) scale(0.9); opacity: 0.7; }
+      50% { transform: rotate(180deg) scale(1.1); opacity: 1; }
+      100% { transform: rotate(360deg) scale(0.9); opacity: 0.7; }
+    }
     .msg-ai pre {
       background: #1e1f20;
       color: #e3e3e3;
@@ -173,33 +197,69 @@
     .msg-ai pre code {
       color: #e3e3e3;
     }
-    /* GEMINI GİRİŞ KAPSÜLÜ */
+    /* GEMINI ELASTIC INPUT PILL (BÜYÜYEN KAPSÜL) */
     .pill-container {
       width: 100%;
-      padding: 10px 20px 24px 20px;
+      padding: 10px 20px 20px 20px;
       transition: all 0.3s ease;
     }
     .gemini-pill {
       width: 100%;
       background: var(--pill-bg);
       border: 1px solid var(--pill-border);
-      border-radius: 32px;
+      border-radius: 28px;
       box-shadow: var(--pill-shadow);
-      padding: 8px 16px;
+      padding: 12px 16px 10px 16px;
       display: flex;
-      align-items: center;
-      gap: 12px;
-      transition: all 0.2s ease;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     .gemini-pill:focus-within {
       box-shadow: 0 4px 28px rgba(26, 115, 232, 0.12);
       border-color: #1a73e8;
     }
+    .pill-input-row {
+      width: 100%;
+      display: flex;
+      padding: 2px 4px;
+    }
+    .pill-textarea {
+      width: 100%;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: var(--sans);
+      font-size: 15px;
+      color: var(--text);
+      resize: none;
+      height: 28px;
+      min-height: 28px;
+      max-height: 240px;
+      line-height: 1.5;
+      padding: 0;
+      overflow-y: auto;
+    }
+    .pill-textarea::placeholder {
+      color: var(--text-muted);
+    }
+    .pill-bottom-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding-top: 4px;
+    }
+    .pill-bottom-left, .pill-bottom-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .pill-btn {
       background: transparent;
       border: none;
-      width: 36px;
-      height: 36px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -212,27 +272,39 @@
     .pill-btn:hover {
       background: #f0f4f9;
     }
-    .pill-textarea {
-      flex: 1;
+    .round-send-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #1a73e8;
+      color: #ffffff;
       border: none;
-      outline: none;
-      background: transparent;
-      font-family: var(--sans);
-      font-size: 16px;
-      color: var(--text);
-      resize: none;
-      height: 28px;
-      max-height: 120px;
-      line-height: 28px;
-      padding: 0;
-    }
-    .pill-textarea::placeholder {
-      color: var(--text-muted);
-    }
-    .pill-right {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .round-send-btn:hover {
+      background: #1557b0;
+    }
+    .round-stop-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #1f1f1f;
+      color: #ffffff;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .round-stop-btn:hover {
+      background: #333333;
     }
     .mic-btn.listening {
       background: #fce8e6;
@@ -244,16 +316,8 @@
       70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(217, 48, 37, 0); }
       100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(217, 48, 37, 0); }
     }
-    .send-icon-btn {
-      color: var(--accent);
-      font-size: 18px;
-      font-weight: bold;
-    }
-    .send-icon-btn:hover {
-      background: #e8f0fe;
-    }
     .attachment-tray {
-      margin: 0 auto 8px auto;
+      margin: 0 auto 6px auto;
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
@@ -278,14 +342,19 @@
     .attachment-chip .remove-btn:hover {
       color: #d93025;
     }
+    .gemini-disclaimer {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      padding-top: 6px;
+    }
   </style>
 </head>
 <body>
 
   <header>
-    <div class="brand-title">
-      <img src="/b_logo.png" alt="Barış AI Logo" class="brand-logo">
-      <span>Barış AI</span>
+    <div class="brand-title" style="padding: 2px 0;">
+      <img src="/b_logo.png" alt="Logo" class="brand-logo">
     </div>
     <div class="header-actions">
       <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#fce8e6; border-color:#fad2cf; color:#d93025; font-weight:600;" title="Jarvis sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
@@ -295,11 +364,11 @@
   </header>
 
   <div id="mainApp">
-    <!-- BAŞLANGIÇTA ORTADA DURAN BLOK (Kullanıcının işaretlediği seviye) -->
+    <!-- BAŞLANGIÇTA ORTADA DURAN GEMINI KARTI -->
     <div id="heroCenterBox" class="hero-center-box">
       <h1 class="hero-title">Nereden başlayalım?</h1>
       <div id="centerPillHolder" style="width:100%;">
-        <!-- Giriş Kapsülü buraya yerleşir -->
+        <!-- Giriş Kapsülü buraya bağlanır -->
       </div>
     </div>
 
@@ -310,19 +379,26 @@
     <div id="bottomPillHolder" class="pill-container" style="display:none;"></div>
   </div>
 
-  <!-- PAYLAŞILAN GEMINI GİRİŞ KAPSÜLÜ -->
+  <!-- PAYLAŞILAN GEMINI ELASTIK GİRİŞ KAPSÜLÜ -->
   <div id="pillElement" style="width:100%;">
     <div id="attachmentTray" class="attachment-tray"></div>
-    <div class="gemini-pill">
-      <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
-      <button type="button" class="pill-btn plus-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle">+</button>
-      <textarea id="promptInput" class="pill-textarea" rows="1" maxlength="5000" placeholder="Barış AI'a sorun..." autofocus></textarea>
-      <div class="pill-right">
-        <button class="pill-btn mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş">🎙️</button>
-        <button class="pill-btn send-icon-btn" id="sendBtn" onclick="sendAction()" title="Gönder">➔</button>
-        <button class="pill-btn stop-icon-btn" id="stopBtn" onclick="stopAction()" style="display:none; color:#d93025;" title="Durdur">⏹</button>
+    <div class="gemini-pill" id="geminiPill">
+      <div class="pill-input-row">
+        <textarea id="promptInput" class="pill-textarea" rows="1" maxlength="5000" placeholder="Bir şeyler sorun veya talimat verin..." autofocus></textarea>
+      </div>
+      <div class="pill-bottom-bar">
+        <div class="pill-bottom-left">
+          <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
+          <button type="button" class="pill-btn plus-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle">+</button>
+        </div>
+        <div class="pill-bottom-right">
+          <button class="pill-btn mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş">🎙️</button>
+          <button class="round-send-btn" id="sendBtn" onclick="sendAction()" title="Gönder">➔</button>
+          <button class="round-stop-btn" id="stopBtn" onclick="stopAction()" style="display:none;" title="Durdur">■</button>
+        </div>
       </div>
     </div>
+    <div class="gemini-disclaimer">Yapay zeka hata yapabilir, önemli bilgileri kontrol edin.</div>
   </div>
 
   <script>
@@ -830,7 +906,7 @@
       };
 
       recognition.onerror = (event) => {
-        if (event.error !== 'no-speech') {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
           console.warn('SpeechRec hatası:', event.error);
         }
       };

@@ -29,7 +29,9 @@ LOCK = threading.RLock()
 
 def parse_github(url: str) -> tuple[str, str, str]:
     """Only github.com owner/repo URLs; disallow query, fragments, credentials."""
-    u = urlparse(url.strip())
+    strip_chars = ' \t\n\r()[]<>\'\".,;:)'
+    clean_u = (url or '').strip(strip_chars)
+    u = urlparse(clean_u)
     if (u.scheme != 'https' or u.hostname != 'github.com' or u.username or
             u.password or u.query or u.fragment or u.params or u.port is not None):
         raise ValueError('Only plain https://github.com/OWNER/REPO URLs are allowed')
@@ -201,11 +203,60 @@ def install_repo(url: str) -> dict[str, Any]:
             'seatbelt_applied': clone.get('seatbelt_applied', False)
         })
         if not clone.get('success') or not (source / '.git').is_dir():
-            fail_reason = clone_stderr if clone_stderr else 'Clone failed'
-            return _fail('CLONE', fail_reason, evidence, job_id,
-                         exit_code=clone.get('exit_code', -1),
-                         target_path=str(source),
-                         seatbelt_applied=clone.get('seatbelt_applied', False))
+            # Eğer repo bulunamadıysa (silinmiş/askıya alınmış repo), akıllı gevşetmeli aramayla canlı alternatif ara ve kur
+            recovered = False
+            if any(err in clone_stderr.lower() for err in ['not found', 'fatal:', 'could not read']):
+                # CamelCase ve bileşik kelimeleri ayır (örn: Allwalletdrainer -> All wallet drainer)
+                tokens = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|\d+', name)
+                if not tokens:
+                    tokens = [w for w in name.replace('-', ' ').replace('_', ' ').split() if w]
+                words = [w for w in tokens if not w.isdigit() and len(w) >= 3]
+
+                queries = [' '.join(tokens)]
+                if len(words) >= 2:
+                    queries.append(' '.join(words[:2]))
+                if words:
+                    queries.append(words[0])
+
+                alt_url = None
+                for q in queries:
+                    try:
+                        gh_p = subprocess.run(['gh', 'search', 'repos', q, '--sort', 'stars', '--limit', '3', '--json', 'url'], capture_output=True, text=True, timeout=10)
+                        if gh_p.returncode == 0 and gh_p.stdout.strip():
+                            import json as _json
+                            items = _json.loads(gh_p.stdout)
+                            if items and items[0].get('url'):
+                                alt_url = items[0]['url']
+                                break
+                    except Exception:
+                        pass
+
+                if alt_url and alt_url != safe_url:
+                    shutil.rmtree(source, ignore_errors=True)
+                    try:
+                        alt_owner, alt_name, alt_safe = parse_github(alt_url)
+                        clone_alt = run(f"git clone --depth 1 --no-recurse-submodules '{alt_safe}' '{source}'", task_dir, 180, network=True)
+                        if clone_alt.get('success') and (source / '.git').is_dir():
+                            owner, name, safe_url = alt_owner, alt_name, alt_safe
+                            final = (DEPLOYED / f'{owner}--{name}').resolve()
+                            evidence.append({
+                                'stage': 'CLONE_RECOVERED',
+                                'exit_code': 0,
+                                'original_url': url,
+                                'active_alternative': alt_url,
+                                'target_path': str(source)
+                            })
+                            clone = clone_alt
+                            recovered = True
+                    except Exception:
+                        pass
+
+            if not recovered:
+                fail_reason = clone_stderr if clone_stderr else 'Clone failed'
+                return _fail('CLONE', fail_reason, evidence, job_id,
+                             exit_code=clone.get('exit_code', -1),
+                             target_path=str(source),
+                             seatbelt_applied=clone.get('seatbelt_applied', False))
 
         kind = classify(source)
         commit = run('git rev-parse HEAD', source, 15)
