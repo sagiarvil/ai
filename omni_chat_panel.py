@@ -504,15 +504,26 @@ def extract_content_from_file(filename: str, file_bytes: bytes) -> dict:
     try:
         if ext == ".pdf":
             file_type = "PDF Dokümanı"
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            pages_text = []
-            for i, page in enumerate(reader.pages):
-                t = page.extract_text() or ""
-                if t.strip():
-                    pages_text.append(f"--- Sayfa {i+1} ---\n{t.strip()}")
-            extracted_text = "\n\n".join(pages_text)
-            summary = f"{len(reader.pages)} sayfalık PDF içeriği ayıklandı ({len(extracted_text)} karakter)."
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                pages_text = []
+                for i, page in enumerate(doc):
+                    t = page.get_text() or ""
+                    if t.strip():
+                        pages_text.append(f"--- Sayfa {i+1} ---\n{t.strip()}")
+                extracted_text = "\n\n".join(pages_text)
+                summary = f"{len(doc)} sayfalık PDF içeriği PyMuPDF ile ayıklandı ({len(extracted_text)} karakter)."
+            except Exception:
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                pages_text = []
+                for i, page in enumerate(reader.pages):
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        pages_text.append(f"--- Sayfa {i+1} ---\n{t.strip()}")
+                extracted_text = "\n\n".join(pages_text)
+                summary = f"{len(reader.pages)} sayfalık PDF içeriği pypdf ile ayıklandı ({len(extracted_text)} karakter)."
 
         elif ext in [".docx", ".doc"]:
             file_type = "Word Belgesi"
@@ -530,12 +541,14 @@ def extract_content_from_file(filename: str, file_bytes: bytes) -> dict:
         elif ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]:
             file_type = "Görsel Dosyası"
             from PIL import Image
+            import base64
             img = Image.open(io.BytesIO(file_bytes))
             width, height = img.size
             format_name = img.format or ext[1:].upper()
             mode = img.mode
+            b64 = base64.b64encode(file_bytes).decode("utf-8")
             summary = f"Görsel Boyutu: {width}x{height} piksel, Format: {format_name}, Renk Modu: {mode}."
-            extracted_text = f"[Görsel Metaverisi: {summary} - Dosya Adı: {filename}]"
+            extracted_text = f"[Görsel Metaverisi: {summary} - Dosya Adı: {filename} | Data: image/{ext[1:]};base64,{b64[:64]}...]"
 
         else:
             file_type = "Metin/Kod Belgesi"
@@ -567,6 +580,54 @@ async def upload_file(file: UploadFile = File(...), authorized: bool = Depends(v
     res["saved_path"] = str(dest_path)
     res["status"] = "SUCCESS"
     return res
+
+class FSWriteRequest(BaseModel):
+    path: str
+    content: str
+
+class FSReadRequest(BaseModel):
+    path: str
+
+class GitCommitRequest(BaseModel):
+    repo_path: str
+    message: str
+
+@app.post("/api/fs/write")
+async def fs_write(req: FSWriteRequest, authorized: bool = Depends(verify_api_key)):
+    """Yerel çalışma alanında dosya oluşturma/yazma uç noktası."""
+    res = tool_write_file(req.path, req.content)
+    if res.startswith("[GÜVENLİK ENGELİ]") or res.startswith("[Dosya Yazma Hatası]"):
+        raise HTTPException(status_code=400, detail=res)
+    return {"status": "success", "message": res}
+
+@app.post("/api/fs/read")
+async def fs_read(req: FSReadRequest, authorized: bool = Depends(verify_api_key)):
+    """Yerel çalışma alanında dosya okuma uç noktası."""
+    content = tool_read_file(req.path)
+    if content.startswith("[GÜVENLİK ENGELİ]") or content.startswith("[Hata]"):
+        raise HTTPException(status_code=404, detail=content)
+    return {"status": "success", "content": content}
+
+@app.post("/api/git/commit")
+async def git_commit_endpoint(req: GitCommitRequest, authorized: bool = Depends(verify_api_key)):
+    """Yetkili repolarda atomik git commit oluşturma uç noktası."""
+    try:
+        import git
+        allowed, err_msg = is_path_authorized(req.repo_path, for_write=True)
+        if not allowed:
+            raise HTTPException(status_code=403, detail=f"[GÜVENLİK ENGELİ]: {err_msg}")
+        raw = Path(req.repo_path)
+        repo_target = (raw if raw.is_absolute() else (WORKSPACE_ROOT / raw)).resolve()
+        repo = git.Repo(repo_target)
+        repo.git.add(A=True)
+        commit = repo.index.commit(req.message)
+        return {
+            "status": "success",
+            "message": f"Commit tamam: {commit.hexsha[:7]} - {req.message}",
+            "sha": commit.hexsha
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Git Commit Hatası: {str(e)}")
 
 @app.get("/")
 async def root():

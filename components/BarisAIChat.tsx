@@ -2,7 +2,7 @@
 // DOSYA: BarisAIChat.tsx (Next.js / React Endüstriyel Ajan Kokpiti)
 // ==============================================================================
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Square, Paperclip, FileText, Trash2 } from "lucide-react";
+import { Send, Square, Paperclip, FileText } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -23,16 +23,6 @@ export default function BarisAIChat() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  // SOHBETİ VE SAYFAYI TEMİZLE
-  const handleClear = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    setMessages([]);
-    setAttachedFiles([]);
-    setInput("");
-  };
 
   // DOSYA YÜKLEME YÖNETİMİ (PDF, Word, Görsel)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,17 +127,7 @@ export default function BarisAIChat() {
           <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
           <h1 className="font-semibold text-lg tracking-tight">Baris AI // Endüstriyel Ajan Kokpiti</h1>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-neutral-400">Context: Son 10 Tur Aktif | Bellek: Kayan Pencere</div>
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-neutral-300 hover:text-rose-400 hover:bg-rose-950/30 border border-neutral-700 hover:border-rose-800/60 rounded-lg transition"
-            title="Sohbet geçmişini ve sayfayı temizle"
-          >
-            <Trash2 size={13} />
-            <span>Temizle</span>
-          </button>
-        </div>
+        <div className="text-xs text-neutral-400">Context: Son 10 Tur Aktif | Bellek: Kayan Pencere</div>
       </div>
 
       {/* DİYALOG AKIŞ ALANI */}

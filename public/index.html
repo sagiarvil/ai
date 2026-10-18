@@ -273,24 +273,6 @@
     }
     .char-counter.warning { color: var(--orange); }
     .char-counter.danger { color: var(--red); font-weight: bold; }
-    .clear-btn {
-      background: #161b22;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .clear-btn:hover {
-      border-color: var(--red);
-      color: var(--red);
-      background: rgba(248, 81, 73, 0.1);
-    }
   </style>
 </head>
 <body>
@@ -301,7 +283,6 @@
       <span>BARIŞ AI // JARVIS & FAST EXECUTION CORE</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
-      <button id="clearBtn" onclick="clearFeed()" class="clear-btn" title="Sayfayı ve sohbet geçmişini temizle">🗑️ Sayfayı Temizle</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
       <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
       <div class="status-pill">
@@ -334,7 +315,6 @@
     </div>
     <div class="footer-bar">
       <div class="quick-bar">
-        <span class="quick-chip" onclick="clearFeed()" style="color:#f85149; border-color:#da363355;" title="Sohbeti ve ekranı sıfırla">🗑️ Sayfayı Temizle</span>
         <span class="quick-chip" onclick="quickFill('Selam Barış, nasılsın? Durumlar ne?')">💬 Jarvis Sohbet</span>
         <span class="quick-chip" onclick="quickFill('Sistemine kurulan tüm motorları ve aktif yetenekleri listele')">📦 Kurulu Motorlar</span>
         <span class="quick-chip" onclick="quickFill('/Users/macair1/projects dizinindeki projeleri analiz et')">📁 Projeleri Tara</span>
@@ -356,24 +336,6 @@
     let history = [];
     let pendingAttachments = [];
     let currentAbortController = null;
-
-    // --- SAYFA VE SOHBET TEMİZLEME ---
-    function clearFeed() {
-      if (currentAbortController) {
-        stopAction();
-      }
-      history = [];
-      pendingAttachments = [];
-      renderAttachmentTray();
-      feed.innerHTML = `
-        <div class="msg-ai" id="welcomeMsg">
-          <strong>[SAYFA TEMİZLENDİ]:</strong> Bellek ve ekran sıfırlandı. Yeni talimat veya sohbet için hazırım.
-        </div>
-      `;
-      input.value = '';
-      updateCharCounter();
-      input.focus();
-    }
 
     // --- KARAKTER SAYACI (0 - 5000) ---
     input.addEventListener('input', () => {

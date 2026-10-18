@@ -42,3 +42,5 @@ data/
 tools/browser_sessions/
 *.lock
 installed_engines_registry.lock
+uploads/
+tools/trnlp/
