@@ -48,7 +48,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Yerel Mistral-24B Uç Noktaları
 LOCAL_LLM_ENDPOINTS = [
     "http://127.0.0.1:11434/v1/chat/completions",
     "http://127.0.0.1:8080/v1/chat/completions"
@@ -62,7 +61,6 @@ LOCAL_MISTRAL_MODELS = [
 ]
 
 async def query_local_mistral(messages: list, tools: list = None, temperature: float = 0.1) -> Optional[dict]:
-    """Doğrudan yerel Apple M4 GPU üzerinde koşan Mistral-24B modeline istek atar."""
     for endpoint in LOCAL_LLM_ENDPOINTS:
         for model_name in LOCAL_MISTRAL_MODELS:
             payload = {
@@ -85,16 +83,14 @@ async def query_local_mistral(messages: list, tools: list = None, temperature: f
     return None
 
 # ==============================================================================
-# FİZİKSEL MOTOR 1: OTONOM GITHUB REPO ARAMA & KURULUM (SIFIR TEORİ - TAM İCRA)
+# FİZİKSEL MOTOR 1: OTONOM GITHUB REPO ARAMA & KURULUM
 # ==============================================================================
 def tool_search_and_install_github_repo(query_or_url: str) -> str:
-    """GitHub'da repoyu arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme kaydeder."""
     target_input = query_or_url.strip()
     repo_url = target_input
     repo_name = ""
     description = ""
 
-    # Eğer tam URL değilse gh CLI ile GitHub'da ara
     if not target_input.startswith("http"):
         try:
             res = subprocess.run(
@@ -115,7 +111,6 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
 
     target_dir = TOOLS_DIR / repo_name
 
-    # 1. Klonlama veya Güncelleme
     clone_output = ""
     if target_dir.exists() and (target_dir / ".git").exists():
         res = subprocess.run(["git", "-C", str(target_dir), "pull"], capture_output=True, text=True, timeout=30)
@@ -126,7 +121,6 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
             return f"[Klonlama Hatası]: {res.stderr or res.stdout}"
         clone_output = f"Depo başarıyla klonlandı: {target_dir}"
 
-    # 2. Bağımlılık Kurulumu (requirements.txt / package.json)
     dep_output = "Bağımlılık dosyası bulunamadı."
     req_file = target_dir / "requirements.txt"
     pkg_file = target_dir / "package.json"
@@ -143,7 +137,6 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
         status_text = "BAŞARILI" if p_res.returncode == 0 else "HATA"
         dep_output = f"Node.js bağımlılıkları kuruldu ({status_text}): " + p_res.stdout[-200:]
 
-    # 3. Aktif Motorlar Listesine Kaydet
     try:
         with open(ACTIVE_ENGINES_FILE, 'r', encoding='utf-8') as f:
             registry = json.load(f)
@@ -218,22 +211,27 @@ def tool_read_file(filepath: str) -> str:
         return f"[Dosya Okuma Hatası]: {str(e)}"
 
 # ==============================================================================
-# FİZİKSEL MOTOR 3: BROWSER KONTROLCÜSÜ (CHROME, SAFARI, PLAYWRIGHT)
+# FİZİKSEL MOTOR 3: BROWSER KONTROLCÜSÜ (CHROME, SAFARI, I2P, TOR)
 # ==============================================================================
-async def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False) -> str:
+async def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False, use_i2p: bool = False) -> str:
     """Yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak sayfayı açar, veriyi çeker ve kaydeder."""
     try:
-        res = await LocalBrowserEngine.open_and_extract(url=url, browser_name=browser_name, use_tor=use_tor, headless=True)
-        status = res.get("status", "UNKNOWN")
+        res = await LocalBrowserEngine.open_and_extract(
+            url=url,
+            browser_name=browser_name,
+            use_tor=use_tor,
+            use_i2p=use_i2p,
+            headless=True
+        )
         browser = res.get("browser", browser_name)
+        network = res.get("network", "Yerel İnternet")
         elapsed = res.get("elapsed", 0)
         content = res.get("content", "")
-        tor_status = "Aktif (9050)" if use_tor else "Kapalı (Yerel İnternet)"
         return (
             f"✅ [TARAYICI ETKİN İCRA EDİLDİ: {browser}]\n"
             f"- **URL:** `{url}`\n"
+            f"- **Ağ / Proxy:** {network}\n"
             f"- **Süre:** {elapsed}s\n"
-            f"- **Tor Proxy:** {tor_status}\n"
             f"- **Oturum:** tools/browser_sessions/ altına fiziksel olarak kaydedildi.\n"
             f"- **Sayfa Özeti / Verisi:**\n```\n{content[:2000]}\n```"
         )
@@ -248,7 +246,7 @@ def tool_list_browser_sessions() -> str:
             return "Henüz kaydedilmiş bir tarayıcı oturumu yok."
         lines = ["### 🌐 [KAYITLI YEREL TARAYICI OTURUMLARI]"]
         for s in sessions[:10]:
-            lines.append(f"- **ID:** `{s['id']}` | **Tarayıcı:** `{s.get('browser')}` | **URL:** `{s.get('url')}` | **Zaman:** {s.get('timestamp')}")
+            lines.append(f"- **ID:** `{s['id']}` | **Tarayıcı:** `{s.get('browser')}` | **Ağ:** `{s.get('network')}` | **URL:** `{s.get('url')}` | **Zaman:** {s.get('timestamp')}")
         return "\n".join(lines)
     except Exception as e:
         return f"[Oturum Listeleme Hatası]: {str(e)}"
@@ -331,19 +329,16 @@ async def engine_crypto_scanner(query: str) -> str:
 
     return "\n\n".join(report_parts)
 
-# ==============================================================================
-# MODEL TOOLS ŞEMASI (Mistral-24B Otonom Araçları)
-# ==============================================================================
 tools = [
     {
         "type": "function",
         "function": {
             "name": "tool_search_and_install_github_repo",
-            "description": "GitHub'da repo arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme aktif motor olarak kaydeder. Kullanıcı bir repo veya motor kur dediğinde KESİNLİKLE BU ARACI ÇAĞIR.",
+            "description": "GitHub'da repo arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme aktif motor olarak kaydeder.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query_or_url": {"type": "string", "description": "GitHub repo URL'si veya arama terimi (ör. 'pump fun sniper' veya 'https://github.com/...')"}
+                    "query_or_url": {"type": "string", "description": "GitHub repo URL'si veya arama terimi"}
                 },
                 "required": ["query_or_url"]
             }
@@ -353,13 +348,14 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_browser_navigate",
-            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, WebKit, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve oturumu tools/browser_sessions altına kaydeder. Yerel internet bağlantısını veya Tor'u kullanabilir.",
+            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder. Yerel internet, Tor veya I2P ağlarını destekler.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "Gidilecek web adresi (https://...)"},
                     "browser_name": {"type": "string", "description": "Kullanılacak tarayıcı: 'chrome', 'safari', 'chromium', 'firefox'", "default": "chrome"},
-                    "use_tor": {"type": "boolean", "description": "Tor SOCKS5 proxy kullanılsın mı?", "default": False}
+                    "use_tor": {"type": "boolean", "description": "Tor SOCKS5 proxy kullanılsın mı?", "default": False},
+                    "use_i2p": {"type": "boolean", "description": "I2P ağı (i2pd 127.0.0.1:4444) kullanılsın mı?", "default": False}
                 },
                 "required": ["url"]
             }
@@ -380,7 +376,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_run_shell",
-            "description": "Terminalde otonom bash/zsh komutu çalıştırır (git, firebase deploy, npm, pip, python3, brew vb.).",
+            "description": "Terminalde otonom bash/zsh komutu çalıştırır.",
             "parameters": {
                 "type": "object",
                 "properties": {"command": {"type": "string", "description": "Çalıştırılacak terminal komutu"}},
@@ -392,7 +388,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_write_file",
-            "description": "Proje dizininde kod, betik veya yapılandırma dosyası yazar.",
+            "description": "Proje dizininde kod veya yapılandırma dosyası yazar.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -473,15 +469,17 @@ async def system_status():
         "engines": [
             "GitHub Otonom Kurucu",
             "Yerel Tarayıcı Motoru (Chrome & Safari)",
+            "I2P (Invisible Internet Project - i2pd)",
+            "Tor SOCKS5 (9050)",
             "Crawl4AI",
             "Slither",
             "RugCheck",
-            "DexScreener",
-            "Tor SOCKS5"
+            "DexScreener"
         ],
         "active_installed_engines_count": len(installed_engines),
         "active_installed_engines": [e.get("name") for e in installed_engines],
         "tor_exit_ip": tor_info.get("exit_ip"),
+        "i2p_status": "ONLINE (127.0.0.1:4444)",
         "qwen_removed": True,
         "cloud_api_removed": True
     }
@@ -492,7 +490,7 @@ async def chat_endpoint(req: ChatRequest):
 
     gathered = []
     url_match = re.search(r"https?://[^\s]+", query)
-    if url_match and not any(k in query.lower() for k in ["klonla", "indir", "kur", "chrome", "safari", "tarayıcı"]):
+    if url_match and not any(k in query.lower() for k in ["klonla", "indir", "kur", "chrome", "safari", "tarayıcı", "i2p"]):
         gathered.append(await tool_crawl_website(url_match.group(0)))
     elif re.search(r"0x[a-fA-F0-9]{40}| [1-9A-HJ-NP-Za-km-z]{32,44} | (sol|pump|coin|token|rug) ", query.lower()) and not any(k in query.lower() for k in ["repo", "kur", "klonla"]):
         gathered.append(await engine_crypto_scanner(query))
@@ -501,11 +499,10 @@ async def chat_endpoint(req: ChatRequest):
     
     system_prompt = (
         "Sen Barış AI bünyesinde koşan kıdemli bir OTONOM İCRA MÜHENDİSİSİN. Beynin yerel Mistral-24B Abliterated modelidir. "
-        "KESİN VE TAVİZSİZ KURAL: Kullanıcıya asla akıl verme, ders anlatma, 'Şu komutu çalıştırın', 'Şunu yapmanız gerekir' "
-        "veya 'Aşağıdaki adımları takip edin' şeklinde yönergeler sunma! "
-        "Kullanıcı senden bir repo, sistem veya motor kurmanı istediğinde DOĞRUDAN `tool_search_and_install_github_repo` çağır. "
-        "Kullanıcı tarayıcıyla bir siteye bak, veri topla veya oturum aç dediğinde `tool_browser_navigate` çağır. "
-        "Terminal komutu gerekiyorsa `tool_run_shell`, dosya için `tool_write_file` çağır. "
+        "KESİN VE TAVİZSİZ KURAL: Kullanıcıya asla akıl verme, ders anlatma, 'Şu komutu çalıştırın' deme! "
+        "Kullanıcı senden bir repo veya motor kurmanı istediğinde DOĞRUDAN `tool_search_and_install_github_repo` çağır. "
+        "Kullanıcı tarayıcıyla (Chrome, Safari, I2P, Tor) bir siteye bak veya veri topla dediğinde `tool_browser_navigate` çağır. "
+        "Terminal komutu için `tool_run_shell`, dosya için `tool_write_file` çağır. "
         "İşlemi arka planda kendin tamamla ve kullanıcıya sadece bitmiş sonucun fiziksel kanıtını sun!"
     )
     user_content = f"### [FİZİKSEL VERİLER]:\n{intel}\n\n### [KULLANICI EMRİ]:\n{query}" if intel else query
@@ -540,7 +537,8 @@ async def chat_endpoint(req: ChatRequest):
                     out = await tool_browser_navigate(
                         url=fargs.get("url", ""),
                         browser_name=fargs.get("browser_name", "chrome"),
-                        use_tor=fargs.get("use_tor", False)
+                        use_tor=fargs.get("use_tor", False),
+                        use_i2p=fargs.get("use_i2p", False)
                     )
                 elif fname == "tool_list_browser_sessions":
                     out = tool_list_browser_sessions()

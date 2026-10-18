@@ -4,7 +4,7 @@ OMNICORE // OTONOM YAZILIM MÜHENDİSİ AJAN ÇEKİRDEĞİ (AUTONOMOUS AGENTIC L
 Özellikler:
 - %100 Yerel Mistral-24B (Abliterated) Beyni (Apple M4 Metal / 14GB SSD)
 - GitHub Repo Arama & Otomatik Kurucu (tool_search_and_install_github_repo)
-- Çoklu Yerel Tarayıcı Motoru (Google Chrome & Safari & WebKit - Local ISP & Tor)
+- Çoklu Yerel Tarayıcı & Gizlilik Ağları (Chrome, Safari, I2P i2pd, Tor SOCKS5)
 - Otonom Terminal (Shell) Çalıştırma Aracı
 - Kendi Kendini Onaran (Self-Healing / Reflection) Test Döngüsü
 """
@@ -28,11 +28,7 @@ TOOLS_DIR = WORKSPACE_DIR / "tools"
 TOOLS_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_DIR / "active_engines.json"
 
-# ==============================================================================
-# FİZİKSEL YETENEK ARAÇLARI (TOOLS)
-# ==============================================================================
 def tool_search_and_install_github_repo(query_or_url: str) -> str:
-    """GitHub'da repo arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme kaydeder."""
     target_input = query_or_url.strip()
     repo_url = target_input
     repo_name = ""
@@ -91,25 +87,28 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
         f"- Bağımlılık: {dep_output}"
     )
 
-def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False) -> str:
-    """Yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak sayfayı açar, veriyi çeker ve kaydeder."""
+def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False, use_i2p: bool = False) -> str:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         res = loop.run_until_complete(
-            LocalBrowserEngine.open_and_extract(url=url, browser_name=browser_name, use_tor=use_tor, headless=True)
+            LocalBrowserEngine.open_and_extract(
+                url=url,
+                browser_name=browser_name,
+                use_tor=use_tor,
+                use_i2p=use_i2p,
+                headless=True
+            )
         )
         return (
             f"✅ [TARAYICI ETKİN İCRA EDİLDİ: {res.get('browser')}]\n"
-            f"- URL: {url} | Süre: {res.get('elapsed')}s\n"
-            f"- Tor: {'Aktif (9050)' if use_tor else 'Kapalı (Yerel İnternet)'}\n"
+            f"- URL: {url} | Ağ: {res.get('network')} | Süre: {res.get('elapsed')}s\n"
             f"- İçerik: {res.get('content', '')[:1000]}"
         )
     finally:
         loop.close()
 
 def tool_run_shell_command(command: str) -> str:
-    """Sistemde otonom olarak terminal komutu çalıştırır."""
     banned = ["rm -rf /", "rm -rf /*", "mkfs", ":(){ :|:& };:"]
     for b in banned:
         if b in command:
@@ -157,13 +156,14 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_browser_navigate",
-            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder.",
+            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder. I2P ve Tor ağlarını destekler.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string"},
                     "browser_name": {"type": "string", "default": "chrome"},
-                    "use_tor": {"type": "boolean", "default": False}
+                    "use_tor": {"type": "boolean", "default": False},
+                    "use_i2p": {"type": "boolean", "default": False}
                 },
                 "required": ["url"]
             }
@@ -262,7 +262,8 @@ def run_autonomous_agent(goal: str):
                     tool_output = tool_browser_navigate(
                         url=fargs.get("url", ""),
                         browser_name=fargs.get("browser_name", "chrome"),
-                        use_tor=fargs.get("use_tor", False)
+                        use_tor=fargs.get("use_tor", False),
+                        use_i2p=fargs.get("use_i2p", False)
                     )
                 elif fname == "tool_run_shell_command":
                     tool_output = tool_run_shell_command(fargs.get("command", ""))
@@ -280,5 +281,5 @@ def run_autonomous_agent(goal: str):
                 })
 
 if __name__ == "__main__":
-    hedef = sys.argv[1] if len(sys.argv) > 1 else "Chrome tarayıcısıyla https://httpbin.org/user-agent adresini ziyaret et ve sonucu göster."
+    hedef = sys.argv[1] if len(sys.argv) > 1 else "I2P ağını kullanarak http://127.0.0.1:7070 adresini ziyaret et ve konsol durumunu göster."
     run_autonomous_agent(hedef)
