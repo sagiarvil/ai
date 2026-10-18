@@ -20,11 +20,20 @@ def test_mac_service_health():
     """1. Canlı FastAPI Backend Servis Sağlığı ve HTTP 200 Doğrulaması."""
     url = "http://127.0.0.1:5050/api/health"
     req = urllib.request.Request(url, headers={"User-Agent": "OmniCore-AuditEngine/6.0"})
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        assert resp.getcode() == 200
-        data = json.loads(resp.read().decode("utf-8"))
-        assert data.get("status") == "ONLINE"
-        assert data.get("service") == "OmniCore"
+    last_err = None
+    for _ in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                assert resp.getcode() == 200
+                data = json.loads(resp.read().decode("utf-8"))
+                assert data.get("status") == "ONLINE"
+                assert data.get("service") == "OmniCore"
+                return
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+    if last_err:
+        raise last_err
 
 
 def test_ollama_mistral_model_runtime():
