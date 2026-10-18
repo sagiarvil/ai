@@ -460,12 +460,22 @@
         const voices = window.speechSynthesis.getVoices();
         const trVoice = voices.find(v => v.lang.includes('tr') || v.name.toLowerCase().includes('yelda') || v.name.toLowerCase().includes('turkish'));
         if (trVoice) utter.voice = trVoice;
+        utter.onstart = () => {
+          isSpeakingNow = true;
+          try { if (recognition) recognition.stop(); } catch(e){}
+        };
+        utter.onend = () => {
+          isSpeakingNow = false;
+          if (alwaysListen) startContinuousListening();
+        };
         utter.onerror = () => {
+          isSpeakingNow = false;
           fetch('/api/voice/speak', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({text: clean.substring(0, 300)})
           }).catch(() => {});
+          if (alwaysListen) setTimeout(() => startContinuousListening(), 1200);
         };
         window.speechSynthesis.speak(utter);
       } else {
@@ -483,33 +493,40 @@
       };
     }
 
-    // --- MİKROFON İLE SESLİ KOMUT (STT) & ÇEVRE SESİ KORUMASI ---
+    // --- MİKROFON İLE KESİNTİSİZ HANDS-FREE JARVIS DİNLEME MİMARİSİ ---
     let recognition = null;
     let isListening = false;
-    let requireWakeWord = localStorage.getItem('require_wake_word') === 'true';
+    let alwaysListen = localStorage.getItem('always_listen') !== 'false'; // Varsayılan olarak AÇIK
+    let isSpeakingNow = false;
+    let restartTimer = null;
 
     function updateWakeWordBtn() {
       const btn = document.getElementById('wakeWordToggleBtn');
       if (btn) {
-        btn.textContent = requireWakeWord ? '🎯 Jarvis Şartı: Açık' : '🎯 Jarvis Şartı: Kapalı';
-        btn.style.borderColor = requireWakeWord ? '#06b6d4' : '#1e2430';
-        btn.style.color = requireWakeWord ? '#06b6d4' : '#e6edf3';
+        btn.textContent = alwaysListen ? '🎯 Jarvis Dinlemede: Açık' : '🎯 Jarvis Dinlemede: Kapalı';
+        btn.style.borderColor = alwaysListen ? '#06b6d4' : '#1e2430';
+        btn.style.color = alwaysListen ? '#06b6d4' : '#e6edf3';
       }
     }
     updateWakeWordBtn();
 
     function toggleWakeWord() {
-      requireWakeWord = !requireWakeWord;
-      localStorage.setItem('require_wake_word', requireWakeWord ? 'true' : 'false');
+      alwaysListen = !alwaysListen;
+      localStorage.setItem('always_listen', alwaysListen ? 'true' : 'false');
       updateWakeWordBtn();
+      if (alwaysListen) {
+        startContinuousListening();
+      } else {
+        stopContinuousListening();
+      }
     }
 
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRec();
       recognition.lang = 'tr-TR';
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
 
       recognition.onstart = () => {
         isListening = true;
@@ -517,48 +534,66 @@
           micBtn.classList.add('listening');
           micBtn.textContent = '🔴';
         }
-        input.placeholder = requireWakeWord
-          ? '🛡️ Dinleniyor... ("Jarvis" ile başlayarak konuşun)...'
+        input.placeholder = alwaysListen
+          ? '🎯 Jarvis uyanık! "Jarvis..." diye seslendiğiniz anda dinler...'
           : 'Dinleniyor... Konuşun...';
       };
 
       recognition.onresult = (event) => {
-        let transcript = '';
+        let interim = '';
+        let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
-        }
-        const text = transcript.trim();
-
-        // 1. Gürültü Filtresi: Çok kısa veya fısıltı sesleri yok say (Noise Gate)
-        if (text.length < 3) {
-          input.placeholder = 'Gürültü yok sayıldı (< 3 karakter)...';
-          return;
-        }
-
-        // 2. Wake-word (Jarvis Şartı) Filtresi:
-        if (requireWakeWord) {
-          const lower = text.toLowerCase();
-          const hasWakeWord = lower.includes('jarvis') || lower.includes('jarjis') || lower.includes('barış') || lower.includes('baris') || lower.includes('patron');
-          if (!hasWakeWord) {
-            input.value = '';
-            input.placeholder = '🛡️ Çevre sesi filtrelendi ("Jarvis" kelimesi bekleniyor)...';
-            return;
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
           }
         }
+        const text = (finalTranscript || interim).trim();
+        if (!text || text.length < 3) return;
 
-        input.value = text;
-        input.dispatchEvent(new Event('input'));
-        input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
-        setTimeout(() => sendAction(), 200);
+        const lower = text.toLowerCase();
+        const hasWakeWord = lower.includes('jarvis') || lower.includes('jarjis') || lower.includes('barış') || lower.includes('baris') || lower.includes('patron');
+
+        if (alwaysListen) {
+          if (hasWakeWord) {
+            input.value = text;
+            input.dispatchEvent(new Event('input'));
+            input.placeholder = '⚡ Jarvis emri aldı, işleniyor...';
+            // Geçici olarak mikrofonu durdurup komutu gönder
+            try { recognition.stop(); } catch(e){}
+            setTimeout(() => sendAction(), 200);
+          } else {
+            input.placeholder = '🛡️ Çevre sesi elendi ("Jarvis" bekleniyor)...';
+          }
+        } else {
+          input.value = text;
+          input.dispatchEvent(new Event('input'));
+          setTimeout(() => sendAction(), 300);
+        }
       };
 
       recognition.onerror = (event) => {
-        console.warn('SpeechRec hatası:', event.error);
-        stopMic();
+        if (event.error !== 'no-speech') {
+          console.warn('SpeechRec hatası:', event.error);
+        }
       };
 
       recognition.onend = () => {
-        stopMic();
+        isListening = false;
+        if (micBtn) {
+          micBtn.classList.remove('listening');
+          micBtn.textContent = '🎙️';
+        }
+        // Eğer hands-free mod açıksa ve sistem şu an konuşmuyorsa otomatik yeniden başlat
+        if (alwaysListen && !isSpeakingNow) {
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            try {
+              recognition.start();
+            } catch(e) {}
+          }, 400);
+        }
       };
     } else {
       if (micBtn) {
@@ -567,30 +602,46 @@
       }
     }
 
-    function toggleMic() {
-      if (!recognition) {
-        alert('Tarayıcınız ses tanıma (Web Speech API) özelliğini desteklemiyor.');
-        return;
-      }
-      if (isListening) {
-        recognition.stop();
-      } else {
-        try {
-          recognition.start();
-        } catch(e) {
-          console.warn(e);
-        }
+    function startContinuousListening() {
+      if (!recognition) return;
+      try {
+        recognition.start();
+      } catch(e) {
+        // Zaten çalışıyorsa sessiz geç
       }
     }
 
-    function stopMic() {
-      isListening = false;
+    function stopContinuousListening() {
+      if (!recognition) return;
+      clearTimeout(restartTimer);
+      try {
+        recognition.stop();
+      } catch(e) {}
       if (micBtn) {
         micBtn.classList.remove('listening');
         micBtn.textContent = '🎙️';
       }
       input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et... (Enter ile gönder)';
     }
+
+    function toggleMic() {
+      if (!recognition) {
+        alert('Tarayıcınız ses tanıma (Web Speech API) özelliğini desteklemiyor.');
+        return;
+      }
+      if (isListening) {
+        stopContinuousListening();
+      } else {
+        startContinuousListening();
+      }
+    }
+
+    // Sayfaya ilk kullanıcı etkileşiminde mikrofonu otomatik uyandır
+    document.addEventListener('click', () => {
+      if (alwaysListen && !isListening && !isSpeakingNow && recognition) {
+        try { recognition.start(); } catch(e) {}
+      }
+    }, { once: true });
 
     function quickFill(txt) {
       input.value = txt;
