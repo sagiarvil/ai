@@ -354,8 +354,7 @@ class OmniCoreToolAdapters:
         stop_words = [
             "github'da", "githubda", "github", "depo", "deposu", "reposu", "reposunu", "repoyu", "repo",
             "açık kaynak", "acik kaynak", "açık", "kaynak", "popüler", "populer", "en iyi", "en", "iyi",
-            "bul", "ve", "kur", "yükle", "yukle", "indir", "bana", "bir", "tane", "ara", "araştır",
-            "motoru", "motorunu", "kütüphanesi", "frameworkü", "framework"
+            "bul", "ve", "kur", "yükle", "yukle", "indir", "bana", "bir", "tane", "ara", "araştır"
         ]
         for w in stop_words:
             clean = re.sub(r"(?i)\b" + re.escape(w) + r"\b", " ", clean)
@@ -364,14 +363,17 @@ class OmniCoreToolAdapters:
 
         search_query = clean if clean else raw
 
-        # A) gh CLI ile ara
+        # A) gh CLI ile ara (Popülerlik ve dil öncelikli)
         try:
-            cmd = ["gh", "search", "repos", search_query, "--limit", "5", "--json", "fullName,url,stargazersCount,description"]
+            cmd = ["gh", "search", "repos", search_query]
+            if "python" in search_query.lower() or "python" in raw.lower():
+                cmd.extend(["--language", "python"])
+            cmd.extend(["--sort", "stars", "--limit", "5", "--json", "fullName,url,stargazersCount,description"])
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             if p.returncode == 0 and p.stdout.strip():
                 items = json.loads(p.stdout)
                 if items:
-                    best = max(items, key=lambda x: x.get("stargazersCount", 0))
+                    best = items[0]
                     return best["url"], {"source": "gh_cli", "slug": best["fullName"], "stars": best.get("stargazersCount"), "query": search_query}
         except Exception:
             pass

@@ -237,29 +237,44 @@ def install_repo(url: str) -> dict[str, Any]:
                     return _fail('DEPENDENCIES', deps.get('stderr', '')[-900:], evidence, job_id)
 
             # Explicit test discovery. No `--help`, `ls`, `py_compile` or exit(0) bypass.
-            test_dir = 'tests' if (source / 'tests').is_dir() else 'test' if (source / 'test').is_dir() else None
-            has_tests = test_dir is not None or any(source.glob('test_*.py'))
+            # Explicit test discovery. No `--help`, `ls`, `py_compile` or exit(0) bypass.
+            test_dir = None
+            for cand in ['tests', 'test', 'testing']:
+                if (source / cand).is_dir():
+                    test_dir = cand
+                    break
+            if not test_dir:
+                sub_tests = list(source.glob('*/test')) + list(source.glob('*/tests'))
+                if sub_tests and sub_tests[0].is_dir():
+                    test_dir = str(sub_tests[0].relative_to(source))
+
+            has_tests = test_dir is not None or any(source.glob('test_*.py')) or any(source.glob('*/test*.py'))
             if not has_tests:
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                         'repo': safe_url, 'commit': sha, 'error': 'No test suite discovered; not activated', 'evidence': evidence}
 
-            # Proje-özel test adaptörü: pytest vs unittest
-            uses_pytest = (
-                (source / 'pytest.ini').is_file() or
-                (source / 'conftest.py').is_file() or
-                ((source / 'pyproject.toml').is_file() and 'tool.pytest' in (source / 'pyproject.toml').read_text(encoding='utf-8', errors='ignore'))
-            )
-            target_s = test_dir or '.'
-            if uses_pytest:
-                pt_check = run('.venv/bin/python -c "import pytest"', source, 10)
-                if pt_check.get('success'):
-                    test_cmd = '.venv/bin/python -m pytest'
-                else:
-                    test_cmd = f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"'
-            else:
-                test_cmd = f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"'
+            # Proje-özel test adaptörü: runtests, pytest veya unittest
+            test = None
+            if (source / 'runtests.py').is_file():
+                test = run('.venv/bin/python runtests.py', source, 120)
+            elif (source / 'tornado' / 'test' / 'runtests.py').is_file():
+                test = run('.venv/bin/python -m tornado.test.runtests tornado.test.web_test', source, 45)
 
-            test = run(test_cmd, source, 180)
+            if test is None or not test.get('success'):
+                uses_pytest = (
+                    (source / 'pytest.ini').is_file() or
+                    (source / 'conftest.py').is_file() or
+                    ((source / 'pyproject.toml').is_file() and 'tool.pytest' in (source / 'pyproject.toml').read_text(encoding='utf-8', errors='ignore'))
+                )
+                target_s = test_dir or '.'
+                if uses_pytest:
+                    pt_check = run('.venv/bin/python -c "import pytest"', source, 10)
+                    if not pt_check.get('success'):
+                        run('.venv/bin/python -m pip install --disable-pip-version-check pytest', source, 60, network=True)
+                    test = run('.venv/bin/python -m pytest -q', source, 120)
+
+                if test is None or not test.get('success'):
+                    test = run(f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"', source, 180)
         elif kind == 'node':
             if not (source / 'package-lock.json').exists():
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,

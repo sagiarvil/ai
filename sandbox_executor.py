@@ -70,7 +70,12 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
     - Okuma: Sistem kütüphanelerine izin verilir, ancak sırlar (.env, .ssh, .aws) kesinlikle reddedilir.
     - Ağ: Varsayılan olarak (deny network*), yalnızca açıkça allow_network=True istendiğinde izin verilir.
     """
-    network_rule = "(allow network*)" if allow_network else "(deny network*)"
+    if allow_network:
+        network_rule = "(allow network*)"
+    else:
+        network_rule = """(deny network*)
+(allow network* (local ip "localhost:*"))
+(allow network* (remote ip "localhost:*"))"""
     home = Path.home()
 
     profile = f"""(version 1)
