@@ -168,3 +168,36 @@ class RealCryptoEngine:
         except Exception:
             pass
         return None
+
+    @classmethod
+    async def fetch_latest_tokens_with_audit(cls, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        DexScreener canlı token boost akışından yeni çıkan tokenları yakalar
+        ve Solana kontratlarını otomatik olarak RugCheck risk filtresinden geçirir.
+        """
+        results = []
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get("https://api.dexscreener.com/token-boosts/latest/v1")
+                if resp.status_code == 200:
+                    tokens = resp.json()[:limit]
+                    for t in tokens:
+                        chain = t.get("chainId", "unknown")
+                        addr = t.get("tokenAddress", "")
+                        item = {
+                            "chain": chain,
+                            "address": addr,
+                            "amount": t.get("totalAmount", 0),
+                            "url": t.get("url", f"https://dexscreener.com/{chain}/{addr}"),
+                            "risk_score": None,
+                            "audit_status": "Bilinmiyor"
+                        }
+                        if chain == "solana" and addr:
+                            audit = await cls.get_solana_rugcheck(addr)
+                            if audit:
+                                item["risk_score"] = audit.get("score", 0)
+                                item["audit_status"] = "GÜVENLİ (Düşük Risk)" if audit.get("score", 0) < 500 else "RİSKLİ / DİKKAT"
+                        results.append(item)
+        except Exception:
+            pass
+        return results

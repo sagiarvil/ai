@@ -29,3 +29,8 @@ models/
 # Firebase
 .firebase/
 firebase-debug.log*
+
+# Secrets & Environment
+.env
+.env.*
+*.env

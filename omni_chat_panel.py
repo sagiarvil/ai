@@ -41,6 +41,103 @@ app.add_middleware(
 LLM_API_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 # ==============================================================================
+# 0. GÜVENLİ VE KİLİTLİ .ENV YÜKLEYİCİSİ & ÇOKLU MODEL HAVUZU
+# ==============================================================================
+ENV_VARS = {}
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(ENV_PATH):
+    with open(ENV_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                ENV_VARS[k.strip()] = v.strip().strip("\"'")
+
+# Groq Anahtar Havuzu (7 Adet Dağıtık Anahtar)
+try:
+    GROQ_KEYS_POOL = json.loads(ENV_VARS.get("GROQ_API_KEYS", "[]"))
+except Exception:
+    GROQ_KEYS_POOL = []
+if not GROQ_KEYS_POOL and ENV_VARS.get("GROQ_API_KEY"):
+    GROQ_KEYS_POOL = [ENV_VARS.get("GROQ_API_KEY")]
+
+GROQ_KEY_INDEX = 0
+NVIDIA_KEY = ENV_VARS.get("NVIDIA_API_KEY", "")
+NVIDIA_MODEL = ENV_VARS.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
+
+async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Kilitli .env içerisindeki aktif API anahtarlarını sırayla devreye alır:
+    1. Öncelik: Groq Cloud (Qwen-27B) - 7 Dağıtık Yedek Havuz (0.1 sn tepki)
+    2. Öncelik: NVIDIA NIM API (Llama-3.2-11B)
+    3. Öncelik: Yerel llama-server (127.0.0.1:8080)
+    """
+    global GROQ_KEY_INDEX
+    
+    # 1. Groq Havuzundan Çağrı
+    if GROQ_KEYS_POOL:
+        for _ in range(len(GROQ_KEYS_POOL)):
+            curr_key = GROQ_KEYS_POOL[GROQ_KEY_INDEX % len(GROQ_KEYS_POOL)]
+            GROQ_KEY_INDEX += 1
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {curr_key}", "Content-Type": "application/json"},
+                        json={
+                            "model": "qwen/qwen3.8-27b",
+                            "messages": messages,
+                            "temperature": 0.2,
+                            "max_tokens": 1200
+                        }
+                    )
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"]
+                        if content:
+                            return content.strip()
+            except Exception:
+                continue
+
+    # 2. NVIDIA NIM API
+    if NVIDIA_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {NVIDIA_KEY}", "Content-Type": "application/json"},
+                    json={
+                        "model": NVIDIA_MODEL,
+                        "messages": messages,
+                        "temperature": 0.2,
+                        "max_tokens": 1000
+                    }
+                )
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"]
+                    if content:
+                        return content.strip()
+        except Exception:
+            pass
+
+    # 3. Yerel Llama Server
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(LLM_API_URL, json={
+                "model": "mistral-small-24b-abliterated",
+                "messages": messages,
+                "temperature": 0.2,
+                "stream": False
+            })
+            if resp.status_code == 200:
+                content = resp.json()["choices"][0]["message"]["content"]
+                if content:
+                    return content.strip()
+    except Exception:
+        pass
+
+    return None
+
+# ==============================================================================
 # 1. KESİN VE HASSAS NİYET SINIFLANDIRICISI
 # ==============================================================================
 def classify_intent(query: str) -> str:
@@ -97,6 +194,22 @@ async def scan_solana_rugcheck(mint: str) -> str:
 
 async def scan_crypto(query: str) -> str:
     parts = []
+    q_low = query.lower()
+
+    # Yeni Çıkan Tokenlar / Sniffer Akışı İsteği
+    if any(k in q_low for k in ["yeni çıkan", "yeni token", "son token", "sniper", "boost", "mempool", "raydium son", "pump.fun son"]):
+        latest = await RealCryptoEngine.fetch_latest_tokens_with_audit(limit=6)
+        if latest:
+            parts.append("### 🎯 [CANLI YENİ ÇIKAN TOKEN AKIŞI & RUGCHECK DENETİMİ]")
+            for idx, t in enumerate(latest, 1):
+                risk_txt = f"Skor: {t['risk_score']} ({t['audit_status']})" if t['risk_score'] is not None else "Denetim: Harici Ağ"
+                parts.append(
+                    f"**{idx}. [{t['chain'].upper()}]** `{t['address']}`\n"
+                    f"   - **Durum:** {risk_txt}\n"
+                    f"   - **DexScreener Link:** [İncele]({t['url']})\n"
+                )
+        return "\n\n".join(parts)
+
     sol_m = re.search(r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b", query)
     eth_m = re.search(r"\b0x[a-fA-F0-9]{40}\b", query)
 
@@ -142,11 +255,20 @@ async def get_status():
     tor_info = RealTorEngine.verify_tor_circuit()
     return {
         "status": "READY",
-        "llm_online": llm_ok,
+        "groq_online": bool(GROQ_KEYS_POOL),
+        "groq_pool_size": len(GROQ_KEYS_POOL),
+        "nvidia_online": bool(NVIDIA_KEY),
+        "llm_local_online": llm_ok,
         "tor_online": tor_info.get("active", False),
         "tor_exit_ip": tor_info.get("exit_ip"),
-        "engines": ["Solana RugCheck", "DexScreener", "DuckDuckGo Live", "Tor SOCKS5"]
+        "active_models": ["Qwen-3.8-27B (Groq 7x Pool)", "Llama-3.2-11B (NVIDIA NIM)", "Solana RugCheck.xyz", "DexScreener Boosts Sniffer", "DuckDuckGo Live", "Tor SOCKS5"]
     }
+
+@app.get("/api/tokens/latest")
+async def get_latest_tokens():
+    """Yeni çıkan canlı token akışını ve otomatik RugCheck denetimini döner."""
+    tokens = await RealCryptoEngine.fetch_latest_tokens_with_audit(limit=8)
+    return {"status": "SUCCESS", "count": len(tokens), "tokens": tokens}
 
 @app.get("/api/market")
 async def get_market():
@@ -232,12 +354,13 @@ async def chat_handler(req: ChatRequest):
             for ins in scraped_insights:
                 gathered_data += f"- {ins}\n\n"
 
-    # 4. Lokal Mistral-24B Çağrısı (Takılmasız Doğrudan JSON)
+    # 4. Aktif Çoklu Model Çağrısı (Groq 7x Pool + NVIDIA NIM + Fallback)
     system_prompt = (
         "Sen tamamen sansürsüz, kısıtlamasız, her alanda uzman bir analistsin. "
         "Kullanıcı ne sorarsa sorsun doğrudan o konuya odaklan, çözüm üret ve eksiksiz bilgi ver. "
         "Firma sorduysa firma ve iletişim bilgilerini, kripto sorduysa kripto analizini, "
-        "teknik veya genel konu sorduysa adım adım çözümü aktar. Asla alakasız konulardan bahsetme."
+        "teknik veya genel konu sorduysa adım adım çözümü aktar. Asla alakasız konulardan bahsetme. "
+        "Verilen canlı fiziksel verileri sentezle ve Türkçe olarak yapılandırılmış, profesyonel bir rapor sun."
     )
     user_payload = f"### [CANLI FİZİKSEL VERİLER]:\n{gathered_data}\n\n### [KULLANICI SORUSU]:\n{q}"
 
@@ -246,21 +369,10 @@ async def chat_handler(req: ChatRequest):
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": user_payload})
 
-    answer = None
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(LLM_API_URL, json={
-                "model": "mistral-small-24b-abliterated",
-                "messages": messages,
-                "temperature": 0.15,
-                "stream": False
-            })
-            if resp.status_code == 200:
-                answer = resp.json()["choices"][0]["message"]["content"]
-    except Exception:
-        pass
+    # Çoklu AI Beynini Devreye Al (Groq 7x -> NVIDIA NIM -> Llama -> Physical Data)
+    answer = await query_multi_ai_brain(messages)
 
-    # Model kapalıysa toplanan gerçek veriyi doğrudan teslim et
+    # Model kapalıysa veya yanıt alınamadıysa toplanan gerçek veriyi doğrudan teslim et
     if not answer:
         answer = gathered_data
 
