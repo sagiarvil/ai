@@ -57,7 +57,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python3 -m pytest -v tests/test_gravity_p0.py
+          python3 -m pytest -v tests/test_gravity_p0.py tests/test_omnicore_x_contract.py
           echo "Gate 5 PASS: All P0 Security & Verification Tests Passed."
 
   verify_macos:
@@ -83,5 +83,5 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python3 -m pytest -v tests/test_gravity_p0.py -k "sandbox"
+          python3 -m pytest -v tests/test_gravity_p0.py tests/test_omnicore_x_contract.py -k "sandbox"
           echo "Gate 6 PASS: macOS Kernel Seatbelt Sandbox Verified."

@@ -38,3 +38,5 @@ firebase-debug.log*
 sandbox_workspace/
 .pytest_cache/
 tasks/*.json
+data/
+tools/browser_sessions/

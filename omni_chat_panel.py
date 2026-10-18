@@ -25,6 +25,8 @@ from real_engines import RealWebSearchEngine, RealTorEngine
 from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox
 from model_manager import ModelManager
+from model_observability import ModelObservabilityEngine
+from omnicore_orchestrator import OmniCoreXOrchestrator
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
@@ -408,8 +410,9 @@ async def system_status(authorized: bool = Depends(verify_api_key)):
         except Exception:
             pass
 
-    # Canlı Model Durumu
+    # Canlı Model Durumu ve Sistem Telemetrisi
     model_probe = await ModelManager.verify_model_runtime("mistral-small-24b-abliterated:latest")
+    telemetry = ModelObservabilityEngine.get_system_telemetry()
 
     return {
         "status": "ONLINE",
@@ -417,15 +420,17 @@ async def system_status(authorized: bool = Depends(verify_api_key)):
         "model_verified": model_probe.get("inference_pass", False),
         "tokens_per_second": model_probe.get("tokens_per_second", 0.0),
         "latency_sec": model_probe.get("latency_sec", 0.0),
-        "hardware": "Apple M4 (Metal GPU / 17.8 GiB VRAM)",
-        "agentic_engine": "OpenHands-Style Deterministic State Machine (Zero-Fake Verification)",
+        "hardware": telemetry.get("hardware", "Apple M4"),
+        "memory_pressure": telemetry.get("memory_pressure", "NORMAL"),
+        "recommended_concurrency": telemetry.get("recommended_concurrency", 1),
+        "agentic_engine": "OmniCore X (LangGraph StateGraph + OpenHands Runtime)",
         "sandbox": "macOS Seatbelt Kernel-Enforced Sandbox (sandbox-exec)",
         "engines": [
             "GitHub Çok Kriterli Araştırma ve Sandbox Kurucu",
             "Yerel Tarayıcı Motoru (Chrome & Safari)",
             "I2P (Invisible Internet Project - i2pd)",
             "Tor SOCKS5 (9050)",
-            "Crawl4AI",
+            "Crawl4AI & Playwright",
             "Slither"
         ],
         "active_installed_engines_count": len(installed_engines),
@@ -435,9 +440,33 @@ async def system_status(authorized: bool = Depends(verify_api_key)):
         "auth_enabled": True
     }
 
+@app.get("/api/metrics")
+async def get_metrics(authorized: bool = Depends(verify_api_key)):
+    """FAZ 8 Observability & Performance Metrikleri."""
+    return ModelObservabilityEngine.get_system_telemetry()
+
+class AgentTaskRequest(BaseModel):
+    goal: str
+
+@app.post("/api/agent/task")
+async def execute_agent_task(req: AgentTaskRequest, authorized: bool = Depends(verify_api_key)):
+    """FAZ 1 & FAZ 2 & FAZ 7: LangGraph + OpenHands İcra ve Doğrulama Motoru."""
+    res = await OmniCoreXOrchestrator.execute_task(req.goal)
+    return res
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_key)):
     query = req.message.strip()
+    # Eğer doğrudan otonom kodlama veya görev isteniyorsa LangGraph orkestratörüne yönlendir
+    if any(k in query.lower() for k in ["kod yaz", "görev", "ajan", "kurulum yap", "modül üret"]):
+        agent_res = await OmniCoreXOrchestrator.execute_task(query)
+        return {
+            "status": agent_res.get("final_decision", "COMPLETED"),
+            "reply": f"**[OMNICORE X LANGGRAPH İCRA SONUCU]**\n- Karar: `{agent_res.get('final_decision')}`\n- Çalışma Alanı: `{agent_res.get('sandbox_workspace')}`\n- Süre: `{agent_res.get('elapsed_seconds')}s`\n- Üretilen Dosyalar: {agent_res.get('generated_files')}",
+            "execution_steps": agent_res.get("execution_steps", []),
+            "verified": agent_res.get("runtime_verified", False)
+        }
+
     res = await AutonomousExecutionEngine.execute_verified_task(
         prompt=query,
         tools_schema=tools,
