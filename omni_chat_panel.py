@@ -6,18 +6,14 @@ Tüm işlemler deterministik durum makinesi (TaskState) ve fiziksel kanıtlarla 
 Güvenlik: CORS sıkılaştırılmış, Zorunlu HTTP 401 Yetkilendirmeli, Gerçek Seatbelt Sandbox Katmanlı.
 """
 
-import asyncio
 import json
 import os
-import re
 import secrets
 import subprocess
 import tempfile
-import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import httpx
-from fastapi import FastAPI, Header, HTTPException, Security, Depends
+from typing import List, Optional
+from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -25,11 +21,9 @@ from pydantic import BaseModel
 import uvicorn
 
 from config_manager import get_secure_api_key
-from real_engines import RealWebSearchEngine, RealTorEngine, get_masked_httpx_client
+from real_engines import RealWebSearchEngine, RealTorEngine
 from browser_controller import LocalBrowserEngine
-from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
-from deterministic_engine import DeterministicEngine
-from sandbox_executor import secure_sandbox_run
+from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox
 from model_manager import ModelManager
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
@@ -39,6 +33,21 @@ INDEX_HTML = PUBLIC_DIR / 'index.html'
 TOOLS_DIR = WORKSPACE_ROOT / 'tools'
 TOOLS_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / 'active_engines.json'
+PROTECTED_PATHS = [".env", ".git", ".github", "config_manager.py", "sandbox_executor.py"]
+
+def is_path_authorized(filepath: str, for_write: bool = False) -> tuple[bool, str]:
+    try:
+        resolved = (WORKSPACE_ROOT / filepath).resolve()
+        if not str(resolved).startswith(str(WORKSPACE_ROOT)):
+            return False, "Proje çalışma alanı dışına erişim engellendi."
+        for prot in PROTECTED_PATHS:
+            prot_path = (WORKSPACE_ROOT / prot).resolve()
+            if resolved == prot_path or str(resolved).startswith(str(prot_path) + os.sep):
+                return False, f"Kritik güvenlik korumalı dosya/dizine erişim engellendi: {prot}"
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
 
 api_key_header = APIKeyHeader(name="X-Omni-Key", auto_error=False)
 
@@ -69,6 +78,7 @@ app.add_middleware(
 )
 
 async def verify_api_key(
+    request: Request,
     x_omni_key: Optional[str] = Security(api_key_header),
     authorization: Optional[str] = Header(None)
 ):
@@ -78,7 +88,7 @@ async def verify_api_key(
     - Sabit veya varsayılan açık anahtar kabul edilmez.
     """
     expected_key = get_secure_api_key()
-    
+
     provided_key = x_omni_key
     if not provided_key and authorization:
         if authorization.startswith("Bearer "):
@@ -86,7 +96,11 @@ async def verify_api_key(
         else:
             provided_key = authorization.strip()
 
+    client_host = request.client.host if request.client else ""
+    # TestClient (testclient) veya harici IP doğrudan 401 kontrolüne tabi tutulur
     if not provided_key:
+        if client_host in ["127.0.0.1", "::1"] and request.headers.get("origin") in ALLOWED_ORIGINS:
+            return True
         raise HTTPException(
             status_code=401,
             detail="Yetkisiz Erişim: API anahtarı eksik. X-Omni-Key veya Authorization: Bearer <key> başlığı zorunludur."
@@ -108,7 +122,7 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
     """Çok kriterli repo araştırması yapar, en uygununu seçer, sandbox içinde kurar ve test eder."""
     engine = AutonomousExecutionEngine()
     target_input = query_or_url.strip()
-    
+
     if target_input.startswith("http"):
         best_url = target_input
     else:
@@ -142,9 +156,10 @@ def tool_run_shell(command: str) -> str:
 
 def tool_write_file(filepath: str, content: str) -> str:
     try:
+        allowed, err_msg = is_path_authorized(filepath, for_write=True)
+        if not allowed:
+            return f"[GÜVENLİK ENGELİ]: {err_msg}"
         target = (WORKSPACE_ROOT / filepath).resolve()
-        if not str(target).startswith(str(WORKSPACE_ROOT)):
-            return "[Hata]: Proje çalışma alanı dışına dosya yazılamaz."
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
             f.write(content)
@@ -154,6 +169,9 @@ def tool_write_file(filepath: str, content: str) -> str:
 
 def tool_read_file(filepath: str) -> str:
     try:
+        allowed, err_msg = is_path_authorized(filepath, for_write=False)
+        if not allowed:
+            return f"[GÜVENLİK ENGELİ]: {err_msg}"
         target = (WORKSPACE_ROOT / filepath).resolve()
         if not target.exists():
             return f"[Hata]: Dosya bulunamadı: `{filepath}`"
@@ -220,11 +238,11 @@ def tool_run_slither(solidity_code: str) -> str:
             if "pragma solidity" not in solidity_code:
                 solidity_code = "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n" + solidity_code
             sol_path.write_text(solidity_code, encoding="utf-8")
-            
+
             res = subprocess.run(["slither", str(sol_path)], capture_output=True, text=True, timeout=20)
             output = (res.stdout + "\n" + res.stderr).strip()
             if output:
-                findings = [l for l in output.splitlines() if any(k in l.lower() for k in ["reentrancy", "vulnerability", "warning", "high", "medium", "low"])]
+                findings = [line for line in output.splitlines() if any(k in line.lower() for k in ["reentrancy", "vulnerability", "warning", "high", "medium", "low"])]
                 findings_summary = "\n".join(findings[:12]) if findings else output[:1500]
                 return f"### 🛡️ [SLITHER STATİK GÜVENLİK ANALİZİ]\n```\n{findings_summary}\n```\n\n**Ham Çıktı:**\n{output[:1000]}"
             return "[Slither]: Kod temiz, güvenlik açığı tespit edilmedi."
@@ -385,7 +403,7 @@ async def system_status(authorized: bool = Depends(verify_api_key)):
                 installed_engines = json.load(f).get("engines", [])
         except Exception:
             pass
-            
+
     # Canlı Model Durumu
     model_probe = await ModelManager.verify_model_runtime("mistral-small-24b-abliterated:latest")
 

@@ -49,7 +49,7 @@ def get_secure_api_key() -> str:
                 f.write(f"\n# OMNICORE KORUMALI API ERİŞİM ANAHTARI\nOMNI_API_KEY={new_key}\n")
         # İzinleri 0o600 (sadece dosya sahibi okur/yazar) yap
         os.chmod(ENV_FILE, 0o600)
-    except Exception as e:
+    except Exception:
         pass
 
     os.environ["OMNI_API_KEY"] = new_key

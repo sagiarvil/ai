@@ -17,7 +17,6 @@ OMNICORE // GERÇEK İŞLETİM SİSTEMİ SEVİYESİNDE SANDBOX İCRA MOTORU
 import os
 import re
 import resource
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -65,7 +64,7 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = True) ->
     """
     network_rule = "(allow network*)" if allow_network else "(deny network*)"
     home = Path.home()
-    
+
     profile = f"""(version 1)
 (allow default)
 {network_rule}
@@ -166,7 +165,7 @@ def secure_sandbox_run(
     try:
         # sandbox-exec ile çekirdek düzeyinde sarma
         wrapped_cmd = ["sandbox-exec", "-p", profile, "bash", "-c", cmd_clean]
-        
+
         res = subprocess.run(
             wrapped_cmd,
             cwd=str(target_dir),

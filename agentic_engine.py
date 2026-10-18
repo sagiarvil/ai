@@ -14,20 +14,16 @@ Sıfır Sahte Başarı İlkeleri:
 5. Hata durumunda otomatik geri alma (Rollback) çalıştırılır.
 """
 
-import asyncio
 import enum
 import json
 import os
-import re
 import shutil
-import subprocess
 import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import httpx
 
-from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
-from model_manager import ModelManager
+from sandbox_executor import secure_sandbox_run
 from verification_gate import IndependentVerificationGate
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
@@ -141,10 +137,10 @@ class AutonomousExecutionEngine:
     # --------------------------------------------------------------------------
     def install_and_verify_repo(self, repo_url: str, test_command: Optional[str] = None) -> Dict[str, Any]:
         self.transition_to(TaskState.INSTALLING, f"Klonlama ve bağımlılık kurulumu başlatıldı: {repo_url}")
-        
+
         repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
         target_dir = TOOLS_DIR / repo_name
-        
+
         # Rollback yığını hazırla
         if target_dir.exists():
             backup_dir = TOOLS_DIR / f"{repo_name}_bak_{int(time.time())}"
@@ -186,7 +182,7 @@ class AutonomousExecutionEngine:
 
         # Bağımsız Doğrulama Kapısı (TESTING) - ASLA SAHTE DEĞİL
         self.transition_to(TaskState.TESTING, "IndependentVerificationGate ile fiziksel doğrulama yürütülüyor.")
-        
+
         gate_res = IndependentVerificationGate.verify_runtime_execution(target_dir=target_dir, custom_test_cmd=test_command)
         if not gate_res.get("verified"):
             self.add_evidence(
@@ -260,7 +256,7 @@ class AutonomousExecutionEngine:
         engine = cls()
         engine.transition_to(TaskState.RECEIVED, "Kullanıcı görevi teslim alındı.")
         engine.transition_to(TaskState.PLANNED, f"Hedef analiz edildi: {prompt[:80]}")
-        
+
         system_instruction = (
             "Sen OpenHands mimarisiyle çalışan, DETERMINISTIK bir Otonom Yazılım Mühendisisin. "
             "KESİN KURAL: Asla akıl verme, ders anlatma, 'Şunu yapmanız gerekir' deme! "
@@ -299,11 +295,12 @@ class AutonomousExecutionEngine:
                             }
                         }
                     )
-                    elapsed_req = round(time.perf_counter() - start_req, 3)
+                    # request timer
+                    round(time.perf_counter() - start_req, 3)
                     if resp.status_code != 200:
                         engine.transition_to(TaskState.FAILED, f"Model API yanıt vermedi: HTTP {resp.status_code}")
                         break
-                    
+
                     data = resp.json()
                     msg = data["choices"][0]["message"]
             except Exception as e:
@@ -325,9 +322,9 @@ class AutonomousExecutionEngine:
 
                     # İlgili aracı çalıştır
                     out = await call_tool_fn(fname, fargs)
-                    
+
                     is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
-                    
+
                     engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", is_tool_success, out[:500])
 
                     execution_steps.append({

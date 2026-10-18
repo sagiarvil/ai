@@ -236,12 +236,24 @@
 
       const t0 = performance.now();
 
+      const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
+      const apiKey = localStorage.getItem('omni_key') || '';
+
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(API_BASE + '/api/chat', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Omni-Key': apiKey
+          },
           body: JSON.stringify({ message: q, history: history })
         });
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const raw = await res.text();
+          throw new Error('Yerel backend servisine (http://127.0.0.1:5050) ulaşılamadı veya geçersiz HTML yanıtı alındı. Backend terminalde çalışıyor mu kontrol edin.');
+        }
 
         if (res.ok) {
           const data = await res.json();

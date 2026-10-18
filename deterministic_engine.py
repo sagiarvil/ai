@@ -35,6 +35,6 @@ class DeterministicEngine:
     def verify_success(self) -> bool:
         """Sahte başarıyı engellemek için zorunlu runtime doğrulama kanıtı."""
         return any(
-            e["state"] == "VERIFIED" and e.get("proof", {}).get("inference_pass") 
+            e["state"] == "VERIFIED" and e.get("proof", {}).get("inference_pass")
             for e in self.evidence_log
         )

@@ -9,7 +9,7 @@ import json
 import re
 import urllib.request
 import urllib.parse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import httpx
 from bs4 import BeautifulSoup
 import socks
@@ -45,22 +45,24 @@ class RealWebSearchEngine:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"
             })
+            html = ""
             try:
                 opener = get_tor_opener()
-                resp_ctx = opener.open(req, timeout=10)
+                with opener.open(req, timeout=10) as resp:
+                    html = resp.read().decode("utf-8", errors="ignore")
             except Exception:
-                resp_ctx = urllib.request.urlopen(req, timeout=8)
-
-            with resp_ctx as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
+                with httpx.Client(timeout=8.0, verify=True) as client:
+                    resp = client.get(url, headers={"User-Agent": req.headers.get("User-agent", "Mozilla/5.0")})
+                    if resp.status_code == 200:
+                        html = resp.text
                 soup = BeautifulSoup(html, "html.parser")
-                
+
                 result_divs = soup.find_all("div", class_="result")
                 for div in result_divs:
                     title_elem = div.find("a", class_="result__snippet")
                     header_elem = div.find("h2", class_="result__title")
                     link_elem = header_elem.find("a") if header_elem else None
-                    
+
                     if link_elem:
                         raw_href = link_elem.get("href", "")
                         actual_url = raw_href
@@ -69,10 +71,10 @@ class RealWebSearchEngine:
                                 actual_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
                             except Exception:
                                 pass
-                        
+
                         title = header_elem.get_text(strip=True) if header_elem else "Kaynak"
                         snippet = title_elem.get_text(strip=True) if title_elem else ""
-                        
+
                         results.append({
                             "title": title,
                             "url": actual_url,

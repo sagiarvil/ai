@@ -16,7 +16,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from playwright.async_api import async_playwright
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
@@ -43,7 +43,7 @@ class LocalBrowserEngine:
         """
         b_name = browser_name.lower().strip()
         t0 = time.time()
-        
+
         proxy_config = None
         network_name = "Yerel İnternet"
         if use_tor:
@@ -68,7 +68,7 @@ class LocalBrowserEngine:
                 res = subprocess.run(["osascript", "-e", sc], capture_output=True, text=True, timeout=30)
                 elapsed = round(time.time() - t0, 2)
                 content = res.stdout[:5000] if res.returncode == 0 else f"[Safari AppleScript Hatası]: {res.stderr}"
-                
+
                 cls._save_session("safari", url, content, network_name)
                 return {
                     "status": "SUCCESS",
@@ -107,7 +107,7 @@ class LocalBrowserEngine:
                     user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 )
                 page = await context.new_page()
-                
+
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(wait_seconds)
 

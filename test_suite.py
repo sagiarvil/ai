@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 from omni_chat_panel import app
 from real_engines import RealTorEngine, RealWebSearchEngine
 from browser_controller import LocalBrowserEngine
-from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
 from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
 from model_manager import ModelManager
 

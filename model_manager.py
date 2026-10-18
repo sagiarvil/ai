@@ -9,7 +9,7 @@ fiziksel token yanıtı ile kanıtlanmalıdır.
 import time
 import json
 import httpx
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 

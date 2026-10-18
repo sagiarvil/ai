@@ -7,12 +7,14 @@ on:
     branches: [ main ]
 
 jobs:
-  verify:
-    name: Formal Security, Isolation & Regression Gates
+  verify_linux:
+    name: Linux Security & Verification Gates
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out repository with submodules
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -41,17 +43,45 @@ jobs:
           python3 -m py_compile *.py tests/*.py
           echo "Gate 2 PASS: Syntax Compile Check."
 
-      - name: Gate 3 - Ruff Lint & Quality Check
+      - name: Gate 3 - Ruff Strict Code Quality Check (No Suppression)
         run: |
-          ruff check . --select E,F,W --ignore E501 || true
-          echo "Gate 3 PASS: Code Quality Verified."
+          ruff check .
+          echo "Gate 3 PASS: Strict Ruff Lint Passed."
 
-      - name: Gate 4 - Bandit Security Scan
+      - name: Gate 4 - Bandit Strict Security Scan (No Suppression)
         run: |
-          bandit -r . -x ./tools,./sandbox_workspace,./tests -ll -ii || true
-          echo "Gate 4 PASS: Bandit Security Analysis."
+          bandit -r . -x ./tools,./sandbox_workspace,./tests -ll
+          echo "Gate 4 PASS: Bandit Security Scan Passed."
 
-      - name: Gate 5 - Zero-Fake & P0 Regression Test Suite
+      - name: Gate 5 - P0 Regression & Security Test Suite
+        env:
+          PYTHONPATH: .
         run: |
-          pytest -v tests/test_gravity_p0.py
+          python3 -m pytest -v tests/test_gravity_p0.py
           echo "Gate 5 PASS: All P0 Security & Verification Tests Passed."
+
+  verify_macos:
+    name: macOS Seatbelt Kernel Sandbox Gate
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Test Dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest fastapi httpx uvicorn pydantic
+
+      - name: Gate 6 - Real macOS Seatbelt Isolation Tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python3 -m pytest -v tests/test_gravity_p0.py -k "sandbox"
+          echo "Gate 6 PASS: macOS Kernel Seatbelt Sandbox Verified."
