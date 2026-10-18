@@ -284,7 +284,9 @@
           if (data.execution_steps && data.execution_steps.length > 0) {
             outHtml += `<div class="steps">`;
             data.execution_steps.forEach(st => {
-              outHtml += `▸ <strong>${st.tool}</strong> (${st.output ? st.output.substring(0, 100).replace(/\n/g, ' ') + '...' : 'Tamamlandı'})<br>`;
+              const stepName = st.tool || st.step || 'Aşama';
+              const stepDetail = st.output || (st.exit_code !== undefined ? `exit ${st.exit_code}` : 'Tamamlandı');
+              outHtml += `▸ <strong>${stepName}</strong> (${stepDetail.substring(0, 100).replace(/\n/g, ' ')})<br>`;
             });
             outHtml += `</div>`;
           }
