@@ -514,6 +514,25 @@ async def query_multi_ai_brain(messages: List[Dict[str, str]]) -> Optional[str]:
         except Exception:
             pass
 
+    # 1. Yerel SSD Dolphin-Mistral (Filtresiz & Yerel Apple M4 GPU)
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                "http://127.0.0.1:11434/api/chat",
+                json={
+                    "model": "dolphin-mistral",
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": 0.2}
+                }
+            )
+            if resp.status_code == 200:
+                content = resp.json().get("message", {}).get("content", "").strip()
+                if content:
+                    return content
+    except Exception:
+        pass
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(LLM_API_URL, json={"model": "mistral-small-24b-abliterated", "messages": messages, "temperature": 0.2})
