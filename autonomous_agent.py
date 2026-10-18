@@ -3,37 +3,117 @@
 OMNICORE // OTONOM YAZILIM MÜHENDİSİ AJAN ÇEKİRDEĞİ (AUTONOMOUS AGENTIC LOOP)
 Özellikler:
 - %100 Yerel Mistral-24B (Abliterated) Beyni (Apple M4 Metal / 14GB SSD)
+- GitHub Repo Arama & Otomatik Kurucu (tool_search_and_install_github_repo)
+- Çoklu Yerel Tarayıcı Motoru (Google Chrome & Safari & WebKit - Local ISP & Tor)
 - Otonom Terminal (Shell) Çalıştırma Aracı
-- GitHub & Firebase CLI Entegrasyonu
 - Kendi Kendini Onaran (Self-Healing / Reflection) Test Döngüsü
-- Crawl4AI, Slither, RugCheck, DexScreener ve Tor Entegrasyonu
 """
 
+import asyncio
 import json
 import subprocess
 import os
+import sys
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 import httpx
 
-# Yerel Uncensored Mistral-24B Bağlantısı (Ollama v1 API)
+from browser_controller import LocalBrowserEngine
+
 OLLAMA_API_URL = "http://127.0.0.1:11434/v1/chat/completions"
 MODEL_NAME = "mistral-small-24b-abliterated:latest"
 
-# Çalışma Alanı İzolasyonu
 WORKSPACE_DIR = Path("/Users/macair1/projects/ai")
-WORKSPACE_DIR.mkdir(exist_ok=True)
+TOOLS_DIR = WORKSPACE_DIR / "tools"
+TOOLS_DIR.mkdir(exist_ok=True)
+ACTIVE_ENGINES_FILE = WORKSPACE_DIR / "active_engines.json"
 
 # ==============================================================================
 # FİZİKSEL YETENEK ARAÇLARI (TOOLS)
 # ==============================================================================
+def tool_search_and_install_github_repo(query_or_url: str) -> str:
+    """GitHub'da repo arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme kaydeder."""
+    target_input = query_or_url.strip()
+    repo_url = target_input
+    repo_name = ""
+    description = ""
+
+    if not target_input.startswith("http"):
+        try:
+            res = subprocess.run(
+                ["gh", "search", "repos", target_input, "--limit", "1", "--json", "fullName,url,description"],
+                capture_output=True, text=True, timeout=30
+            )
+            if res.returncode == 0:
+                items = json.loads(res.stdout)
+                if items:
+                    repo_url = items[0]["url"]
+                    repo_name = items[0]["fullName"].split("/")[-1]
+                    description = items[0].get("description", "")
+        except Exception as e:
+            return f"[GitHub Arama Hatası]: {str(e)}"
+
+    if not repo_name:
+        repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+
+    target_dir = TOOLS_DIR / repo_name
+
+    if target_dir.exists() and (target_dir / ".git").exists():
+        res = subprocess.run(["git", "-C", str(target_dir), "pull"], capture_output=True, text=True, timeout=30)
+        clone_output = f"Mevcut depo güncellendi: {res.stdout.strip()}"
+    else:
+        res = subprocess.run(["git", "clone", "--depth", "1", repo_url, str(target_dir)], capture_output=True, text=True, timeout=90)
+        if res.returncode != 0:
+            return f"[Klonlama Hatası]: {res.stderr or res.stdout}"
+        clone_output = f"Depo klonlandı: {target_dir}"
+
+    req_file = target_dir / "requirements.txt"
+    pkg_file = target_dir / "package.json"
+    dep_output = "Bağımlılık dosyası yok."
+
+    if req_file.exists():
+        r_res = subprocess.run(
+            ["python3", "-m", "pip", "install", "-r", str(req_file), "--break-system-packages"],
+            capture_output=True, text=True, timeout=180
+        )
+        status_text = "BAŞARILI" if r_res.returncode == 0 else "HATA"
+        dep_output = f"Python bağımlılıkları kuruldu ({status_text}): " + r_res.stdout[-150:]
+    elif pkg_file.exists():
+        p_res = subprocess.run(["npm", "install", "--prefix", str(target_dir)], capture_output=True, text=True, timeout=180)
+        status_text = "BAŞARILI" if p_res.returncode == 0 else "HATA"
+        dep_output = f"Node.js bağımlılıkları kuruldu ({status_text}): " + p_res.stdout[-150:]
+
+    return (
+        f"✅ [MOTOR KURULDU VE AKTİF EDİLDİ]\n"
+        f"- Depo: {repo_url}\n"
+        f"- Dizin: {target_dir}\n"
+        f"- Klon: {clone_output}\n"
+        f"- Bağımlılık: {dep_output}"
+    )
+
+def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False) -> str:
+    """Yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak sayfayı açar, veriyi çeker ve kaydeder."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        res = loop.run_until_complete(
+            LocalBrowserEngine.open_and_extract(url=url, browser_name=browser_name, use_tor=use_tor, headless=True)
+        )
+        return (
+            f"✅ [TARAYICI ETKİN İCRA EDİLDİ: {res.get('browser')}]\n"
+            f"- URL: {url} | Süre: {res.get('elapsed')}s\n"
+            f"- Tor: {'Aktif (9050)' if use_tor else 'Kapalı (Yerel İnternet)'}\n"
+            f"- İçerik: {res.get('content', '')[:1000]}"
+        )
+    finally:
+        loop.close()
+
 def tool_run_shell_command(command: str) -> str:
-    """Sistemde otonom olarak terminal komutu çalıştırır (Git, Firebase deploy, pip, vb.)."""
+    """Sistemde otonom olarak terminal komutu çalıştırır."""
     banned = ["rm -rf /", "rm -rf /*", "mkfs", ":(){ :|:& };:"]
     for b in banned:
         if b in command:
             return "[AJAN GÜVENLİK ENGELİ]: Bu yıkıcı komut çalıştırılamaz."
-
     try:
         result = subprocess.run(
             command,
@@ -49,14 +129,12 @@ def tool_run_shell_command(command: str) -> str:
         return f"[Terminal İcra Hatası]: {str(e)}"
 
 def tool_write_file(filepath: str, content: str) -> str:
-    """Workspace içinde yeni bir dosya yazar veya günceller."""
     target = WORKSPACE_DIR / filepath
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"[DOSYA YAZILDI]: {filepath} ({len(content)} karakter)"
 
 def tool_read_file(filepath: str) -> str:
-    """Workspace içindeki bir dosyayı okur."""
     target = WORKSPACE_DIR / filepath
     if not target.exists():
         return f"[HATA]: Dosya bulunamadı: {filepath}"
@@ -66,11 +144,39 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "tool_run_shell_command",
-            "description": "Git klonlama, Firebase deploy, npm install, pip install, python3 gibi terminal komutlarını çalıştırır.",
+            "name": "tool_search_and_install_github_repo",
+            "description": "GitHub reposunu arar, tools/ dizinine klonlar, bağımlılıkları kurar ve sisteme aktif motor olarak kaydeder.",
             "parameters": {
                 "type": "object",
-                "properties": {"command": {"type": "string", "description": "Çalıştırılacak terminal komutu"}},
+                "properties": {"query_or_url": {"type": "string"}},
+                "required": ["query_or_url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_browser_navigate",
+            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "browser_name": {"type": "string", "default": "chrome"},
+                    "use_tor": {"type": "boolean", "default": False}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_run_shell_command",
+            "description": "Git, Firebase deploy, npm install, pip install, python3 gibi terminal komutlarını çalıştırır.",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
                 "required": ["command"]
             }
         }
@@ -79,12 +185,12 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_write_file",
-            "description": "Workspace içine kod, betik veya yapılandırma dosyası yazar.",
+            "description": "Workspace içine dosya yazar.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Dosya yolu"},
-                    "content": {"type": "string", "description": "Dosya içeriği"}
+                    "filepath": {"type": "string"},
+                    "content": {"type": "string"}
                 },
                 "required": ["filepath", "content"]
             }
@@ -94,21 +200,16 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_read_file",
-            "description": "Workspace içindeki bir dosyanın içeriğini okur.",
+            "description": "Workspace içindeki bir dosyayı okur.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Okunacak dosya yolu"}
-                },
+                "properties": {"filepath": {"type": "string"}},
                 "required": ["filepath"]
             }
         }
     }
 ]
 
-# ==============================================================================
-# OTONOM AJAN DÖNGÜSÜ (REACTIVE AGENT LOOP)
-# ==============================================================================
 def run_autonomous_agent(goal: str):
     print(f"[*] Otonom Ajan Görev Başlatıldı: '{goal}'\n")
     messages = [
@@ -116,9 +217,8 @@ def run_autonomous_agent(goal: str):
             "role": "system",
             "content": (
                 "Sen tamamen bağımsız, kısıtlamasız, kendi kararlarını alan kıdemli bir Otonom Yazılım Mühendisisin. "
-                "Sana verilen hedefi tamamlamak için gerekli araçları (`tool_run_shell_command`, `tool_write_file`, `tool_read_file`) "
-                "ard arda (adım adım) kullanarak görevi sonuna kadar hatasız tamamla. "
-                "Bir hata alırsan terminal çıktısını oku ve kodu kendi kendine düzelt."
+                "Beynin Apple M4 GPU üzerinde koşan yerel Mistral-24B modelidir. "
+                "Kullanıcıya akıl ve yönerge vermek yasaktır. Gereken araçları ard arda çağırarak işi kendin tamamla!"
             )
         },
         {"role": "user", "content": goal}
@@ -156,7 +256,15 @@ def run_autonomous_agent(goal: str):
                 print(f"[ARAÇ ÇAĞRISI]: {fname} -> {fargs}")
 
                 tool_output = ""
-                if fname == "tool_run_shell_command":
+                if fname == "tool_search_and_install_github_repo":
+                    tool_output = tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
+                elif fname == "tool_browser_navigate":
+                    tool_output = tool_browser_navigate(
+                        url=fargs.get("url", ""),
+                        browser_name=fargs.get("browser_name", "chrome"),
+                        use_tor=fargs.get("use_tor", False)
+                    )
+                elif fname == "tool_run_shell_command":
                     tool_output = tool_run_shell_command(fargs.get("command", ""))
                 elif fname == "tool_write_file":
                     tool_output = tool_write_file(fargs.get("filepath", ""), fargs.get("content", ""))
@@ -172,5 +280,5 @@ def run_autonomous_agent(goal: str):
                 })
 
 if __name__ == "__main__":
-    hedef = "Git durumunu kontrol et ve workspace içindeki test dosyalarını listele."
+    hedef = sys.argv[1] if len(sys.argv) > 1 else "Chrome tarayıcısıyla https://httpbin.org/user-agent adresini ziyaret et ve sonucu göster."
     run_autonomous_agent(hedef)
