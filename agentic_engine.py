@@ -239,6 +239,47 @@ class AutonomousExecutionEngine:
                     messages.append({"role": role, "content": content})
 
         messages.append({"role": "user", "content": prompt})
+
+        # ----------------------------------------------------------------------
+        # ÇOKLU REPO / TOPLU KURULUM DOĞRUDAN İCRA MOTORU (DETERMINISTIC BATCH RUNNER)
+        # ----------------------------------------------------------------------
+        github_urls = re.findall(r"https?://(?:www\.)?github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+", prompt)
+        clean_urls = []
+        for u in github_urls:
+            cu = u.rstrip("()[]<>'\".,;:)")
+            if cu not in clean_urls:
+                clean_urls.append(cu)
+
+        is_install_prompt = any(k in prompt.lower() for k in ["kur", "yükle", "yukle", "indir", "install", "tamamla", "depo", "repo", "kurulum"])
+
+        if is_install_prompt and clean_urls:
+            engine.transition_to(TaskState.RESEARCHING, f"{len(clean_urls)} adet GitHub reposu tespit edildi, toplu icra ve doğrulama başlatılıyor.")
+            report_lines = []
+            execution_steps = []
+
+            for idx, repo_url in enumerate(clean_urls, 1):
+                tool_out = await call_tool_fn("tool_search_and_install_github_repo", {"query_or_url": repo_url})
+                is_ok = not tool_out.startswith("❌") and not tool_out.startswith("[Hata")
+                engine.add_evidence(f"INSTALL_REPO_{idx}", repo_url, is_ok, tool_out[:400])
+                execution_steps.append({
+                    "step": idx,
+                    "tool": "tool_search_and_install_github_repo",
+                    "args": {"query_or_url": repo_url},
+                    "output": tool_out,
+                    "success": is_ok
+                })
+                report_lines.append(f"### {idx}. Depo: `{repo_url}`\n{tool_out}")
+
+            engine.transition_to(TaskState.COMPLETED, "Toplu kurulum ve doğrulama süreci tamamlandı.")
+            final_reply = f"📦 **Toplu Kurulum ve Doğrulama Raporu ({len(clean_urls)} Depo)**\n\n" + "\n\n---\n\n".join(report_lines)
+            return {
+                "task_id": engine.task_id,
+                "status": TaskState.COMPLETED.value,
+                "reply": final_reply,
+                "execution_steps": execution_steps,
+                "evidences": engine.evidences,
+                "verified": all(ev.get("success", False) for ev in engine.evidences)
+            }
         # ----------------------------------------------------------------------
         # SIFIR GECİKMELİ HIZLI VE KISA JARVIS CEVAPLARI (FAST-PATH)
         # ----------------------------------------------------------------------
