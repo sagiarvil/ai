@@ -117,12 +117,17 @@ class RealTorEngine:
     TOR_SOCKS_PORT = 9050
 
     @classmethod
+    def get_tor_opener(cls):
+        """DNS sızıntılarını ve güvenlik duvarı engellerini aşan Remote DNS (SOCKS5h) açıcı üretir."""
+        return urllib.request.build_opener(
+            SocksiPyHandler(socks.SOCKS5, cls.TOR_SOCKS_HOST, cls.TOR_SOCKS_PORT, True)
+        )
+
+    @classmethod
     def verify_tor_circuit(cls) -> Dict[str, Any]:
         """Tor devre durumunu ve aktif çıkış IP'sini doğrular."""
         try:
-            opener = urllib.request.build_opener(
-                SocksiPyHandler(socks.SOCKS5, cls.TOR_SOCKS_HOST, cls.TOR_SOCKS_PORT)
-            )
+            opener = cls.get_tor_opener()
             with opener.open("https://check.torproject.org/api/ip", timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return {
@@ -132,6 +137,23 @@ class RealTorEngine:
                 }
         except Exception as e:
             return {"active": False, "exit_ip": None, "status": f"Tor bağlantı hatası: {e}"}
+
+    @classmethod
+    def fetch_onion_url(cls, url: str) -> str:
+        """Güvenlik duvarı ve DNS engellerine takılmadan anonim ağ (.onion) içeriğini çeker."""
+        try:
+            opener = cls.get_tor_opener()
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"
+            })
+            with opener.open(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                soup = BeautifulSoup(html, "html.parser")
+                for s in soup(["script", "style"]):
+                    s.decompose()
+                return soup.get_text(separator=" ", strip=True)[:2500]
+        except Exception as e:
+            return f"[Tor Erişim Hatası]: {e}"
 
 # ==============================================================================
 # 3. GERÇEK KRİPTO & COIN MOTORLARI (Binance + DexScreener + RugCheck)

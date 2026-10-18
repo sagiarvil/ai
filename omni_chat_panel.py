@@ -396,13 +396,17 @@ async def chat_handler(req: ChatRequest):
     elif intent == "crypto":
         gathered_data = await scan_crypto(q)
 
-    # 4. Tor İsteği
+    # 4. Tor / Anonim Ağ İsteği
     elif intent == "dark_web":
         tor_status = RealTorEngine.verify_tor_circuit()
-        gathered_data = f"Tor Çıkış IP'si: {tor_status.get('exit_ip')}\n"
-        search_res = RealWebSearchEngine.search_live_web(f"{q} site:.onion OR darknet", max_results=3)
-        sources = search_res
-        gathered_data += "\n".join([f"- [{s['title']}]({s['url']}): {s['snippet']}" for s in search_res])
+        gathered_data = f"### 🧅 [TOR ANONİM AĞ DEVRESİ]\n- **Çıkış IP'si:** {tor_status.get('exit_ip')}\n- **Durum:** {tor_status.get('status')}\n\n"
+        onion_match = re.search(r"https?://[a-z2-7]{16,56}\.onion[^\s]*", q)
+        if onion_match:
+            gathered_data += f"**Onion Sayfa Çıktısı:**\n" + RealTorEngine.fetch_onion_url(onion_match.group(0))
+        else:
+            search_res = RealWebSearchEngine.search_live_web(f"{q} site:.onion OR darknet", max_results=3)
+            sources = search_res
+            gathered_data += "\n".join([f"- [{s['title']}]({s['url']}): {s['snippet']}" for s in search_res])
 
     # 5. Genel Bilgi / Firma / Araştırma / Her Konu
     else:
