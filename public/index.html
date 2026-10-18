@@ -276,34 +276,34 @@
     /* --- JARVIS NEON AUDIO EQUALIZER --- */
     .visualizer-container {
       max-width: 960px;
-      margin: 0 auto 6px auto;
-      background: #07090e;
-      border: 1px solid #3f1013;
-      border-radius: 6px;
-      padding: 6px 12px;
+      margin: 0 auto 4px auto;
+      background: #06070a;
+      border: 1px solid #260c0e;
+      border-radius: 5px;
+      padding: 3px 10px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      box-shadow: 0 0 15px rgba(239, 68, 68, 0.12);
-      transition: all 0.3s;
+      gap: 10px;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.08);
+      transition: all 0.25s;
       cursor: pointer;
       user-select: none;
     }
     .visualizer-container:hover {
-      border-color: #ef4444;
-      background: #0f0709;
+      border-color: #dc2626;
+      background: #0a0405;
     }
     .visualizer-container.active {
       border-color: #ef4444;
-      box-shadow: 0 0 30px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(239, 68, 68, 0.2);
-      background: #0d0406;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+      background: #0a0304;
     }
     .visualizer-canvas {
       flex: 1;
-      height: 38px;
+      height: 18px;
       width: 100%;
-      border-radius: 4px;
-      background: #07090e;
+      border-radius: 3px;
+      background: #040507;
     }
     .visualizer-meta {
       font-size: 11px;
@@ -361,7 +361,7 @@
     <div id="attachmentTray" class="attachment-tray"></div>
     <div id="visualizerContainer" class="visualizer-container" onclick="enableAudioAndListen()" title="Canlı Renkli Ekolayzırı ve Sesli Dinlemeyi Başlatmak / Açmak İçin Tıklayın">
       <div style="font-size:16px; color:#06b6d4;" title="Canlı Ses Dalga Analizi">⚡</div>
-      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="38"></canvas>
+      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="18"></canvas>
       <div class="visualizer-meta">
         <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#64748b;">⚫</span> <span id="vStatusText">Mikrofon Kapalı (Tıklayın)</span></div>
         <div id="visualizerDb" class="visualizer-db">Ekolayzırı Başlatmak İçin Dokunun</div>
@@ -651,10 +651,11 @@
       }
     }
 
-    // --- KARA ŞİMŞEK (KITT / KNIGHT RIDER) KIRMIZI SCANNER & SES MODÜLATÖRÜ ---
+    // --- KARA ŞİMŞEK (KITT) MİNİMALİST İNCE KIRMIZI LAZER TARAYICI ---
+    const KITT_SEGMENTS = 40;
     let kittScanPos = 0;       // 0 ile 1 arası tarayıcı pozisyonu
     let kittScanDir = 1;       // 1: sağa, -1: sola
-    let kittTrail = new Array(BAR_COUNT).fill(0); // LED kuyruk parlaklığı
+    let kittTrail = new Array(KITT_SEGMENTS).fill(0);
 
     function renderVisualizer() {
       if (!visualizerCtx || !visualizerCanvas) return;
@@ -665,13 +666,13 @@
 
       visualizerCtx.clearRect(0, 0, width, height);
 
-      // KITT Siyah / Derin Kırmızı Zemin
-      visualizerCtx.fillStyle = '#060203';
+      // Koyu HUD Zemin
+      visualizerCtx.fillStyle = '#050608';
       visualizerCtx.fillRect(0, 0, width, height);
 
-      const barCount = BAR_COUNT;
-      const barWidth = Math.floor(width / barCount) - 3;
-      let x = 4;
+      const barCount = KITT_SEGMENTS;
+      const barWidth = Math.floor(width / barCount) - 2;
+      let x = 3;
       let sum = 0;
 
       // Ses verisini analiz et
@@ -684,8 +685,8 @@
         hasSound = avg > 11;
       }
 
-      // KITT Tarayıcı Hızı: Ses varken hızlı ve dinamik, sessizken sakin
-      const scanSpeed = hasSound ? Math.min(0.045, 0.018 + (avg / 255) * 0.05) : 0.012;
+      // KITT Tarayıcı Hızı: Ses varken hafif canlı, sessizken sakin ve minik
+      const scanSpeed = hasSound ? Math.min(0.032, 0.014 + (avg / 255) * 0.025) : 0.009;
       kittScanPos += kittScanDir * scanSpeed;
       if (kittScanPos >= 1) {
         kittScanPos = 1;
@@ -696,58 +697,51 @@
       }
 
       const activeBarCenter = kittScanPos * (barCount - 1);
+      const centerY = height / 2;
 
-      // 32 Kırmızı KITT LED Segmenti Çiz
+      // 40 İnce Kırmızı KITT LED Segmenti Çiz
       for (let i = 0; i < barCount; i++) {
-        // Tarayıcı kafasına olan mesafe (0 ile 1 arası parlaklık)
+        // Tarayıcı kafasına olan mesafe
         const dist = Math.abs(i - activeBarCenter);
-        const intensity = Math.max(0, 1 - (dist / 3.2));
+        const intensity = Math.max(0, 1 - (dist / 2.6));
 
-        // Ses modülasyonu yüksekliği (Kara Şimşek ses dalgası)
-        let barHeight = 4;
+        // Kuyruk sönümleme
+        kittTrail[i] = Math.max(kittTrail[i] * 0.84, intensity);
+        const currentBright = Math.max(kittTrail[i], intensity);
+
+        // İNCE & MİNİK YÜKSEKLİK: Sessizlikte 2px, ses geldiğinde en fazla 4-6px minik hareket!
+        let barHeight = 2;
         if (hasSound && freqData) {
           const freqIndex = Math.min(freqData.length - 1, Math.floor(i * (freqData.length / barCount)));
           const fVal = freqData[freqIndex] || 0;
-          const soundAmp = (fVal / 255) * (height - 8);
-          // Tarayıcı kafasına yakın olan LED'ler sesle daha çok parlar ve zıplar
-          barHeight = Math.max(4, soundAmp * (0.4 + intensity * 0.9));
+          // Devasa blok yok: maksimum 5.5 piksel minik lazer kıpırdaması
+          barHeight = Math.max(2, Math.min(6, 2 + (fVal / 255) * 4 * (0.5 + currentBright * 0.5)));
         } else {
-          // Sessizlikte hafif KITT kayan LED nabzı
-          barHeight = Math.max(4, intensity * (height - 12));
+          // Sessizlikte kayan ışık sadece 3px, diğerleri 1.5px
+          barHeight = currentBright > 0.6 ? 3 : (currentBright > 0.2 ? 2 : 1.5);
         }
 
-        // Kuyruk sönümleme (Phosphor Persistence)
-        kittTrail[i] = Math.max(kittTrail[i] * 0.82, intensity);
-        const currentBright = Math.max(kittTrail[i], intensity);
-
-        // KITT Efsanevi Kırmızı Gradyanı
-        const grad = visualizerCtx.createLinearGradient(0, height - barHeight, 0, height);
-        if (currentBright > 0.75) {
-          grad.addColorStop(0, '#ffffff'); // Akkor Merkez Işığı
-          grad.addColorStop(0.2, '#ff1a40'); // Parlak KITT Kırmızı
-          grad.addColorStop(0.7, '#dc2626');
-          grad.addColorStop(1, '#450a0a');
-        } else if (currentBright > 0.35) {
-          grad.addColorStop(0, '#ff2442'); // Kırmızı
-          grad.addColorStop(0.6, '#991b1b');
-          grad.addColorStop(1, '#2b0608');
+        // Renk Paleti: İnce Akkor Kırmızı Lazer
+        if (currentBright > 0.7) {
+          visualizerCtx.fillStyle = '#ffffff'; // Akkor Çekirdek
+        } else if (currentBright > 0.4) {
+          visualizerCtx.fillStyle = '#ff1a40'; // Canlı KITT Kırmızı
+        } else if (currentBright > 0.15) {
+          visualizerCtx.fillStyle = '#991b1b'; // Sönük Kuyruk
         } else {
-          grad.addColorStop(0, '#7f1d1d'); // Sönük Kuyruk
-          grad.addColorStop(1, '#180405');
+          visualizerCtx.fillStyle = '#26080a'; // Bekleme Ray Çizgisi
         }
 
-        visualizerCtx.fillStyle = grad;
-        const yPos = (height - barHeight) / 2; // KITT ses kutusu gibi merkezden iki yöne genişler
+        const yPos = Math.round(centerY - (barHeight / 2));
         visualizerCtx.fillRect(x, yPos, barWidth, barHeight);
 
-        // KITT LED Üst ve Alt İnce Parlama Çizgisi
-        if (currentBright > 0.5) {
-          visualizerCtx.fillStyle = currentBright > 0.85 ? '#ffffff' : '#f87171';
-          visualizerCtx.fillRect(x, yPos - 1, barWidth, 1.5);
-          visualizerCtx.fillRect(x, yPos + barHeight, barWidth, 1.5);
+        // İnce lazer parıltısı (Glow)
+        if (currentBright > 0.75) {
+          visualizerCtx.fillStyle = 'rgba(255, 26, 64, 0.4)';
+          visualizerCtx.fillRect(x - 1, yPos - 1, barWidth + 2, barHeight + 2);
         }
 
-        x += barWidth + 3;
+        x += barWidth + 2;
       }
 
       // Canlı Durum ve Telemetri Bildirimi
@@ -756,15 +750,15 @@
         if (vContainer) vContainer.classList.add('active');
         if (vStatusDot) vStatusDot.textContent = '🔴';
         if (vStatusText) {
-          vStatusText.textContent = '⚡ KITT / JARVIS SES MODÜLATÖRÜ AKTİF';
+          vStatusText.textContent = '⚡ KITT Dinliyor';
           vStatusText.style.color = '#ef4444';
         }
-        if (vDb) vDb.textContent = 'Kırmızı Dalga Şiddeti: %' + pct + ' (Dinliyor)';
+        if (vDb) vDb.textContent = 'Ses: %' + pct;
       } else {
         if (vContainer) vContainer.classList.remove('active');
         if (vStatusDot) vStatusDot.textContent = alwaysListen ? '🔴' : '⚫';
         if (vStatusText) {
-          vStatusText.textContent = alwaysListen ? 'KITT Tarayıcı Beklemede (Oda Sessiz)' : 'Mikrofon Pasif';
+          vStatusText.textContent = alwaysListen ? 'KITT Beklemede' : 'Mikrofon Kapalı';
           vStatusText.style.color = '#94a3b8';
         }
         if (vDb) vDb.textContent = alwaysListen ? '"Jarvis..." bekleniyor' : 'Dinleme kapalı';
