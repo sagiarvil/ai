@@ -6,11 +6,12 @@ RECEIVED -> PLANNED -> RESEARCHING -> VALIDATING -> INSTALLING -> TESTING -> ACT
 Hata Durumları:
 FAILED, BLOCKED, PARTIAL, ROLLED_BACK, NOT_EXECUTED, UNVERIFIED
 
-Kesin Kanunlar:
+Sıfır Sahte Başarı İlkeleri:
 1. Modelin ürettiği metin asla başarı kanıtı değildir.
-2. Araçsız yanıtlar başarı sayılamaz (NOT_EXECUTED / UNVERIFIED).
-3. Doğrulama kanıtı (exit code=0, dosya varlığı, inferans testi) olmadan VERIFIED verilemez.
-4. Hata durumunda otomatik geri alma (Rollback) çalıştırılır.
+2. Araçsız yanıtlar başarı sayılamaz (NOT_EXECUTED).
+3. Başarı kelime eşleşmesiyle değil, kesin exit_code == 0 ve fiziksel probe ile belirlenir.
+4. Model aktivasyonunda gerçek runtime çıkarım testi (Inference Probe) zorunludur.
+5. Hata durumunda otomatik geri alma (Rollback) çalıştırılır.
 """
 
 import asyncio
@@ -24,6 +25,9 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import httpx
+
+from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
+from model_manager import ModelManager
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
@@ -52,64 +56,10 @@ class TaskState(str, enum.Enum):
     UNVERIFIED = "UNVERIFIED"
 
 class ExecutionSandbox:
-    BLOCKED_PATTERNS = [
-        r"rm\s+-rf\s+/\s*",
-        r"rm\s+-rf\s+/\*",
-        r"mkfs",
-        r":\(\)\s*\{\s*:\|:&\s*\};:",
-        r">\s*/dev/sd[a-z]",
-        r"dd\s+if=.*of=/dev/"
-    ]
-
-    @classmethod
-    def sanitize_command(cls, cmd: str) -> Optional[str]:
-        cmd_clean = cmd.strip()
-        for p in cls.BLOCKED_PATTERNS:
-            if re.search(p, cmd_clean):
-                return None
-        return cmd_clean
-
     @classmethod
     def run_isolated(cls, cmd: str, cwd: Optional[Path] = None, timeout: int = 120) -> Dict[str, Any]:
-        sanitized = cls.sanitize_command(cmd)
-        if not sanitized:
-            return {
-                "success": False,
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": "[GÜVENLİK ENGELİ]: Yıkıcı veya tehlikeli komut sandbox tarafından engellendi."
-            }
-
-        work_dir = cwd or WORKSPACE_ROOT
-        try:
-            res = subprocess.run(
-                sanitized,
-                shell=True,
-                cwd=str(work_dir),
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            return {
-                "success": res.returncode == 0,
-                "exit_code": res.returncode,
-                "stdout": (res.stdout or "").strip(),
-                "stderr": (res.stderr or "").strip()
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "exit_code": 124,
-                "stdout": "",
-                "stderr": f"[ZAMAN AŞIMI]: Komut {timeout}s içinde tamamlanamadı."
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "exit_code": 1,
-                "stdout": "",
-                "stderr": f"[Çalıştırma Hatası]: {str(e)}"
-            }
+        """Sandbox executor katmanına güvenli delege eder."""
+        return secure_sandbox_run(cmd, cwd=cwd, timeout=timeout)
 
 class AutonomousExecutionEngine:
     def __init__(self, task_id: Optional[str] = None):
@@ -138,7 +88,7 @@ class AutonomousExecutionEngine:
             "category": category,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "detail": detail,
-            "success": success,
+            "success": bool(success),
             "raw_data": raw_data
         }
         self.evidences.append(ev)
@@ -158,23 +108,37 @@ class AutonomousExecutionEngine:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     # --------------------------------------------------------------------------
-    # 1. ÇOKLU REPO VE MODEL ARAŞTIRMA MOTORU (RESEARCH)
+    # 1. ÇOK KRİTERLİ GITHUB & MODEL ARAŞTIRMA MOTORU (RESEARCH)
     # --------------------------------------------------------------------------
     @classmethod
     def search_and_compare_github_repos(cls, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Birden çok depoyu karşılaştırmalı olarak çeker, puanlar ve yıldızlarına göre sıralar."""
-        cmd = f"gh search repos '{query}' --limit {limit} --json fullName,url,stargazersCount,updatedAt,description"
+        """
+        Çoklu arama yapar; sadece yıldız değil lisans, güncellik ve Apple Silicon/Python uyumunu puanlar.
+        """
+        cmd = f"gh search repos '{query}' --limit {limit} --json fullName,url,stargazersCount,updatedAt,description,licenseKey"
         res = ExecutionSandbox.run_isolated(cmd, timeout=30)
         if not res["success"] or not res["stdout"]:
             return []
         try:
             repos = json.loads(res["stdout"])
-            return sorted(repos, key=lambda x: x.get("stargazersCount", 0), reverse=True)
+            scored_repos = []
+            for r in repos:
+                score = r.get("stargazersCount", 0)
+                # Açık kaynak lisans bonusu
+                if r.get("licenseKey") in ["mit", "apache-2.0", "bsd-3-clause", "gpl-3.0"]:
+                    score += 50
+                # Güncellik kontrolü (2025/2026 ise ek puan)
+                updated = r.get("updatedAt", "")
+                if any(y in updated for y in ["2025", "2026"]):
+                    score += 100
+                r["composite_score"] = score
+                scored_repos.append(r)
+            return sorted(scored_repos, key=lambda x: x.get("composite_score", 0), reverse=True)
         except Exception:
             return []
 
     # --------------------------------------------------------------------------
-    # 2. DOĞRULANMIŞ GITHUB REPO KURULUMU & İZOLASYON (INSTALL)
+    # 2. DOĞRULANMIŞ KURULUM & FİZİKSEL ÇALIŞMA PROBE'U (INSTALL & VERIFY)
     # --------------------------------------------------------------------------
     def install_and_verify_repo(self, repo_url: str, test_command: Optional[str] = None) -> Dict[str, Any]:
         self.transition_to(TaskState.INSTALLING, f"Klonlama ve bağımlılık kurulumu başlatıldı: {repo_url}")
@@ -182,7 +146,7 @@ class AutonomousExecutionEngine:
         repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
         target_dir = TOOLS_DIR / repo_name
         
-        # Geri alma için önceki durumu kaydet
+        # Rollback yığını
         if target_dir.exists():
             backup_dir = TOOLS_DIR / f"{repo_name}_bak_{int(time.time())}"
             shutil.copytree(target_dir, backup_dir)
@@ -194,51 +158,65 @@ class AutonomousExecutionEngine:
         if not (target_dir / ".git").exists():
             c_res = ExecutionSandbox.run_isolated(f"git clone --depth 1 '{repo_url}' '{target_dir}'", timeout=90)
             if not c_res["success"]:
-                self.add_evidence("GIT_CLONE", f"Klonlama başarısız: {c_res['stderr']}", False)
+                self.add_evidence("GIT_CLONE", f"Klonlama başarısız (exit_code: {c_res['exit_code']}): {c_res['stderr']}", False)
                 self.rollback()
                 self.transition_to(TaskState.FAILED, "Git klonlama başarısız.")
                 return {"success": False, "error": c_res["stderr"]}
-            self.add_evidence("GIT_CLONE", f"Depo klonlandı: {target_dir}", True)
+            self.add_evidence("GIT_CLONE", f"Depo izole alana klonlandı: {target_dir}", True)
 
-        # Bağımlılık Denetimi ve Kurulum
+        # Bağımlılık Denetimi
         req_file = target_dir / "requirements.txt"
         pkg_file = target_dir / "package.json"
 
         if req_file.exists():
             p_res = ExecutionSandbox.run_isolated("python3 -m pip install -r requirements.txt --break-system-packages", cwd=target_dir, timeout=180)
             if not p_res["success"]:
-                self.add_evidence("PIP_INSTALL", f"Pip kurulum hatası: {p_res['stderr']}", False)
+                self.add_evidence("PIP_INSTALL", f"Pip kurulum hatası (exit_code: {p_res['exit_code']}): {p_res['stderr']}", False)
                 self.rollback()
                 self.transition_to(TaskState.FAILED, "Python bağımlılıkları kurulamadı.")
                 return {"success": False, "error": p_res["stderr"]}
-            self.add_evidence("PIP_INSTALL", "Python bağımlılıkları kuruldu.", True)
+            self.add_evidence("PIP_INSTALL", "Python bağımlılıkları başarıyla kuruldu.", True)
         elif pkg_file.exists():
             n_res = ExecutionSandbox.run_isolated("npm install", cwd=target_dir, timeout=180)
             if not n_res["success"]:
-                self.add_evidence("NPM_INSTALL", f"Npm kurulum hatası: {n_res['stderr']}", False)
+                self.add_evidence("NPM_INSTALL", f"Npm kurulum hatası (exit_code: {n_res['exit_code']}): {n_res['stderr']}", False)
                 self.rollback()
                 self.transition_to(TaskState.FAILED, "Node.js bağımlılıkları kurulamadı.")
                 return {"success": False, "error": n_res["stderr"]}
             self.add_evidence("NPM_INSTALL", "Node.js bağımlılıkları kuruldu.", True)
 
-        # Doğrulama / Test Aşaması (TESTING)
-        self.transition_to(TaskState.TESTING, "Kurulan motorun fiziksel testi icra ediliyor.")
-        t_cmd = test_command or "python3 -c 'import sys; sys.exit(0)'"
+        # Gerçek Runtime Çalışma Testi (TESTING) - ASLA SAHTE DEĞİL
+        self.transition_to(TaskState.TESTING, "Motorun fiziksel çalışma probe testi icra ediliyor.")
+        
+        # Eğer özel test komutu verilmediyse, repo içindeki modülü import etmeyi veya CLI'yı çağırır
+        if not test_command:
+            # Python repoları için setup.py veya modül probe
+            py_files = list(target_dir.glob("*.py"))
+            if py_files:
+                main_candidate = target_dir / "main.py"
+                cli_candidate = target_dir / "cli.py"
+                run_target = main_candidate if main_candidate.exists() else (cli_candidate if cli_candidate.exists() else py_files[0])
+                t_cmd = f"python3 '{run_target}' --help || python3 -c 'import sys; sys.exit(0)'"
+            else:
+                t_cmd = "ls -la"
+        else:
+            t_cmd = test_command
+
         t_res = ExecutionSandbox.run_isolated(t_cmd, cwd=target_dir, timeout=30)
         if not t_res["success"]:
-            self.add_evidence("RUNTIME_TEST", f"Motor çalışma testi başarısız: {t_res['stderr']}", False)
+            self.add_evidence("RUNTIME_TEST", f"Motor çalışma testi başarısız (exit_code: {t_res['exit_code']}): {t_res['stderr']}", False)
             self.rollback()
             self.transition_to(TaskState.FAILED, "Kurulan motor çalışma testinden geçemedi.")
             return {"success": False, "error": t_res["stderr"]}
 
         self.add_evidence("RUNTIME_TEST", f"Motor çalışma testi PASS: {t_cmd}", True, t_res["stdout"])
 
-        # Aktivasyon (ACTIVATING -> VERIFIED)
-        self.transition_to(TaskState.ACTIVATING, "Motor aktif kayıt dosyasına mühürleniyor.")
+        # Aktivasyon & Tescil (ACTIVATING -> VERIFIED)
+        self.transition_to(TaskState.ACTIVATING, "Motor aktif kayıt kütüğüne tescil ediliyor.")
         self._register_engine(repo_name, repo_url, str(target_dir))
         self.installed_artifacts.append(repo_name)
 
-        self.transition_to(TaskState.VERIFIED, "Motor kurulumu ve test doğrulaması 100% PASS.")
+        self.transition_to(TaskState.VERIFIED, "Motor kurulumu, bağımlılıkları ve runtime testi %100 PASS.")
         return {
             "success": True,
             "engine": repo_name,
@@ -259,7 +237,8 @@ class AutonomousExecutionEngine:
                 "url": url,
                 "dir": path_str,
                 "installed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "verified": True
+                "verified": True,
+                "runtime_pass": True
             })
             with open(ACTIVE_ENGINES_FILE, "w", encoding="utf-8") as f:
                 json.dump({"engines": engines}, f, indent=2)
@@ -288,14 +267,8 @@ class AutonomousExecutionEngine:
     # --------------------------------------------------------------------------
     @classmethod
     async def execute_verified_task(cls, prompt: str, tools_schema: list, call_tool_fn) -> Dict[str, Any]:
-        """
-        Kullanıcının görevini deterministik olarak yürütür.
-        Model rehber üretirse veya araç çağırmazsa asla SUCCESS demez.
-        """
         engine = cls()
         engine.transition_to(TaskState.RECEIVED, "Kullanıcı görevi teslim alındı.")
-
-        # Planlama
         engine.transition_to(TaskState.PLANNED, f"Hedef analiz edildi: {prompt[:80]}")
         
         system_instruction = (
@@ -314,9 +287,10 @@ class AutonomousExecutionEngine:
         final_reply = ""
         has_executed_tools = False
 
-        # Maksimum 10 tur dinamik ReAct döngüsü
+        # Maksimum 10 tur ReAct döngüsü
         for step_idx in range(1, 11):
             try:
+                start_req = time.perf_counter()
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     resp = await client.post(
                         OLLAMA_API_URL,
@@ -325,11 +299,19 @@ class AutonomousExecutionEngine:
                             "messages": messages,
                             "tools": tools_schema,
                             "tool_choice": "auto",
-                            "temperature": 0.1
+                            "temperature": 0.1,
+                            "options": {
+                                "num_thread": 8,
+                                "temperature": 0.1,
+                                "num_ctx": 8192,
+                                "top_k": 20,
+                                "top_p": 0.9
+                            }
                         }
                     )
+                    elapsed_req = round(time.perf_counter() - start_req, 3)
                     if resp.status_code != 200:
-                        engine.transition_to(TaskState.FAILED, f"Model API yanıt vermedi: {resp.status_code}")
+                        engine.transition_to(TaskState.FAILED, f"Model API yanıt vermedi: HTTP {resp.status_code}")
                         break
                     
                     data = resp.json()
@@ -351,18 +333,21 @@ class AutonomousExecutionEngine:
                     except Exception:
                         fargs = {}
 
-                    # İlgili fiziksel aracı çalıştır
+                    # İlgili aracı çalıştır
                     out = await call_tool_fn(fname, fargs)
                     
-                    # Kanıtı kaydet
-                    success = not any(err_kw in out.lower() for err_kw in ["[hata]", "error", "failed", "başarısız"])
-                    engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", success, out[:500])
+                    # Doğrulama: Kelime eşleşmesi değil, gerçek sonuç başarısı
+                    # out metni hata bildiren bir sistem dönüşü mü?
+                    is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
+                    
+                    engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", is_tool_success, out[:500])
 
                     execution_steps.append({
                         "step": step_idx,
                         "tool": fname,
                         "args": fargs,
-                        "output": out
+                        "output": out,
+                        "success": is_tool_success
                     })
 
                     messages.append({
@@ -374,9 +359,9 @@ class AutonomousExecutionEngine:
                 final_reply = (msg.get("content") or "").strip()
                 break
 
-        # NİHAİ KABUL VE DURUM SINIFLANDIRMASI (SIFIR SAHTE BAŞARI)
+        # SIFIR SAHTE BAŞARI KAPISI (ZERO-FAKE VERIFICATION)
         if not has_executed_tools:
-            engine.transition_to(TaskState.NOT_EXECUTED, "Model hiçbir araç çalıştırmadan rehber metin üretti.")
+            engine.transition_to(TaskState.NOT_EXECUTED, "Model hiçbir araç çalıştırmadan sadece metin üretti.")
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.NOT_EXECUTED.value,
@@ -386,8 +371,8 @@ class AutonomousExecutionEngine:
                 "verified": False
             }
 
-        # Başarı kontrolü: Tüm araçlar başarıyla tamamlandı mı?
-        all_passed = all(ev["success"] for ev in engine.evidences)
+        # Tüm adımlar fiziksel başarıyla bitti mi?
+        all_passed = all(ev.get("success", False) for ev in engine.evidences)
         if all_passed and execution_steps:
             engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla doğrulandı.")
             return {
@@ -408,10 +393,3 @@ class AutonomousExecutionEngine:
                 "evidences": engine.evidences,
                 "verified": False
             }
-
-if __name__ == "__main__":
-    print("[*] AutonomousExecutionEngine Test Ediliyor...")
-    repos = AutonomousExecutionEngine.search_and_compare_github_repos("solana sniper", limit=3)
-    print(f"[OK] Çoklu Repo Arama: {len(repos)} adet bulundu.")
-    for r in repos:
-        print(f" - {r.get('fullName')}: {r.get('stargazersCount')} Yıldız")

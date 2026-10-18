@@ -26,9 +26,9 @@ def get_tor_opener():
 def get_masked_httpx_client(timeout: float = 8.0) -> httpx.AsyncClient:
     """Dış dünyadaki sitelerin gerçek IP adresini görmesini engelleyen Tor istemcisi."""
     try:
-        return httpx.AsyncClient(proxy=TOR_SOCKS_PROXY, timeout=timeout, verify=False)
+        return httpx.AsyncClient(proxy=TOR_SOCKS_PROXY, timeout=timeout, verify=True)
     except Exception:
-        return httpx.AsyncClient(timeout=timeout, verify=False)
+        return httpx.AsyncClient(timeout=timeout, verify=True)
 
 # ==============================================================================
 # 1. CANLI WEB ARAMA VE DEEP RESEARCH MOTORU (Fiziksel HTML Scraper)
