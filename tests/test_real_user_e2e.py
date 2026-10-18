@@ -7,16 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import platform
-import subprocess
 import urllib.request
 import pytest
-from pathlib import Path
 
 from resilience_kernel import ResilienceKernel, OmniCoreToolAdapters, State
 from universal_installer import install_repo
-from sandbox_executor import secure_sandbox_run, WORKSPACE_ROOT
+from sandbox_executor import WORKSPACE_ROOT
 
 
 def test_mac_service_health():
