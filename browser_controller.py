@@ -17,7 +17,10 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Dict, Any, List
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
 SESSIONS_DIR = WORKSPACE_ROOT / "tools" / "browser_sessions"
@@ -82,6 +85,15 @@ class LocalBrowserEngine:
                 pass
 
         # 2. Playwright Motorları (Chrome, Chromium, WebKit)
+        if not async_playwright:
+            return {
+                "status": "FAILED",
+                "browser": b_name,
+                "network": network_name,
+                "url": url,
+                "error": "Playwright modülü sistemde kurulu değil."
+            }
+
         try:
             async with async_playwright() as p:
                 browser = None
