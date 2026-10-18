@@ -237,7 +237,8 @@ def install_repo(url: str) -> dict[str, Any]:
                     return _fail('DEPENDENCIES', deps.get('stderr', '')[-900:], evidence, job_id)
 
             # Explicit test discovery. No `--help`, `ls`, `py_compile` or exit(0) bypass.
-            has_tests = (source / 'tests').is_dir() or any(source.glob('test_*.py'))
+            test_dir = 'tests' if (source / 'tests').is_dir() else 'test' if (source / 'test').is_dir() else None
+            has_tests = test_dir is not None or any(source.glob('test_*.py'))
             if not has_tests:
                 return {'success': False, 'verified': False, 'state': 'UNVERIFIED', 'job_id': job_id,
                         'repo': safe_url, 'commit': sha, 'error': 'No test suite discovered; not activated', 'evidence': evidence}
@@ -248,15 +249,15 @@ def install_repo(url: str) -> dict[str, Any]:
                 (source / 'conftest.py').is_file() or
                 ((source / 'pyproject.toml').is_file() and 'tool.pytest' in (source / 'pyproject.toml').read_text(encoding='utf-8', errors='ignore'))
             )
+            target_s = test_dir or '.'
             if uses_pytest:
-                # Pytest kurulu mu kontrol et
                 pt_check = run('.venv/bin/python -c "import pytest"', source, 10)
                 if pt_check.get('success'):
                     test_cmd = '.venv/bin/python -m pytest'
                 else:
-                    test_cmd = '.venv/bin/python -m unittest discover -s tests -t . -p "test*.py"' if (source / 'tests').is_dir() else '.venv/bin/python -m unittest discover -p "test_*.py"'
+                    test_cmd = f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"'
             else:
-                test_cmd = '.venv/bin/python -m unittest discover -s tests -t . -p "test*.py"' if (source / 'tests').is_dir() else '.venv/bin/python -m unittest discover -p "test_*.py"'
+                test_cmd = f'.venv/bin/python -m unittest discover -s {target_s} -t . -p "test*.py"'
 
             test = run(test_cmd, source, 180)
         else:
