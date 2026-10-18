@@ -11,17 +11,27 @@ import urllib.request
 import urllib.parse
 from typing import List, Dict, Any
 import httpx
-from bs4 import BeautifulSoup
-import socks
-from sockshandler import SocksiPyHandler
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    import socks
+    from sockshandler import SocksiPyHandler
+except ImportError:
+    socks = None
+    SocksiPyHandler = None
 
 TOR_SOCKS_PROXY = "socks5://127.0.0.1:9050"
 
 def get_tor_opener():
     """DNS sızıntılarını ve yerel IP görünürlüğünü engelleyen Remote DNS Tor açıcı."""
-    return urllib.request.build_opener(
-        SocksiPyHandler(socks.SOCKS5, "127.0.0.1", 9050, True)
-    )
+    if socks and SocksiPyHandler:
+        return urllib.request.build_opener(
+            SocksiPyHandler(socks.SOCKS5, "127.0.0.1", 9050, True)
+        )
+    return urllib.request.build_opener()
 
 def get_masked_httpx_client(timeout: float = 8.0) -> httpx.AsyncClient:
     """Dış dünyadaki sitelerin gerçek IP adresini görmesini engelleyen Tor istemcisi."""

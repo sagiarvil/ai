@@ -165,9 +165,12 @@
 
   <header>
     <div>⚡ BARIŞ AI // FAST EXECUTION CORE</div>
-    <div class="status-pill">
-      <span class="status-dot"></span>
-      <span id="sysStatus">Apple M4 Metal • 127.0.0.1:5050</span>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span id="sysStatus">Apple M4 Metal • 127.0.0.1:5050</span>
+      </div>
     </div>
   </header>
 
@@ -210,6 +213,15 @@
       }
     });
 
+    const keyInput = document.getElementById('omniKeyInput');
+    if (keyInput) {
+      const savedKey = localStorage.getItem('omni_key');
+      if (savedKey) keyInput.value = savedKey;
+      keyInput.addEventListener('change', () => {
+        localStorage.setItem('omni_key', keyInput.value.trim());
+      });
+    }
+
     async function sendAction() {
       const q = input.value.trim();
       if (!q) return;
@@ -237,7 +249,7 @@
       const t0 = performance.now();
 
       const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
-      const apiKey = localStorage.getItem('omni_key') || '';
+      const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
 
       try {
         const res = await fetch(API_BASE + '/api/chat', {
@@ -273,11 +285,17 @@
           aDiv.innerHTML = outHtml;
 
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
+        } else if (res.status === 401) {
+          aDiv.innerHTML = `<span style="color:#f85149">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı. Lütfen sağ üstteki 'X-Omni-Key' alanına geçerli anahtarınızı girin.</span>`;
         } else {
           aDiv.innerHTML = `<span style="color:#f85149">Hata: Sunucu ${res.status} yanıtı döndü.</span>`;
         }
       } catch(e) {
-        aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${e.message}</span>`;
+        let errText = e.message;
+        if (window.location.protocol === 'https:' && (errText.includes('Failed to fetch') || errText.includes('NetworkError') || errText.includes('Load failed'))) {
+          errText += '<br><br>⚠️ <strong>Tarayıcı İzolasyon Engeli (Mixed Content):</strong><br>Tarayıcınız HTTPS sayfasından (baris-ai.web.app) yerel HTTP servisine (127.0.0.1:5050) doğrudan erişimi güvenlik gerekçesiyle engelliyor.<br>👉 <strong>Çözüm:</strong> Arayüzü doğrudan yerel adresinden açın: <a href="http://127.0.0.1:5050" target="_blank" style="color:#2f81f7; text-decoration:underline; font-weight:bold;">http://127.0.0.1:5050</a>';
+        }
+        aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${errText}</span>`;
       } finally {
         sendBtn.disabled = false;
         input.focus();

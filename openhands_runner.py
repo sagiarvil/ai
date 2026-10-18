@@ -34,7 +34,7 @@ class OpenHandsAgentEngine:
         full_prompt = (
             f"You are OpenHands autonomous engineer. Task: {task_description}\n"
             "Provide two clean Python code blocks:\n"
-            "Block 1: token_vault.py implementing generate_token(salt: str) and validate_token(token: str)\n"
+            "Block 1: token_vault.py implementing module functions or class TokenVault with generate_token(salt: str) and validate_token(token: str)\n"
             "Block 2: test_token_vault.py using unittest to test token_vault.\n"
             "Ensure python code is inside ```python ... ``` blocks."
         )
@@ -92,7 +92,10 @@ class OpenHandsAgentEngine:
             module_file.write_text(blocks[0], encoding="utf-8")
             test_file.write_text(
                 "import unittest\nimport token_vault\n\nclass TestToken(unittest.TestCase):\n"
-                "    def test_exists(self):\n        self.assertTrue(hasattr(token_vault, 'generate_token'))\n\n"
+                "    def test_exists(self):\n"
+                "        has_func = hasattr(token_vault, 'generate_token')\n"
+                "        has_cls = hasattr(token_vault, 'TokenVault')\n"
+                "        self.assertTrue(has_func or has_cls, 'Token oluşturma sınıfı veya fonksiyonu mevcut olmalıdır.')\n\n"
                 "if __name__ == '__main__':\n    unittest.main()\n",
                 encoding="utf-8"
             )

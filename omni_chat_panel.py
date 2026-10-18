@@ -392,6 +392,10 @@ async def root():
         return FileResponse(str(INDEX_HTML))
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ONLINE", "service": "OmniCore"}
+
 @app.get("/api/system_status")
 @app.get("/api/status")
 async def system_status(authorized: bool = Depends(verify_api_key)):

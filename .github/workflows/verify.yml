@@ -24,7 +24,7 @@ jobs:
       - name: Install Linting & Security Tools
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install pytest ruff bandit pip-audit fastapi httpx uvicorn pydantic
+          python3 -m pip install -r requirements.txt pytest ruff bandit pip-audit
 
       - name: Gate 1 - Verify UTF-8 BOM-Free
         run: |
@@ -77,7 +77,7 @@ jobs:
       - name: Install Test Dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install pytest fastapi httpx uvicorn pydantic
+          python3 -m pip install -r requirements.txt pytest
 
       - name: Gate 6 - Real macOS Seatbelt Isolation Tests
         env:
