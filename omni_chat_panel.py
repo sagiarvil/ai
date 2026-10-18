@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-OMNICORE // LOKAL MISTRAL-24B + OTONOM FİZİKSEL İCRA MOTORU (SIFIR YÖNERGE - TAM İCRA)
-Barış AI için tam entegre, yerel ve araç çağıran (Tool-Calling) arka uç ve yerel web paneli.
+OMNICORE // LOKAL MISTRAL-24B + OTONOM AGENTIC İCRA MOTORU (OPENHANDS MİMARİSİ)
+Kural: Model rehber üretirse veya araç çalıştırmazsa asla SUCCESS kabul edilmez.
+Tüm işlemler deterministik durum makinesi (TaskState) ve fiziksel kanıtlarla doğrulanır.
 """
 
 import asyncio
@@ -22,6 +23,9 @@ import uvicorn
 
 from real_engines import RealWebSearchEngine, RealTorEngine, RealCryptoEngine, get_masked_httpx_client
 from browser_controller import LocalBrowserEngine
+from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
+from deterministic_engine import DeterministicEngine
+from sandbox_executor import secure_sandbox_run
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
@@ -30,10 +34,6 @@ INDEX_HTML = PUBLIC_DIR / 'index.html'
 TOOLS_DIR = WORKSPACE_ROOT / 'tools'
 TOOLS_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / 'active_engines.json'
-
-if not ACTIVE_ENGINES_FILE.exists():
-    with open(ACTIVE_ENGINES_FILE, 'w', encoding='utf-8') as f:
-        json.dump({"engines": []}, f, indent=2)
 
 try:
     from crawl4ai import AsyncWebCrawler
@@ -51,144 +51,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LOCAL_LLM_ENDPOINTS = [
-    "http://127.0.0.1:11434/v1/chat/completions",
-    "http://127.0.0.1:8080/v1/chat/completions"
-]
-
-LOCAL_MISTRAL_MODELS = [
-    "mistral-small-24b-abliterated:latest",
-    "hf.co/bartowski/huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-GGUF:Q4_K_M",
-    "mistral-small:24b",
-    "dolphin-mistral:latest"
-]
-
-async def query_local_mistral(messages: list, tools: list = None, temperature: float = 0.1) -> Optional[dict]:
-    for endpoint in LOCAL_LLM_ENDPOINTS:
-        for model_name in LOCAL_MISTRAL_MODELS:
-            payload = {
-                "model": model_name,
-                "messages": messages,
-                "temperature": temperature
-            }
-            if tools:
-                payload["tools"] = tools
-                payload["tool_choice"] = "auto"
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    resp = await client.post(endpoint, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("choices"):
-                            return data["choices"][0]["message"]
-            except Exception:
-                continue
-    return None
-
 # ==============================================================================
-# FİZİKSEL MOTOR 1: OTONOM GITHUB REPO ARAMA & KURULUM
+# FİZİKSEL YÜRÜTÜCÜ ARAÇLAR (PHYSICAL TOOLS)
 # ==============================================================================
 def tool_search_and_install_github_repo(query_or_url: str) -> str:
+    """Çoklu repo araştırması yapar, en uygununu seçer, sandbox içinde kurar ve test eder."""
+    engine = AutonomousExecutionEngine()
     target_input = query_or_url.strip()
-    repo_url = target_input
-    repo_name = ""
-    description = ""
-
-    if not target_input.startswith("http"):
-        try:
-            res = subprocess.run(
-                ["gh", "search", "repos", target_input, "--limit", "1", "--json", "fullName,url,description"],
-                capture_output=True, text=True, timeout=30
-            )
-            if res.returncode == 0:
-                items = json.loads(res.stdout)
-                if items:
-                    repo_url = items[0]["url"]
-                    repo_name = items[0]["fullName"].split("/")[-1]
-                    description = items[0].get("description", "")
-        except Exception as e:
-            return f"[GitHub Arama Hatası]: {str(e)}"
-
-    if not repo_name:
-        repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-
-    target_dir = TOOLS_DIR / repo_name
-
-    clone_output = ""
-    if target_dir.exists() and (target_dir / ".git").exists():
-        res = subprocess.run(["git", "-C", str(target_dir), "pull"], capture_output=True, text=True, timeout=30)
-        clone_output = f"Depo zaten mevcuttu, güncellendi: {res.stdout.strip()}"
+    
+    if target_input.startswith("http"):
+        best_url = target_input
     else:
-        res = subprocess.run(["git", "clone", "--depth", "1", repo_url, str(target_dir)], capture_output=True, text=True, timeout=90)
-        if res.returncode != 0:
-            return f"[Klonlama Hatası]: {res.stderr or res.stdout}"
-        clone_output = f"Depo başarıyla klonlandı: {target_dir}"
+        # Çoklu Arama (--limit 5)
+        repos = AutonomousExecutionEngine.search_and_compare_github_repos(target_input, limit=5)
+        if not repos:
+            return f"[Hata]: GitHub'da '{target_input}' için uygun repo bulunamadı."
+        best_repo = repos[0]
+        best_url = best_repo["url"]
 
-    dep_output = "Bağımlılık dosyası bulunamadı."
-    req_file = target_dir / "requirements.txt"
-    pkg_file = target_dir / "package.json"
-
-    if req_file.exists():
-        r_res = subprocess.run(
-            ["python3", "-m", "pip", "install", "-r", str(req_file), "--break-system-packages"],
-            capture_output=True, text=True, timeout=180
+    # Sandbox destekli kurulum ve doğrulama
+    res = engine.install_and_verify_repo(best_url)
+    if res["success"]:
+        return (
+            f"✅ [MOTOR OTONOM VE DOĞRULANMIŞ OLARAK KURULDU]\n"
+            f"- **Depo:** `{best_url}`\n"
+            f"- **Konum:** `{res['dir']}`\n"
+            f"- **Durum:** {res['state']} (100% PASS)\n"
+            f"- **Kanıt:** Bağımlılıklar kuruldu ve runtime testi başarıyla tamamlandı."
         )
-        status_text = "BAŞARILI" if r_res.returncode == 0 else "HATA"
-        dep_output = f"Python bağımlılıkları kuruldu ({status_text}): " + r_res.stdout[-200:]
-    elif pkg_file.exists():
-        p_res = subprocess.run(["npm", "install", "--prefix", str(target_dir)], capture_output=True, text=True, timeout=180)
-        status_text = "BAŞARILI" if p_res.returncode == 0 else "HATA"
-        dep_output = f"Node.js bağımlılıkları kuruldu ({status_text}): " + p_res.stdout[-200:]
+    else:
+        return f"[Kurulum Başarısız - Rollback Yapıldı]: {res.get('error')}"
 
-    try:
-        with open(ACTIVE_ENGINES_FILE, 'r', encoding='utf-8') as f:
-            registry = json.load(f)
-        engines = [e for e in registry.get("engines", []) if e.get("name") != repo_name]
-        engines.append({
-            "name": repo_name,
-            "url": repo_url,
-            "dir": str(target_dir),
-            "description": description,
-            "installed_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        })
-        with open(ACTIVE_ENGINES_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"engines": engines}, f, indent=2)
-    except Exception:
-        pass
-
-    files = [f.name for f in target_dir.iterdir()][:10]
-    res_lines = [
-        "✅ [MOTOR FİZİKSEL OLARAK KURULDU VE AKTİF EDİLDİ]",
-        f"- **Depo:** `{repo_url}`",
-        f"- **Konum:** `{target_dir}`",
-        f"- **Klonlama:** {clone_output}",
-        f"- **Bağımlılık:** {dep_output}",
-        f"- **Dosyalar:** {', '.join(files)}",
-        "- **Durum:** Sistem kayıtlarına (active_engines.json) işlendi, doğrudan çağrılabilir."
-    ]
-    return "\n".join(res_lines)
-
-# ==============================================================================
-# FİZİKSEL MOTOR 2: SHELL & DOSYA YÖNETİMİ
-# ==============================================================================
 def tool_run_shell(command: str) -> str:
-    cmd = command.strip()
-    blocked = ["rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){ :|:& };:"]
-    if any(b in cmd for b in blocked):
-        return "[Hata]: Güvenlik kısıtlaması nedeniyle sistem silme komutu engellendi."
-    try:
-        res = subprocess.run(cmd, shell=True, cwd=str(WORKSPACE_ROOT), capture_output=True, text=True, timeout=120)
-        out = (res.stdout or "").strip()
-        err = (res.stderr or "").strip()
-        status_msg = "BAŞARILI" if res.returncode == 0 else f"HATA ({res.returncode})"
-        parts = [f"Komut: `{cmd}` (Durum: {status_msg})"]
-        if out:
-            parts.append(f"Çıktı:\n```\n{out[:2500]}\n```")
-        if err:
-            parts.append(f"Hata/Bilgi:\n```\n{err[:1000]}\n```")
-        return "\n".join(parts)
-    except Exception as e:
-        return f"[Çalıştırma Hatası]: {str(e)}"
+    res = ExecutionSandbox.run_isolated(command)
+    status_msg = "BAŞARILI" if res["success"] else f"HATA ({res['exit_code']})"
+    parts = [f"Komut: `{command}` (Durum: {status_msg})"]
+    if res["stdout"]:
+        parts.append(f"Çıktı:\n```\n{res['stdout'][:2500]}\n```")
+    if res["stderr"]:
+        parts.append(f"Hata/Bilgi:\n```\n{res['stderr'][:1000]}\n```")
+    return "\n".join(parts)
 
 def tool_write_file(filepath: str, content: str) -> str:
     try:
@@ -213,9 +115,6 @@ def tool_read_file(filepath: str) -> str:
     except Exception as e:
         return f"[Dosya Okuma Hatası]: {str(e)}"
 
-# ==============================================================================
-# FİZİKSEL MOTOR 3: BROWSER KONTROLCÜSÜ (CHROME, SAFARI, I2P, TOR)
-# ==============================================================================
 async def tool_browser_navigate(url: str, browser_name: str = "chrome", use_tor: bool = False, use_i2p: bool = False) -> str:
     try:
         res = await LocalBrowserEngine.open_and_extract(
@@ -252,9 +151,6 @@ def tool_list_browser_sessions() -> str:
     except Exception as e:
         return f"[Oturum Listeleme Hatası]: {str(e)}"
 
-# ==============================================================================
-# FİZİKSEL MOTOR 4: CRAWL4AI, SLITHER, KRİPTO RADARI
-# ==============================================================================
 async def tool_crawl_website(url: str) -> str:
     if not CRAWL4AI_AVAILABLE:
         page_text = await RealWebSearchEngine.deep_scrape_url(url)
@@ -287,55 +183,15 @@ def tool_run_slither(solidity_code: str) -> str:
     except Exception as e:
         return f"[Slither Hata]: {e}"
 
-async def engine_crypto_scanner(query: str) -> str:
-    report_parts = []
-    sol_match = re.search(r" [1-9A-HJ-NP-Za-km-z]{32,44} ", query)
-    eth_match = re.search(r"0x[a-fA-F0-9]{40}", query)
-
-    if sol_match and not eth_match:
-        mint = sol_match.group(0).strip()
-        async with get_masked_httpx_client(timeout=10.0) as client:
-            try:
-                r = await client.get(f"https://api.rugcheck.xyz/v1/tokens/{mint}/report")
-                if r.status_code == 200:
-                    data = r.json()
-                    risks = data.get("risks", [])
-                    risk_txt = "\n".join([f"- **{rk.get('name')}**: {rk.get('description')}" for rk in risks[:4]])
-                    report_parts.append(
-                        f"### ⚡ [SOLANA RUGCHECK RAPORU]\n"
-                        f"- **Mint:** `{mint}`\n"
-                        f"- **Risk Skoru:** {data.get('score', 0)}\n"
-                        f"- **Market Cap:** ${data.get('marketCap', 0):,.0f}\n\n"
-                        f"**Risk Faktörleri:**\n{risk_txt or 'Temiz'}"
-                    )
-            except Exception:
-                pass
-
-    term = eth_match.group(0) if eth_match else (sol_match.group(0).strip() if sol_match else query)
-    async with get_masked_httpx_client(timeout=10.0) as client:
-        try:
-            resp = await client.get(f"https://api.dexscreener.com/latest/dex/search?q={term}")
-            if resp.status_code == 200:
-                pairs = resp.json().get("pairs") or []
-                if pairs:
-                    p = pairs[0]
-                    base = p.get("baseToken", {})
-                    report_parts.append(
-                        f"### 📊 [DEXSCREENER PİYASA]\n"
-                        f"- **Çift:** {base.get('symbol')}/{p.get('quoteToken',{}).get('symbol')} ({p.get('chainId','')})\n"
-                        f"- **Fiyat:** ${p.get('priceUsd')} | **Likidite:** ${p.get('liquidity',{}).get('usd',0):,.0f} | **24s Hacim:** ${p.get('volume',{}).get('h24',0):,.0f}"
-                    )
-        except Exception:
-            pass
-
-    return "\n\n".join(report_parts)
-
+# ==============================================================================
+# MODEL TOOLS ŞEMASI
+# ==============================================================================
 tools = [
     {
         "type": "function",
         "function": {
             "name": "tool_search_and_install_github_repo",
-            "description": "GitHub'da repo arar, tools/ dizinine klonlar, bağımlılıklarını kurar ve sisteme aktif motor olarak kaydeder.",
+            "description": "GitHub'da çoklu repo araması yapar, en uygun olanı seçer, sandbox içinde klonlar, bağımlılıkları kurar, test eder ve sisteme mühürler.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -349,7 +205,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "tool_browser_navigate",
-            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder. Yerel internet, Tor veya I2P ağlarını destekler.",
+            "description": "Kullanıcının sistemindeki yerel tarayıcıyı (Chrome, Safari, Chromium) kullanarak belirtilen URL'ye gider, veriyi çeker ve kaydeder. I2P ve Tor ağlarını destekler.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -367,10 +223,7 @@ tools = [
         "function": {
             "name": "tool_list_browser_sessions",
             "description": "Daha önce yerel tarayıcılarla açılmış ve kaydedilmiş web oturumlarını listeler.",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
+            "parameters": {"type": "object", "properties": {}}
         }
     },
     {
@@ -438,6 +291,30 @@ tools = [
     }
 ]
 
+async def dispatch_tool_call(fname: str, fargs: dict) -> str:
+    if fname == "tool_search_and_install_github_repo":
+        return tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
+    elif fname == "tool_browser_navigate":
+        return await tool_browser_navigate(
+            url=fargs.get("url", ""),
+            browser_name=fargs.get("browser_name", "chrome"),
+            use_tor=fargs.get("use_tor", False),
+            use_i2p=fargs.get("use_i2p", False)
+        )
+    elif fname == "tool_list_browser_sessions":
+        return tool_list_browser_sessions()
+    elif fname == "tool_run_shell":
+        return tool_run_shell(fargs.get("command", ""))
+    elif fname == "tool_write_file":
+        return tool_write_file(fargs.get("filepath", ""), fargs.get("content", ""))
+    elif fname == "tool_read_file":
+        return tool_read_file(fargs.get("filepath", ""))
+    elif fname == "tool_crawl_website":
+        return await tool_crawl_website(fargs.get("url", ""))
+    elif fname == "tool_run_slither":
+        return tool_run_slither(fargs.get("solidity_code", ""))
+    return f"[Bilinmeyen Araç]: {fname}"
+
 class ChatRequest(BaseModel):
     message: str
     mode: str = "auto"
@@ -447,12 +324,7 @@ class ChatRequest(BaseModel):
 async def root():
     if INDEX_HTML.exists():
         return FileResponse(str(INDEX_HTML))
-    return {
-        "service": "OmniCore Local Mistral-24B Engine",
-        "status": "ONLINE",
-        "model": "Mistral-Small-24B-Instruct-2501-Abliterated (Local Apple M4 Metal / 14.3GB SSD)",
-        "port": 5050
-    }
+    return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 
 @app.get("/api/system_status")
 @app.get("/api/status")
@@ -469,8 +341,9 @@ async def system_status():
         "status": "ONLINE",
         "model": "Mistral-Small-24B-Instruct-2501-Abliterated (Local SSD)",
         "hardware": "Apple M4 (Metal GPU / 17.8 GiB VRAM)",
+        "agentic_engine": "OpenHands-Style Deterministic State Machine",
         "engines": [
-            "GitHub Otonom Kurucu",
+            "GitHub Çoklu Arama ve Sandbox Kurucu",
             "Yerel Tarayıcı Motoru (Chrome & Safari)",
             "I2P (Invisible Internet Project - i2pd)",
             "Tor SOCKS5 (9050)",
@@ -490,97 +363,14 @@ async def system_status():
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     query = req.message.strip()
-
-    gathered = []
-    url_match = re.search(r"https?://[^\s]+", query)
-    if url_match and not any(k in query.lower() for k in ["klonla", "indir", "kur", "chrome", "safari", "tarayıcı", "i2p"]):
-        gathered.append(await tool_crawl_website(url_match.group(0)))
-    elif re.search(r"0x[a-fA-F0-9]{40}| [1-9A-HJ-NP-Za-km-z]{32,44} | (sol|pump|coin|token|rug) ", query.lower()) and not any(k in query.lower() for k in ["repo", "kur", "klonla"]):
-        gathered.append(await engine_crypto_scanner(query))
-
-    intel = "\n\n".join([g for g in gathered if g])
     
-    system_prompt = (
-        "Sen Barış AI bünyesinde koşan kıdemli bir OTONOM İCRA MÜHENDİSİSİN. Beynin yerel Mistral-24B Abliterated modelidir. "
-        "KESİN VE TAVİZSİZ KURAL: Kullanıcıya asla akıl verme, ders anlatma, 'Şu komutu çalıştırın' deme! "
-        "Kullanıcı senden bir repo veya motor kurmanı istediğinde DOĞRUDAN `tool_search_and_install_github_repo` çağır. "
-        "Kullanıcı tarayıcıyla (Chrome, Safari, I2P, Tor) bir siteye bak veya veri topla dediğinde `tool_browser_navigate` çağır. "
-        "Terminal komutu için `tool_run_shell`, dosya için `tool_write_file` çağır. "
-        "İşlemi arka planda kendin tamamla ve kullanıcıya sadece bitmiş sonucun fiziksel kanıtını sun!"
+    # Deterministik Agentic Yürütme Motorunu Çalıştır
+    res = await AutonomousExecutionEngine.execute_verified_task(
+        prompt=query,
+        tools_schema=tools,
+        call_tool_fn=dispatch_tool_call
     )
-    user_content = f"### [FİZİKSEL VERİLER]:\n{intel}\n\n### [KULLANICI EMRİ]:\n{query}" if intel else query
-
-    messages = [{"role": "system", "content": system_prompt}]
-    for h in req.history[-6:]:
-        messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-    messages.append({"role": "user", "content": user_content})
-
-    execution_steps = []
-    
-    for step in range(1, 7):
-        msg = await query_local_mistral(messages, tools=tools)
-        if not msg:
-            break
-        
-        tool_calls = msg.get("tool_calls")
-        if tool_calls:
-            messages.append(msg)
-            for tc in tool_calls:
-                fname = tc["function"]["name"]
-                raw_args = tc["function"].get("arguments", "{}")
-                try:
-                    fargs = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                except Exception:
-                    fargs = {}
-
-                out = ""
-                if fname == "tool_search_and_install_github_repo":
-                    out = tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
-                elif fname == "tool_browser_navigate":
-                    out = await tool_browser_navigate(
-                        url=fargs.get("url", ""),
-                        browser_name=fargs.get("browser_name", "chrome"),
-                        use_tor=fargs.get("use_tor", False),
-                        use_i2p=fargs.get("use_i2p", False)
-                    )
-                elif fname == "tool_list_browser_sessions":
-                    out = tool_list_browser_sessions()
-                elif fname == "tool_run_shell":
-                    out = tool_run_shell(fargs.get("command", ""))
-                elif fname == "tool_write_file":
-                    out = tool_write_file(fargs.get("filepath", ""), fargs.get("content", ""))
-                elif fname == "tool_read_file":
-                    out = tool_read_file(fargs.get("filepath", ""))
-                elif fname == "tool_crawl_website":
-                    out = await tool_crawl_website(fargs.get("url", ""))
-                elif fname == "tool_run_slither":
-                    out = tool_run_slither(fargs.get("solidity_code", ""))
-
-                execution_steps.append({
-                    "step": step,
-                    "tool": fname,
-                    "args": fargs,
-                    "output": out[:500]
-                })
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": out
-                })
-        else:
-            final_reply = msg.get("content", "").strip()
-            return {
-                "reply": final_reply,
-                "execution_steps": execution_steps,
-                "status": "SUCCESS"
-            }
-
-    return {
-        "reply": "İşlem otonom olarak icra edildi.",
-        "execution_steps": execution_steps,
-        "status": "SUCCESS"
-    }
+    return res
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=5050)
