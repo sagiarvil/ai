@@ -184,22 +184,25 @@ class RealCryptoEngine:
     @classmethod
     async def get_live_coin(cls, symbol: str) -> Optional[Dict[str, Any]]:
         clean = symbol.upper().replace("USDT", "") + "USDT"
-        try:
-            async with get_masked_httpx_client(timeout=5.0) as client:
-                resp = await client.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={clean}")
-                if resp.status_code == 200:
-                    d = resp.json()
-                    return {
-                        "symbol": symbol.upper().replace("USDT", ""),
-                        "pair": clean,
-                        "price": float(d.get("lastPrice", 0)),
-                        "change_24h": round(float(d.get("priceChangePercent", 0)), 2),
-                        "high_24h": float(d.get("highPrice", 0)),
-                        "low_24h": float(d.get("lowPrice", 0)),
-                        "volume_usdt": round(float(d.get("quoteVolume", 0)), 2)
-                    }
-        except Exception:
-            pass
+        # 1. Önce Tor üzerinden dene, 403 (Cloudflare) alınırsa doğrudan yerel internete geç
+        for use_tor in [True, False]:
+            try:
+                client_ctx = get_masked_httpx_client(timeout=5.0) if use_tor else httpx.AsyncClient(timeout=5.0)
+                async with client_ctx as client:
+                    resp = await client.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={clean}")
+                    if resp.status_code == 200:
+                        d = resp.json()
+                        return {
+                            "symbol": symbol.upper().replace("USDT", ""),
+                            "pair": clean,
+                            "price": float(d.get("lastPrice", 0)),
+                            "change_24h": round(float(d.get("priceChangePercent", 0)), 2),
+                            "high_24h": float(d.get("highPrice", 0)),
+                            "low_24h": float(d.get("lowPrice", 0)),
+                            "volume_usdt": round(float(d.get("quoteVolume", 0)), 2)
+                        }
+            except Exception:
+                continue
         return None
 
     @classmethod
