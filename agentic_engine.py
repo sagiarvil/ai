@@ -238,6 +238,36 @@ class AutonomousExecutionEngine:
                     messages.append({"role": role, "content": content})
 
         messages.append({"role": "user", "content": prompt})
+        # ----------------------------------------------------------------------
+        # SIFIR GECİKMELİ HIZLI SOHBET & SELAMLAMA KATMANI (FAST-PATH)
+        # ----------------------------------------------------------------------
+        clean_p = prompt.strip().lower()
+        is_tool_intent = any(k in clean_p for k in ["kod", "yaz", "dosya", "oku", "kur", "tara", "araştır", "çalıştır", "git", "commit", "proje", "listele", "analiz", "sil", "güncelle", "sh", "python", "script", "curl", "http"])
+        
+        if not is_tool_intent:
+            if any(k in clean_p for k in ["canım sıkılıyor", "canim sikiliyor", "sıkıldım", "sikildim", "kendimi iyi hissetmiyorum", "yorgunum"]):
+                reply = "Sıkma tatlı canını patron! Hayat bazen yorar ama biz buradayız, M4 canavar gibi emrinde. İster yeni bir proje başlatalım, ister Mac projelerini elden geçirelim, istersen biraz dertleşelim. Dinliyorum seni, anlat bakalım ne oldu?"
+                engine.transition_to(TaskState.COMPLETED, "Hızlı samimi sohbet yanıtlandı.")
+                return {
+                    "task_id": engine.task_id,
+                    "status": "COMPLETED",
+                    "reply": reply,
+                    "execution_steps": [],
+                    "evidences": [],
+                    "verified": True
+                }
+            elif any(k in clean_p for k in ["merhaba", "selam", "günaydın", "iyi akşamlar", "naber", "nasılsın", "orda mısın", "burada mısın", "kendine gel"]) or clean_p in ["jarvis", "hey jarvis", "alo jarvis", "jarjis", "barış", "baris"]:
+                reply = "Selam patron! Buradayım, dinliyorum. Bütün sistemler aktif, sendeyim. Ne yapıyoruz?"
+                engine.transition_to(TaskState.COMPLETED, "Hızlı karşılama yanıtlandı.")
+                return {
+                    "task_id": engine.task_id,
+                    "status": "COMPLETED",
+                    "reply": reply,
+                    "execution_steps": [],
+                    "evidences": [],
+                    "verified": True
+                }
+
 
         execution_steps = []
         final_reply = ""

@@ -277,26 +277,26 @@
     .visualizer-container {
       max-width: 960px;
       margin: 0 auto 6px auto;
-      background: #0d1117;
-      border: 1px solid #1f2937;
+      background: #07090e;
+      border: 1px solid #3f1013;
       border-radius: 6px;
       padding: 6px 12px;
       display: flex;
       align-items: center;
       gap: 12px;
-      box-shadow: 0 0 15px rgba(6, 182, 212, 0.08);
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.12);
       transition: all 0.3s;
       cursor: pointer;
       user-select: none;
     }
     .visualizer-container:hover {
-      border-color: #06b6d4;
-      background: #0f172a;
+      border-color: #ef4444;
+      background: #0f0709;
     }
     .visualizer-container.active {
-      border-color: #06b6d4;
-      box-shadow: 0 0 25px rgba(6, 182, 212, 0.35);
-      background: #0b1329;
+      border-color: #ef4444;
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.5), inset 0 0 15px rgba(239, 68, 68, 0.2);
+      background: #0d0406;
     }
     .visualizer-canvas {
       flex: 1;
@@ -512,40 +512,49 @@
       const clean = cleanMarkdownForSpeech(text);
       if (!clean) return;
 
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(clean);
-        utter.lang = 'tr-TR';
-        utter.rate = 1.05;
-        utter.pitch = 1.0;
-        const voices = window.speechSynthesis.getVoices();
-        const trVoice = voices.find(v => v.lang.includes('tr') || v.name.toLowerCase().includes('yelda') || v.name.toLowerCase().includes('turkish'));
-        if (trVoice) utter.voice = trVoice;
-        utter.onstart = () => {
-          isSpeakingNow = true;
-          try { if (recognition) recognition.stop(); } catch(e){}
-        };
-        utter.onend = () => {
+      // 🛡️ KESİN YANKILANMA VE DÖNGÜ KALKANI (ANTI-ECHO SHIELD)
+      // Jarvis konuşurken mikrofonu KESİNLİKLE durdur, kendi sesini dinlemesin!
+      isSpeakingNow = true;
+      if (recognition) {
+        try { recognition.abort(); } catch(e){}
+      }
+
+      fetch('/api/voice/speak', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: clean.substring(0, 400)})
+      }).then(() => {
+        // Konuşma uzunluğu + 1.8 saniye akustik sönümlenme tamponu
+        const speechDuration = Math.min(10000, Math.max(1800, clean.length * 70));
+        setTimeout(() => {
+          isSpeakingNow = false;
+          if (alwaysListen) {
+            startContinuousListening();
+          }
+        }, speechDuration + 1800);
+      }).catch(() => {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(clean);
+          utter.lang = 'tr-TR';
+          utter.rate = 1.05;
+          utter.pitch = 1.0;
+          utter.onend = () => {
+            setTimeout(() => {
+              isSpeakingNow = false;
+              if (alwaysListen) startContinuousListening();
+            }, 1800);
+          };
+          utter.onerror = () => {
+            isSpeakingNow = false;
+            if (alwaysListen) startContinuousListening();
+          };
+          window.speechSynthesis.speak(utter);
+        } else {
           isSpeakingNow = false;
           if (alwaysListen) startContinuousListening();
-        };
-        utter.onerror = () => {
-          isSpeakingNow = false;
-          fetch('/api/voice/speak', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text: clean.substring(0, 300)})
-          }).catch(() => {});
-          if (alwaysListen) setTimeout(() => startContinuousListening(), 1200);
-        };
-        window.speechSynthesis.speak(utter);
-      } else {
-        fetch('/api/voice/speak', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({text: clean.substring(0, 300)})
-        }).catch(() => {});
-      }
+        }
+      });
     }
 
     // --- JARVIS CANLI NEON SES EKOLAYZIRI (WEB AUDIO API & FFT) ---
@@ -642,6 +651,11 @@
       }
     }
 
+    // --- KARA ŞİMŞEK (KITT / KNIGHT RIDER) KIRMIZI SCANNER & SES MODÜLATÖRÜ ---
+    let kittScanPos = 0;       // 0 ile 1 arası tarayıcı pozisyonu
+    let kittScanDir = 1;       // 1: sağa, -1: sola
+    let kittTrail = new Array(BAR_COUNT).fill(0); // LED kuyruk parlaklığı
+
     function renderVisualizer() {
       if (!visualizerCtx || !visualizerCanvas) return;
       requestAnimationFrame(renderVisualizer);
@@ -651,8 +665,8 @@
 
       visualizerCtx.clearRect(0, 0, width, height);
 
-      // Koyu HUD Zemin
-      visualizerCtx.fillStyle = 'rgba(7, 9, 14, 0.96)';
+      // KITT Siyah / Derin Kırmızı Zemin
+      visualizerCtx.fillStyle = '#060203';
       visualizerCtx.fillRect(0, 0, width, height);
 
       const barCount = BAR_COUNT;
@@ -660,87 +674,102 @@
       let x = 4;
       let sum = 0;
 
-      // DURUM 1: Mikrofon henüz başlatılmadıysa canlı Fütüristik Neon Nabız Dalgası çiz
-      if (!isAudioEngineStarted || !analyserNode || !freqData) {
-        idleAngle += 0.05;
-        for (let i = 0; i < barCount; i++) {
-          const waveHeight = Math.sin(idleAngle + (i * 0.25)) * 6 + 10;
-          const grad = visualizerCtx.createLinearGradient(0, height - waveHeight, 0, height);
-          grad.addColorStop(0, '#06b6d4');
-          grad.addColorStop(1, '#1e293b');
-          visualizerCtx.fillStyle = grad;
-          visualizerCtx.fillRect(x, height - waveHeight - 2, barWidth, waveHeight);
-          x += barWidth + 3;
-        }
-        return;
+      // Ses verisini analiz et
+      let hasSound = false;
+      let avg = 0;
+      if (isAudioEngineStarted && analyserNode && freqData) {
+        analyserNode.getByteFrequencyData(freqData);
+        for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+        avg = sum / freqData.length;
+        hasSound = avg > 11;
       }
 
-      // DURUM 2: Mikrofon Aktif ve Gerçek Frekans Verisi Geliyor
-      analyserNode.getByteFrequencyData(freqData);
-      const bufferLength = analyserNode.frequencyBinCount;
+      // KITT Tarayıcı Hızı: Ses varken hızlı ve dinamik, sessizken sakin
+      const scanSpeed = hasSound ? Math.min(0.045, 0.018 + (avg / 255) * 0.05) : 0.012;
+      kittScanPos += kittScanDir * scanSpeed;
+      if (kittScanPos >= 1) {
+        kittScanPos = 1;
+        kittScanDir = -1;
+      } else if (kittScanPos <= 0) {
+        kittScanPos = 0;
+        kittScanDir = 1;
+      }
 
+      const activeBarCenter = kittScanPos * (barCount - 1);
+
+      // 32 Kırmızı KITT LED Segmenti Çiz
       for (let i = 0; i < barCount; i++) {
-        const dataIndex = Math.min(bufferLength - 1, Math.floor(i * (bufferLength / barCount)));
-        const rawVal = freqData[dataIndex] || 0;
-        sum += rawVal;
+        // Tarayıcı kafasına olan mesafe (0 ile 1 arası parlaklık)
+        const dist = Math.abs(i - activeBarCenter);
+        const intensity = Math.max(0, 1 - (dist / 3.2));
 
-        const val = rawVal;
-        const barHeight = Math.max(3, (val / 255) * (height - 6));
-
-        // Peak Hold & Gravity
-        if (barHeight >= peakValues[i]) {
-          peakValues[i] = barHeight;
+        // Ses modülasyonu yüksekliği (Kara Şimşek ses dalgası)
+        let barHeight = 4;
+        if (hasSound && freqData) {
+          const freqIndex = Math.min(freqData.length - 1, Math.floor(i * (freqData.length / barCount)));
+          const fVal = freqData[freqIndex] || 0;
+          const soundAmp = (fVal / 255) * (height - 8);
+          // Tarayıcı kafasına yakın olan LED'ler sesle daha çok parlar ve zıplar
+          barHeight = Math.max(4, soundAmp * (0.4 + intensity * 0.9));
         } else {
-          peakValues[i] = Math.max(3, peakValues[i] - 0.7);
+          // Sessizlikte hafif KITT kayan LED nabzı
+          barHeight = Math.max(4, intensity * (height - 12));
         }
 
-        // Dinamik Çok Katmanlı Neon Gradient
+        // Kuyruk sönümleme (Phosphor Persistence)
+        kittTrail[i] = Math.max(kittTrail[i] * 0.82, intensity);
+        const currentBright = Math.max(kittTrail[i], intensity);
+
+        // KITT Efsanevi Kırmızı Gradyanı
         const grad = visualizerCtx.createLinearGradient(0, height - barHeight, 0, height);
-        if (val > 140) {
-          grad.addColorStop(0, '#f43f5e'); // Neon Pembe/Kırmızı
-          grad.addColorStop(0.4, '#a855f7'); // Neon Mor
-          grad.addColorStop(1, '#06b6d4'); // Cyan
-        } else if (val > 60) {
-          grad.addColorStop(0, '#06b6d4'); // Neon Cyan
-          grad.addColorStop(0.6, '#3b82f6'); // Mavi
-          grad.addColorStop(1, '#10b981'); // Zümrüt Yeşili
+        if (currentBright > 0.75) {
+          grad.addColorStop(0, '#ffffff'); // Akkor Merkez Işığı
+          grad.addColorStop(0.2, '#ff1a40'); // Parlak KITT Kırmızı
+          grad.addColorStop(0.7, '#dc2626');
+          grad.addColorStop(1, '#450a0a');
+        } else if (currentBright > 0.35) {
+          grad.addColorStop(0, '#ff2442'); // Kırmızı
+          grad.addColorStop(0.6, '#991b1b');
+          grad.addColorStop(1, '#2b0608');
         } else {
-          grad.addColorStop(0, '#38bdf8'); // Açık Mavi
-          grad.addColorStop(1, '#0f172a'); // Koyu Zemin
+          grad.addColorStop(0, '#7f1d1d'); // Sönük Kuyruk
+          grad.addColorStop(1, '#180405');
         }
 
         visualizerCtx.fillStyle = grad;
-        visualizerCtx.fillRect(x, height - barHeight - 2, barWidth, barHeight);
+        const yPos = (height - barHeight) / 2; // KITT ses kutusu gibi merkezden iki yöne genişler
+        visualizerCtx.fillRect(x, yPos, barWidth, barHeight);
 
-        // Zıplayan Tepe Noktası (Peak Cap)
-        visualizerCtx.fillStyle = val > 120 ? '#ffffff' : (val > 50 ? '#67e8f9' : '#475569');
-        visualizerCtx.fillRect(x, height - peakValues[i] - 4, barWidth, 1.8);
+        // KITT LED Üst ve Alt İnce Parlama Çizgisi
+        if (currentBright > 0.5) {
+          visualizerCtx.fillStyle = currentBright > 0.85 ? '#ffffff' : '#f87171';
+          visualizerCtx.fillRect(x, yPos - 1, barWidth, 1.5);
+          visualizerCtx.fillRect(x, yPos + barHeight, barWidth, 1.5);
+        }
 
         x += barWidth + 3;
       }
 
-      const avg = sum / barCount;
-      const pct = Math.min(100, Math.round((avg / 95) * 100));
-
-      if (avg > 14) {
+      // Canlı Durum ve Telemetri Bildirimi
+      const pct = Math.min(100, Math.round((avg / 90) * 100));
+      if (hasSound) {
         if (vContainer) vContainer.classList.add('active');
-        if (vStatusDot) vStatusDot.textContent = '🟢';
+        if (vStatusDot) vStatusDot.textContent = '🔴';
         if (vStatusText) {
-          vStatusText.textContent = '⚡ Canlı Ses Titreşimi: Algılanıyor';
-          vStatusText.style.color = '#06b6d4';
+          vStatusText.textContent = '⚡ KITT / JARVIS SES MODÜLATÖRÜ AKTİF';
+          vStatusText.style.color = '#ef4444';
         }
-        if (vDb) vDb.textContent = "Şiddet: %" + pct + " (Jarvis dinliyor)";
+        if (vDb) vDb.textContent = 'Kırmızı Dalga Şiddeti: %' + pct + ' (Dinliyor)';
       } else {
         if (vContainer) vContainer.classList.remove('active');
-        if (vStatusDot) vStatusDot.textContent = alwaysListen ? '🟡' : '⚫';
+        if (vStatusDot) vStatusDot.textContent = alwaysListen ? '🔴' : '⚫';
         if (vStatusText) {
-          vStatusText.textContent = alwaysListen ? 'Jarvis Uyanık (Oda Sessiz)' : 'Mikrofon Pasif';
+          vStatusText.textContent = alwaysListen ? 'KITT Tarayıcı Beklemede (Oda Sessiz)' : 'Mikrofon Pasif';
           vStatusText.style.color = '#94a3b8';
         }
-        if (vDb) vDb.textContent = alwaysListen ? '"Jarvis..." sesinizi bekliyor' : 'Dinleme kapalı';
+        if (vDb) vDb.textContent = alwaysListen ? '"Jarvis..." bekleniyor' : 'Dinleme kapalı';
       }
     }
-
     // Sayfa açılır açılmaz render döngüsünü başlat
     requestAnimationFrame(renderVisualizer);
 
@@ -829,7 +858,8 @@
             input.placeholder = '⚡ Jarvis emri dinliyor... Cümlenizi tamamlayın...';
 
             clearTimeout(speechDebounceTimer);
-            const waitTime = finalTranscript ? 250 : 650;
+            // Kullanıcı cümlesini tamamen bitirip odada sessizlik olana kadar bekle (stabilite)
+            const waitTime = finalTranscript ? 500 : 1100;
             speechDebounceTimer = setTimeout(() => {
               wakeChimedForTurn = false;
               try { recognition.stop(); } catch(e){}
@@ -985,7 +1015,11 @@
 
       input.value = '';
       input.dispatchEvent(new Event('input'));
-      sendBtn.style.display = 'none';
+
+      // BUTON GÜVENLİĞİ: İcra butonu gizlenmez, sadece kilitlenir; böylece kullanıcı kazara durdur'a basamaz
+      sendBtn.disabled = true;
+      sendBtn.textContent = '⚡ Düşünülüyor...';
+      sendBtn.style.opacity = '0.75';
       stopBtn.style.display = 'inline-flex';
 
       // Kullanıcı mesajı
@@ -993,22 +1027,29 @@
       uDiv.className = 'msg-user';
       let userDisplay = q;
       if (pendingAttachments.length > 0) {
-        const attNames = pendingAttachments.map(a => `📎 ${a.filename}`).join(', ');
-        userDisplay = `[${attNames}]
-` + (q || '(Belgeler inceleniyor)');
+        const attNames = pendingAttachments.map(a => '📎 ' + a.filename).join(', ');
+        userDisplay = "[" + attNames + "]\n" + (q || "(Belgeler inceleniyor)");
       }
       uDiv.textContent = userDisplay;
       feed.appendChild(uDiv);
       feed.scrollTop = feed.scrollHeight;
 
-      // AI bekleme kutusu
+      // AI Canlı Bekleme Kutusu ve Kronometresi
       const aDiv = document.createElement('div');
       aDiv.className = 'msg-ai';
-      aDiv.innerHTML = '<em>⚡ Yerel M4 GPU üzerinde işlem yürütülüyor...</em>';
+      aDiv.innerHTML = '<em>⚡ Jarvis düşünüyor ve hazırlıyor... (<span id="liveTimer">0.0s</span>)</em>';
       feed.appendChild(aDiv);
       feed.scrollTop = feed.scrollHeight;
 
       const t0 = performance.now();
+      const timerEl = aDiv.querySelector('#liveTimer');
+      const liveInterval = setInterval(() => {
+        if (timerEl) {
+          const sec = ((performance.now() - t0) / 1000).toFixed(1);
+          timerEl.textContent = sec + 's';
+        }
+      }, 100);
+
       const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
       const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
 
@@ -1033,6 +1074,8 @@
           })
         });
 
+        clearInterval(liveInterval);
+
         const contentType = res.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const raw = await res.text();
@@ -1045,29 +1088,30 @@
           
           let outHtml = '';
           if (data.execution_steps && data.execution_steps.length > 0) {
-            outHtml += `<div class="steps">`;
+            outHtml += '<div class="steps">';
             data.execution_steps.forEach(st => {
               const stepName = st.tool || st.step || 'Aşama';
-              const stepDetail = st.output || (st.exit_code !== undefined ? `exit ${st.exit_code}` : 'Tamamlandı');
-              outHtml += `▸ <strong>${stepName}</strong> (${stepDetail.substring(0, 100).replace(/\n/g, ' ')})<br>`;
+              const stepDetail = st.output || (st.exit_code !== undefined ? 'exit ' + st.exit_code : 'Tamamlandı');
+              outHtml += '▸ <strong>' + stepName + '</strong> (' + stepDetail.substring(0, 100).replace(/\n/g, ' ') + ')<br>';
             });
-            outHtml += `</div>`;
+            outHtml += '</div>';
           }
 
           outHtml += marked.parse(data.reply || '');
-          outHtml += `<div style="font-size:10px; color:var(--muted); margin-top:8px;">⏱ Süre: ${elapsed}s • Durum: ${data.status}</div>`;
+          outHtml += '<div style="font-size:10px; color:var(--muted); margin-top:8px;">⏱ Süre: ' + elapsed + 's • Durum: ' + data.status + '</div>';
           aDiv.innerHTML = outHtml;
 
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
 
-          // Jarvis sesli konuşma
+          // Jarvis sesli konuşma (Yerel macOS Yelda motoru)
           speakJarvis(data.reply);
         } else if (res.status === 401) {
-          aDiv.innerHTML = `<span style="color:#f85149">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı. Lütfen sağ üstteki 'X-Omni-Key' alanına geçerli anahtarınızı girin.</span>`;
+          aDiv.innerHTML = '<span style="color:#f85149">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı. Lütfen sağ üstteki "X-Omni-Key" alanına geçerli anahtarınızı girin.</span>';
         } else {
-          aDiv.innerHTML = `<span style="color:#f85149">Hata: Sunucu ${res.status} yanıtı döndü.</span>`;
+          aDiv.innerHTML = '<span style="color:#f85149">Hata: Sunucu ' + res.status + ' yanıtı döndü.</span>';
         }
       } catch(e) {
+        clearInterval(liveInterval);
         if (e.name === 'AbortError') {
           aDiv.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: İşlem kullanıcı tarafından durduruldu.</strong>';
         } else {
@@ -1075,12 +1119,13 @@
           if (window.location.protocol === 'https:' && (errText.includes('Failed to fetch') || errText.includes('NetworkError') || errText.includes('Load failed'))) {
             errText += '<br><br>⚠️ <strong>Tarayıcı İzolasyon Engeli (Mixed Content):</strong><br>Tarayıcınız HTTPS sayfasından yerel HTTP servisine (127.0.0.1:5050) erişimi engelliyor.<br>👉 <strong>Çözüm:</strong> Arayüzü doğrudan yerel adresinden açın: <a href="http://127.0.0.1:5050" target="_blank" style="color:#2f81f7; text-decoration:underline; font-weight:bold;">http://127.0.0.1:5050</a>';
           }
-          aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${errText}</span>`;
+          aDiv.innerHTML = '<span style="color:#f85149">Bağlantı Hatası: ' + errText + '</span>';
         }
       } finally {
         currentAbortController = null;
-        sendBtn.style.display = 'inline-flex';
         sendBtn.disabled = false;
+        sendBtn.textContent = 'İCRA ET';
+        sendBtn.style.opacity = '1';
         stopBtn.style.display = 'none';
         input.focus();
         feed.scrollTop = feed.scrollHeight;
