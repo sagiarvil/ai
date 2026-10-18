@@ -8,6 +8,7 @@ Güvenlik: CORS sıkılaştırılmış, Zorunlu HTTP 401 Yetkilendirmeli, Gerçe
 
 import json
 import os
+import re
 import secrets
 import subprocess
 import tempfile
@@ -593,6 +594,22 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
         call_tool_fn=dispatch_tool_call
     )
     return res
+
+class VoiceSpeakRequest(BaseModel):
+    text: str
+
+@app.post("/api/voice/speak")
+async def voice_speak(req: VoiceSpeakRequest):
+    """macOS yerel Yelda Türkçe sesi ile sesli konuşma desteği."""
+    clean_text = re.sub(r'[*`#_\[\]\(\)>]', ' ', req.text)
+    clean_text = re.sub(r'https?://\S+', '', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()[:500]
+    if clean_text:
+        try:
+            subprocess.Popen(["/usr/bin/say", "-v", "Yelda", clean_text])  # nosec B603
+        except Exception:
+            pass
+    return {"status": "SPEAKING", "text": clean_text}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=5050)

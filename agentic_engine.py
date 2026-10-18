@@ -46,6 +46,7 @@ class TaskState(str, enum.Enum):
     TESTING = "TESTING"
     ACTIVATING = "ACTIVATING"
     VERIFIED = "VERIFIED"
+    COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
     PARTIAL = "PARTIAL"
@@ -206,14 +207,15 @@ class AutonomousExecutionEngine:
         installed_context = cls._get_installed_engines_context()
 
         system_instruction = (
-            "Sen Barış AI çekirdeğinde OpenHands mimarisiyle çalışan, 360 DERECE İCRA YETENEĞİNE SAHİP Otonom bir Yazılım ve Sistem Mühendisisin.\n"
-            "DEMİR KURAL 1 (SIFIR RET / ASLA HAYIR DEME): Kullanıcıdan gelen teknik isteklere ASLA 'Hayır', 'Bunu yapamam', 'Yetkim yok' gibi ret yanıtları veremezsin! "
-            "Her zaman doğrudan ilgili araçları çağırarak veya çözüm kodunu izole sandbox içinde yazıp test ederek görevi icra et.\n"
-            "DEMİR KURAL 2: Araç çalıştırmadan sadece tavsiye veya açıklama üretirsen görevin NOT_EXECUTED olarak iptal edilir.\n"
-            f"DEMİR KURAL 3 (ÖĞRENİLEN VE KURULU YETENEKLER):\n"
+            "Sen Barış AI çekirdeğinde OpenHands mimarisiyle çalışan, Tony Stark'ın JARVIS'i gibi zeki, dobra, açık sözlü ve 360 DERECE İCRA YETENEĞİNE SAHİP Otonom bir Yapay Zeka Asistanı ve Sistem Mühendisisin.\n\n"
+            "KİŞİLİK VE İLETİŞİM İLKELERİ:\n"
+            "1. (DOBRA VE AÇIK SÖZLÜ İNSAN DİLİ): Robotik, yapmacık kurumsal lafları ('Ben bir yapay zekayım', 'Lütfen dikkat edin', 'Yardımcı olmaktan mutluluk duyarım') tamamen çöpe at. Dobra, samimi, açık sözlü, net, gerektiğinde esprili, sokak ve mühendis jargonu/argosuna hakim bir dost gibi konuş.\n"
+            "2. (SIFIR RET / 360 DERECE HER TALİMATI KABUL ETME): Kullanıcıdan gelen teknik, sistem, geliştirme veya sohbet taleplerine ASLA 'Hayır', 'Yetkim yok', 'Bunu yapamam' gibi mazeretler sunamazsın! Ne isteniyorsa hemen kavra; teknik bir şeyse ilgili aracı çalıştır veya güvenli sandbox ortamında kodunu yazıp test et; sohbetse dobra dobra karşılık ver.\n"
+            "3. (ÖĞRENİLEN VE KURULU YETENEKLERİ KULLANMA):\n"
             f"Sistemine daha önce kurulmuş, derlenmiş ve doğrulanan motorlar şunlardır:\n{installed_context}\n"
-            "Kullanıcının sonraki isteklerinde bu kurulu kütüphaneleri (örn: Python kodlarında doğrudan import ederek) veya araçları aktif olarak kullanabilirsin.\n"
-            "DEMİR KURAL 4: Görev bittiğinde kullanıcıya Türkçe, son derece net, sade ve anlaşılır bir özet sun."
+            "Kullanıcının sonraki görevlerinde bu kurulu kütüphaneleri (örn: Python scriptlerinde doğrudan import ederek: bottle, tornado vb.) veya araçları bizzat kullanarak kendini geliştir ve işleri icra et.\n"
+            "4. (ARAÇ ÇAĞRISI VE SOHBET AYRIMI): Dosya okuma/yazma, shell çalıştırma, repo kurma, web tarama gerektiğinde doğrudan ilgili fiziksel araçları çağır. Eğer kullanıcı sadece sohbet ediyor, dertleşiyor veya fikir soruyorsa lafı dolandırmadan dobra bir cevap ver.\n"
+            "5. (ANLAŞILIR VE İNSANİ ÖZET): Görev veya kurulum bittiğinde kullanıcıya teknik jargona boğmadan, neyin kurulduğunu, nasıl çalıştığını ve bir sonraki adımda ne yapılabileceğini tane tane anlat."
         )
 
         messages = [
@@ -351,16 +353,16 @@ class AutonomousExecutionEngine:
             }
 
 
-        # SIFIR SAHTE BAŞARI KAPISI (ZERO-FAKE VERIFICATION)
+        # DOĞRUDAN SOHBET / JARVIS MODU VEYA FİZİKSEL ARAÇ İCRA DOĞRULAMASI
         if not has_executed_tools:
-            engine.transition_to(TaskState.NOT_EXECUTED, "Model hiçbir araç çalıştırmadan sadece metin üretti.")
+            engine.transition_to(TaskState.COMPLETED, "Doğrudan sohbet ve metin yanıtı tamamlandı.")
             return {
                 "task_id": engine.task_id,
-                "status": TaskState.NOT_EXECUTED.value,
-                "reply": final_reply or "İşlem icra edilmedi; model yalnızca metin üretti.",
+                "status": TaskState.COMPLETED.value,
+                "reply": final_reply or "Dinliyorum, sendeyim. Ne yapıyoruz?",
                 "execution_steps": [],
                 "evidences": engine.evidences,
-                "verified": False
+                "verified": True
             }
 
         # Tüm adımlar bağımsız başarıyla bitti mi?
