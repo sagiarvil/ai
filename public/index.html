@@ -360,8 +360,8 @@
       <div style="font-size:16px; color:#06b6d4;" title="Canlı Ses Dalga Analizi">⚡</div>
       <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="12"></canvas>
       <div class="visualizer-meta">
-        <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#64748b;">⚫</span> <span id="vStatusText">Mikrofon Kapalı (Tıklayın)</span></div>
-        <div id="visualizerDb" class="visualizer-db">Ekolayzırı Başlatmak İçin Dokunun</div>
+        <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#ef4444;">🔴</span> <span id="vStatusText" style="color:#94a3b8;">KITT Lazer Aktif</span></div>
+        <div id="visualizerDb" class="visualizer-db">Dinlemeye hazır</div>
       </div>
     </div>
     <div class="input-box">
@@ -564,12 +564,84 @@
       });
     }
 
-    // --- KARA ŞİMŞEK (KITT) ZARİF VE SOLUK LAZER ÇİZGİSİ (JARVIS ANAHTARINA BAĞLI) ---
+    // --- JARVIS & KITT SES VE LAZER ÇEKİRDEĞİ (WEB AUDIO API & CANVAS) ---
+    const visualizerCanvas = document.getElementById('audioVisualizer');
+    const visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
+    const vContainer = document.getElementById('visualizerContainer');
+    const vStatusDot = document.getElementById('vStatusDot');
+    const vStatusText = document.getElementById('vStatusText');
+    const vDb = document.getElementById('visualizerDb');
+
+    let audioContext = null;
+    let analyserNode = null;
+    let micStream = null;
+    let freqData = null;
+    let isAudioEngineStarted = false;
+
     const KITT_SEGMENTS = 48;
     let kittScanPos = 0;
     let kittScanDir = 1;
     let kittTrail = new Array(KITT_SEGMENTS).fill(0);
     let jarvisPowerOn = true;
+
+    // Fütüristik İki Tonlu Uyanma Chime (880Hz -> 1320Hz)
+    function playWakeChime() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = audioContext || new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const now = ctx.currentTime;
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.12);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      } catch(e) {}
+    }
+
+    async function initAudioEngine() {
+      if (isAudioEngineStarted && audioContext && audioContext.state === 'running') return true;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return false;
+        if (!audioContext) {
+          audioContext = new AudioCtx();
+        }
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        if (!micStream) {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: false,
+              autoGainControl: true
+            }
+          });
+        }
+
+        const source = audioContext.createMediaStreamSource(micStream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 64;
+        analyserNode.smoothingTimeConstant = 0.72;
+        source.connect(analyserNode);
+
+        freqData = new Uint8Array(analyserNode.frequencyBinCount);
+        isAudioEngineStarted = true;
+        return true;
+      } catch (err) {
+        console.warn('Web Audio API başlatma:', err);
+        return false;
+      }
+    }
 
     function renderVisualizer() {
       if (!visualizerCtx || !visualizerCanvas) return;
@@ -582,13 +654,13 @@
       visualizerCtx.fillStyle = '#06070a';
       visualizerCtx.fillRect(0, 0, width, height);
 
-      // EĞER JARVIS KAPALIYSA: KITT LAZERİ TAMAMEN SÖNER
+      // EĞER JARVIS KAPALIYSA: KITT LAZERİ SÖNER
       if (!jarvisPowerOn) {
         visualizerCtx.fillStyle = '#171922';
         visualizerCtx.fillRect(4, Math.round(height/2)-1, width-8, 1);
         if (vStatusDot) vStatusDot.textContent = '⚫';
         if (vStatusText) { vStatusText.textContent = 'Jarvis Kapalı (Uyuyor)'; vStatusText.style.color = '#64748b'; }
-        if (vDb) vDb.textContent = 'Sistem kapalı';
+        if (vDb) vDb.textContent = 'Devre dışı';
         return;
       }
 
@@ -606,7 +678,7 @@
         hasSound = avg > 12;
       }
 
-      // KITT LAZER HAREKETİ: Jarvis AÇIK ise her zaman akar! Ses varken daha canlı!
+      // KITT LAZER AKIŞI: Jarvis AÇIK ise her zaman akar!
       const scanSpeed = hasSound ? Math.min(0.035, 0.016 + (avg / 255) * 0.03) : 0.012;
       kittScanPos += kittScanDir * scanSpeed;
       if (kittScanPos >= 1) { kittScanPos = 1; kittScanDir = -1; }
@@ -622,15 +694,14 @@
         kittTrail[i] = Math.max(kittTrail[i] * 0.85, intensity);
         const currentBright = Math.max(kittTrail[i], intensity);
 
-        // İNCECİK ZARİF LAZER ÇİZGİSİ
         let barHeight = currentBright > 0.6 ? 2.5 : 1.5;
         if (hasSound) {
           barHeight = currentBright > 0.6 ? 3.5 : 2;
         }
 
-        // SOLUK MATTE KIRMIZI (Gözü yormaz, kaliteli KITT hissi verir)
+        // SOLUK MATTE KIRMIZI (Gözü yormayan asil KITT kırmızısı)
         if (currentBright > 0.7) {
-          visualizerCtx.fillStyle = '#f87171'; // Yumuşak akkor kırmızı
+          visualizerCtx.fillStyle = '#f87171'; // Yumuşak açık kırmızı
         } else if (currentBright > 0.35) {
           visualizerCtx.fillStyle = '#991b1b'; // Koyu kırmızı
         } else if (currentBright > 0.12) {
@@ -654,7 +725,8 @@
         if (vDb) vDb.textContent = 'Dinlemeye hazır';
       }
     }
-// Sayfa açılır açılmaz render döngüsünü başlat
+
+    // Sayfa açılır açılmaz render döngüsünü başlat
     requestAnimationFrame(renderVisualizer);
 
     // --- MİKROFON İLE KESİNTİSİZ HANDS-FREE JARVIS DİNLEME MİMARİSİ ---
