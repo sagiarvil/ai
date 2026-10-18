@@ -459,6 +459,13 @@
         const voices = window.speechSynthesis.getVoices();
         const trVoice = voices.find(v => v.lang.includes('tr') || v.name.toLowerCase().includes('yelda') || v.name.toLowerCase().includes('turkish'));
         if (trVoice) utter.voice = trVoice;
+        utter.onerror = () => {
+          fetch('/api/voice/speak', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: clean.substring(0, 300)})
+          }).catch(() => {});
+        };
         window.speechSynthesis.speak(utter);
       } else {
         fetch('/api/voice/speak', {
@@ -496,10 +503,16 @@
       };
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        input.value = transcript;
-        input.dispatchEvent(new Event('input'));
-        input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          input.value = transcript.trim();
+          input.dispatchEvent(new Event('input'));
+          input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
+          setTimeout(() => sendAction(), 200);
+        }
       };
 
       recognition.onerror = (event) => {
@@ -509,9 +522,6 @@
 
       recognition.onend = () => {
         stopMic();
-        if (input.value.trim().length > 0) {
-          setTimeout(() => sendAction(), 300);
-        }
       };
     } else {
       if (micBtn) {

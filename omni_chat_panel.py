@@ -118,8 +118,10 @@ async def verify_api_key(
     client_host = request.client.host if request.client else ""
     # TestClient (testclient) veya harici IP doğrudan 401 kontrolüne tabi tutulur
     if not provided_key:
-        if client_host in ["127.0.0.1", "::1"] and request.headers.get("origin") in ALLOWED_ORIGINS:
-            return True
+        if client_host in ["127.0.0.1", "::1"]:
+            origin = request.headers.get("origin")
+            if not origin or origin in ALLOWED_ORIGINS:
+                return True
         raise HTTPException(
             status_code=401,
             detail="Yetkisiz Erişim: API anahtarı eksik. X-Omni-Key veya Authorization: Bearer <key> başlığı zorunludur."
