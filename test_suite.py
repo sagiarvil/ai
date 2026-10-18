@@ -92,7 +92,13 @@ def test_fastapi_security_and_cors():
     allow_origin = opt_resp.headers.get("access-control-allow-origin")
     assert allow_origin != "*", "CORS güvenliği başarısız: Wildcard '*' bulundu!"
 
-    s_resp = client.get("/api/system_status")
+    # Yetkisiz istek 401 dönmeli
+    unauth_resp = client.get("/api/system_status")
+    assert unauth_resp.status_code == 401, "Zorunlu 401 yetkilendirme testi başarısız!"
+
+    # Yetkili istek 200 dönmeli
+    from config_manager import get_secure_api_key
+    s_resp = client.get("/api/system_status", headers={"X-Omni-Key": get_secure_api_key()})
     assert s_resp.status_code == 200
     data = s_resp.json()
     assert data["status"] == "ONLINE"

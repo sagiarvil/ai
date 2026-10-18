@@ -3,13 +3,14 @@
 OMNICORE // LOKAL MISTRAL-24B + OTONOM AGENTIC İCRA MOTORU (OPENHANDS MİMARİSİ)
 Kural: Model rehber üretirse veya araç çalıştırmazsa asla SUCCESS kabul edilmez.
 Tüm işlemler deterministik durum makinesi (TaskState) ve fiziksel kanıtlarla doğrulanır.
-Güvenlik: CORS sıkılaştırılmış, API Authentication destekli, izole sandbox yürütücülü.
+Güvenlik: CORS sıkılaştırılmış, Zorunlu HTTP 401 Yetkilendirmeli, Gerçek Seatbelt Sandbox Katmanlı.
 """
 
 import asyncio
 import json
 import os
 import re
+import secrets
 import subprocess
 import tempfile
 import time
@@ -23,6 +24,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
+from config_manager import get_secure_api_key
 from real_engines import RealWebSearchEngine, RealTorEngine, get_masked_httpx_client
 from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
@@ -38,7 +40,6 @@ TOOLS_DIR = WORKSPACE_ROOT / 'tools'
 TOOLS_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / 'active_engines.json'
 
-OMNI_API_KEY = os.environ.get("OMNI_API_KEY", "omni_local_dev_token_2026")
 api_key_header = APIKeyHeader(name="X-Omni-Key", auto_error=False)
 
 try:
@@ -67,10 +68,37 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Omni-Key"],
 )
 
-async def verify_api_key(x_omni_key: Optional[str] = Security(api_key_header)):
-    # Yerel çağrılar veya geçerli API anahtarı kabul edilir
-    if x_omni_key and x_omni_key == OMNI_API_KEY:
-        return True
+async def verify_api_key(
+    x_omni_key: Optional[str] = Security(api_key_header),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Zorunlu API Kimlik Doğrulama:
+    - Anahtarsız veya hatalı anahtarlı istekler KESİNLİKLE HTTP 401 ile reddedilir.
+    - Sabit veya varsayılan açık anahtar kabul edilmez.
+    """
+    expected_key = get_secure_api_key()
+    
+    provided_key = x_omni_key
+    if not provided_key and authorization:
+        if authorization.startswith("Bearer "):
+            provided_key = authorization.split("Bearer ", 1)[1].strip()
+        else:
+            provided_key = authorization.strip()
+
+    if not provided_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Yetkisiz Erişim: API anahtarı eksik. X-Omni-Key veya Authorization: Bearer <key> başlığı zorunludur."
+        )
+
+    # Zamanlama saldırılarına karşı sabit zamanlı karşılaştırma
+    if not secrets.compare_digest(provided_key, expected_key):
+        raise HTTPException(
+            status_code=401,
+            detail="Yetkisiz Erişim: Geçersiz veya yetkisiz API anahtarı."
+        )
+
     return True
 
 # ==============================================================================
@@ -97,7 +125,7 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
             f"- **Depo:** `{best_url}`\n"
             f"- **Konum:** `{res['dir']}`\n"
             f"- **Durum:** {res['state']} (100% PASS)\n"
-            f"- **Kanıt:** Bağımlılıklar kuruldu ve runtime çalışma probe testi tamamlandı."
+            f"- **Kanıt:** Bağımlılıklar kuruldu ve bağımsız runtime çalışma probe testi tamamlandı."
         )
     else:
         return f"[Kurulum Başarısız - Rollback Yapıldı]: {res.get('error')}"
@@ -348,7 +376,7 @@ async def root():
 
 @app.get("/api/system_status")
 @app.get("/api/status")
-async def system_status():
+async def system_status(authorized: bool = Depends(verify_api_key)):
     tor_info = RealTorEngine.verify_tor_circuit()
     installed_engines = []
     if ACTIVE_ENGINES_FILE.exists():
@@ -369,7 +397,7 @@ async def system_status():
         "latency_sec": model_probe.get("latency_sec", 0.0),
         "hardware": "Apple M4 (Metal GPU / 17.8 GiB VRAM)",
         "agentic_engine": "OpenHands-Style Deterministic State Machine (Zero-Fake Verification)",
-        "sandbox": "Isolated Subprocess Workspace (Env-Sanitized)",
+        "sandbox": "macOS Seatbelt Kernel-Enforced Sandbox (sandbox-exec)",
         "engines": [
             "GitHub Çok Kriterli Araştırma ve Sandbox Kurucu",
             "Yerel Tarayıcı Motoru (Chrome & Safari)",

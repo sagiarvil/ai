@@ -9,7 +9,7 @@ FAILED, BLOCKED, PARTIAL, ROLLED_BACK, NOT_EXECUTED, UNVERIFIED
 Sıfır Sahte Başarı İlkeleri:
 1. Modelin ürettiği metin asla başarı kanıtı değildir.
 2. Araçsız yanıtlar başarı sayılamaz (NOT_EXECUTED).
-3. Başarı kelime eşleşmesiyle değil, kesin exit_code == 0 ve fiziksel probe ile belirlenir.
+3. Başarı kelime eşleşmesi veya dummy script ile değil, IndependentVerificationGate ile belirlenir.
 4. Model aktivasyonunda gerçek runtime çıkarım testi (Inference Probe) zorunludur.
 5. Hata durumunda otomatik geri alma (Rollback) çalıştırılır.
 """
@@ -28,6 +28,7 @@ import httpx
 
 from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
 from model_manager import ModelManager
+from verification_gate import IndependentVerificationGate
 
 WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
@@ -113,7 +114,7 @@ class AutonomousExecutionEngine:
     @classmethod
     def search_and_compare_github_repos(cls, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        Çoklu arama yapar; sadece yıldız değil lisans, güncellik ve Apple Silicon/Python uyumunu puanlar.
+        Çoklu arama yapar; sadece yıldız değil lisans, güncellik ve Apple Silicon uyumunu puanlar.
         """
         cmd = f"gh search repos '{query}' --limit {limit} --json fullName,url,stargazersCount,updatedAt,description,licenseKey"
         res = ExecutionSandbox.run_isolated(cmd, timeout=30)
@@ -124,10 +125,8 @@ class AutonomousExecutionEngine:
             scored_repos = []
             for r in repos:
                 score = r.get("stargazersCount", 0)
-                # Açık kaynak lisans bonusu
                 if r.get("licenseKey") in ["mit", "apache-2.0", "bsd-3-clause", "gpl-3.0"]:
                     score += 50
-                # Güncellik kontrolü (2025/2026 ise ek puan)
                 updated = r.get("updatedAt", "")
                 if any(y in updated for y in ["2025", "2026"]):
                     score += 100
@@ -146,7 +145,7 @@ class AutonomousExecutionEngine:
         repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
         target_dir = TOOLS_DIR / repo_name
         
-        # Rollback yığını
+        # Rollback yığını hazırla
         if target_dir.exists():
             backup_dir = TOOLS_DIR / f"{repo_name}_bak_{int(time.time())}"
             shutil.copytree(target_dir, backup_dir)
@@ -185,31 +184,22 @@ class AutonomousExecutionEngine:
                 return {"success": False, "error": n_res["stderr"]}
             self.add_evidence("NPM_INSTALL", "Node.js bağımlılıkları kuruldu.", True)
 
-        # Gerçek Runtime Çalışma Testi (TESTING) - ASLA SAHTE DEĞİL
-        self.transition_to(TaskState.TESTING, "Motorun fiziksel çalışma probe testi icra ediliyor.")
+        # Bağımsız Doğrulama Kapısı (TESTING) - ASLA SAHTE DEĞİL
+        self.transition_to(TaskState.TESTING, "IndependentVerificationGate ile fiziksel doğrulama yürütülüyor.")
         
-        # Eğer özel test komutu verilmediyse, repo içindeki modülü import etmeyi veya CLI'yı çağırır
-        if not test_command:
-            # Python repoları için setup.py veya modül probe
-            py_files = list(target_dir.glob("*.py"))
-            if py_files:
-                main_candidate = target_dir / "main.py"
-                cli_candidate = target_dir / "cli.py"
-                run_target = main_candidate if main_candidate.exists() else (cli_candidate if cli_candidate.exists() else py_files[0])
-                t_cmd = f"python3 '{run_target}' --help || python3 -c 'import sys; sys.exit(0)'"
-            else:
-                t_cmd = "ls -la"
-        else:
-            t_cmd = test_command
-
-        t_res = ExecutionSandbox.run_isolated(t_cmd, cwd=target_dir, timeout=30)
-        if not t_res["success"]:
-            self.add_evidence("RUNTIME_TEST", f"Motor çalışma testi başarısız (exit_code: {t_res['exit_code']}): {t_res['stderr']}", False)
+        gate_res = IndependentVerificationGate.verify_runtime_execution(target_dir=target_dir, custom_test_cmd=test_command)
+        if not gate_res.get("verified"):
+            self.add_evidence(
+                "RUNTIME_TEST",
+                f"Bağımsız doğrulayıcı reddetti (exit_code: {gate_res.get('exit_code')}): {gate_res.get('reason')}",
+                False,
+                gate_res.get("output")
+            )
             self.rollback()
-            self.transition_to(TaskState.FAILED, "Kurulan motor çalışma testinden geçemedi.")
-            return {"success": False, "error": t_res["stderr"]}
+            self.transition_to(TaskState.FAILED, f"Kurulan motor doğrulama kapısından geçemedi: {gate_res.get('reason')}")
+            return {"success": False, "error": gate_res.get("reason")}
 
-        self.add_evidence("RUNTIME_TEST", f"Motor çalışma testi PASS: {t_cmd}", True, t_res["stdout"])
+        self.add_evidence("RUNTIME_TEST", f"Bağımsız Doğrulama PASS: {gate_res.get('command')}", True, gate_res.get("output"))
 
         # Aktivasyon & Tescil (ACTIVATING -> VERIFIED)
         self.transition_to(TaskState.ACTIVATING, "Motor aktif kayıt kütüğüne tescil ediliyor.")
@@ -336,8 +326,6 @@ class AutonomousExecutionEngine:
                     # İlgili aracı çalıştır
                     out = await call_tool_fn(fname, fargs)
                     
-                    # Doğrulama: Kelime eşleşmesi değil, gerçek sonuç başarısı
-                    # out metni hata bildiren bir sistem dönüşü mü?
                     is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
                     
                     engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", is_tool_success, out[:500])
@@ -371,7 +359,7 @@ class AutonomousExecutionEngine:
                 "verified": False
             }
 
-        # Tüm adımlar fiziksel başarıyla bitti mi?
+        # Tüm adımlar bağımsız başarıyla bitti mi?
         all_passed = all(ev.get("success", False) for ev in engine.evidences)
         if all_passed and execution_steps:
             engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla doğrulandı.")

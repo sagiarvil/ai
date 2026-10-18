@@ -34,3 +34,7 @@ firebase-debug.log*
 .env
 .env.*
 *.env
+
+sandbox_workspace/
+.pytest_cache/
+tasks/*.json
