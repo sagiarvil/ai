@@ -394,7 +394,7 @@
         <div class="pill-bottom-right">
           <button class="pill-btn mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş">🎙️</button>
           <button class="round-send-btn" id="sendBtn" onclick="sendAction()" title="Gönder">➔</button>
-          <button class="round-stop-btn" id="stopBtn" onclick="stopAction()" style="display:none;" title="Durdur">■</button>
+          <button class="pill-btn" id="stopBtn" onclick="stopAction()" style="display:none; color:#d93025; font-size:12px; font-weight:600; padding:0 8px;" title="Görevi Durdur">⏹ Durdur</button>
         </div>
       </div>
     </div>
@@ -572,9 +572,7 @@
       localStorage.setItem('baris_voice', voiceEnabled);
       updateVoiceBtn();
       if (!voiceEnabled) {
-        fetch('/api/voice/stop', { method: 'POST' }).catch(() => {});
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
-        isSpeakingNow = false;
+        stopVoiceOnly();
       }
     }
 
@@ -1048,7 +1046,7 @@
 
       const lastAi = feed.querySelector('.msg-ai:last-child');
       if (lastAi && lastAi.innerHTML.includes('⚡')) {
-        lastAi.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><span style="color:#d93025">⏹ İşlem durduruldu.</span>';
+        lastAi.innerHTML = '<span style="color:#d93025">⏹ İşlem durduruldu.</span>';
       }
     }
 
@@ -1085,7 +1083,7 @@
       // AI Canlı Bekleme
       const aDiv = document.createElement('div');
       aDiv.className = 'msg-ai';
-      aDiv.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><em style="color:var(--text-muted)">⚡ Düşünüyor... (<span id="liveTimer">0.0s</span>)</em>';
+      aDiv.innerHTML = '<em style="color:var(--text-muted)">⚡ Düşünüyor... (<span id="liveTimer">0.0s</span>)</em>';
       feed.appendChild(aDiv);
       feed.scrollTop = feed.scrollHeight;
 
@@ -1133,7 +1131,7 @@
           const data = await res.json();
           const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
           
-          let outHtml = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div>';
+          let outHtml = '';
           outHtml += marked.parse(data.reply || '');
           outHtml += '<div style="font-size:11px; color:var(--text-muted); margin-top:8px;">⏱ ' + elapsed + 's</div>';
           aDiv.innerHTML = outHtml;
@@ -1151,7 +1149,7 @@
       } catch(e) {
         clearInterval(liveInterval);
         if (e.name === 'AbortError') {
-          aDiv.innerHTML = '<div class="msg-ai-header"><span class="brand-sparkle">✦</span> Barış AI</div><span style="color:#d93025">⏹ İşlem kullanıcı tarafından durduruldu.</span>';
+          aDiv.innerHTML = '<span style="color:#d93025">⏹ İşlem kullanıcı tarafından durduruldu.</span>';
         } else {
           aDiv.innerHTML = '<span style="color:#d93025">Bağlantı Hatası: ' + e.message + '</span>';
         }
