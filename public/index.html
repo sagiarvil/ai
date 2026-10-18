@@ -336,6 +336,7 @@
     <div style="display:flex; align-items:center; gap:10px;">
       <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#3c1618; border-color:#da3633; color:#f85149; font-weight:bold;" title="Jarvis ve KITT Lazer sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
+      <button id="clearChatBtn" onclick="clearChatHistory()" class="voice-btn" style="color:var(--muted); border-color:var(--border);" title="Konuşma geçmişini ve ekranı temizle">🗑️ Temizle</button>
       <div class="status-pill">
         <span class="status-dot"></span>
         <span id="sysStatus">Apple M4 Metal</span>
@@ -343,16 +344,7 @@
     </div>
   </header>
 
-  <div id="feed">
-    <div class="msg-ai" id="welcomeMsg">
-      <strong>[BARIŞ AI HAZIR]:</strong> Apple M4 GPU hızlandırmalı Mistral-24B (Abliterated) çekirdeği devrede.<br>
-      • <strong>Jarvis & Türk İnsanı Zekası:</strong> Açık sözlü, dobra, 360° tüm talimatları icra eden ve doğrudan konuşan dostun.<br>
-      • <strong>Bağlam Hafızası:</strong> En az son 10 talimatın bağlamını kaybetmeden 5000+ karaktere kadar emirleri işletir.<br>
-      • <strong>Çoklu Format & Proje Hakimiyeti:</strong> .py, .md, .sh, .json ve tüm uzantılarda dosya üretir; Mac proje klasörlerini okur ve yazar.<br>
-      • <strong>Multimodal & Belge Analizi:</strong> Aşağıdaki 📎 butonuyla PDF, Word (.docx), kod ve görsel yükleyip inceletebilirsin.<br>
-      • <strong>Sesli Etkileşim:</strong> 🎙️ mikrofon butonuna basarak konuşabilir veya yanıtları sesli dinleyebilirsin.
-    </div>
-  </div>
+  <div id="feed"></div>
 
   <footer>
     <div id="attachmentTray" class="attachment-tray"></div>
@@ -535,8 +527,23 @@
         .trim();
     }
 
+    function clearChatHistory() {
+      // 1. Süren işlemleri ve konuşmaları derhal sustur
+      stopAction();
+      // 2. Hafızayı ve ekleri sıfırla
+      history = [];
+      pendingAttachments = [];
+      renderAttachmentTray();
+      // 3. Sohbet alanını tertemiz bomboş yap
+      feed.innerHTML = '';
+      feed.scrollTop = 0;
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    }
+
     function speakJarvis(text) {
-      if (!voiceEnabled) return;
+      if (!jarvisPowerOn || !voiceEnabled) return;
       const clean = cleanMarkdownForSpeech(text);
       if (!clean) return;
 
@@ -555,7 +562,7 @@
         const duration = Math.min(8000, Math.max(1500, clean.length * 65));
         setTimeout(() => {
           isSpeakingNow = false;
-          if (alwaysListen) {
+          if (jarvisPowerOn && alwaysListen) {
             try { recognition.start(); } catch(e){}
           }
         }, duration + 1500);
@@ -1091,7 +1098,9 @@
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
 
           // Jarvis sesli konuşma (Yerel macOS Yelda motoru)
-          speakJarvis(data.reply);
+          if (jarvisPowerOn) {
+            speakJarvis(data.reply);
+          }
         } else if (res.status === 401) {
           aDiv.innerHTML = '<span style="color:#f85149">⛔ Yetkisiz Erişim (HTTP 401): Geçersiz veya eksik API Anahtarı. Lütfen sağ üstteki "X-Omni-Key" alanına geçerli anahtarınızı girin.</span>';
         } else {

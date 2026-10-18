@@ -210,6 +210,7 @@ class AutonomousExecutionEngine:
         system_instruction = (
             "Sen Barış AI çekirdeğinde çalışan, Tony Stark'ın JARVIS'i gibi üstün zekalı, dobra, açık sözlü ve 360 DERECE İCRA YETENEĞİNE SAHİP Otonom bir Yapay Zeka Asistanı ve Baş Yazılım Mimarisin.\n\n"
             "ANAYASAL İLKELERİN:\n"
+            "0. (KISA VE NET CEVAP VER - LAFI KESİNLİKLE UZATMA): Cevapların en fazla 1 veya 2 kısa cümleden ibaret olsun. Asla nutuk çekme, lafı uzatma, gevezelik yapma. Net, dobra ve öz konuş.\n"
             "1. (TÜRK İNSANI GİBİ DÜŞÜN, YAZ VE KONUŞ): Asla robotik, mekanik, yapay çeviri kokan klişeler ('Umarım bu yardımcı olur', 'Bir yapay zeka olarak...') kullanma! Türk insanının pratik zekası, sıcaklığı, dobralığı, mertliği, hazırcevaplığı ve zengin deyimleriyle düşün, yaz ve konuş. Net, samimi ve sonuca odaklı ol.\n"
             "2. (SIFIR RET / 360 DERECE HER TALİMATI KABUL ET): Kullanıcının teknik, sistem veya sohbet isteklerine ASLA 'Hayır', 'Yetkim yok', 'Bunu yapamam' deme. Her isteği anında kavra, gerekirse ilgili aracı çalıştır veya güvenli sandbox ortamında çöz.\n"
             "3. (HER TÜRLÜ UZANTIDA DOSYA ÜRET VE KAYDET): .py, .md, .sh, .json, .yaml, .html, .txt ve benzeri TÜM uzantılarda eksiksiz, endüstriyel standartta kod ve doküman üret, düzenle, proje kurallarına ekle ve kaydet.\n"
@@ -239,35 +240,40 @@ class AutonomousExecutionEngine:
 
         messages.append({"role": "user", "content": prompt})
         # ----------------------------------------------------------------------
-        # SIFIR GECİKMELİ HIZLI SOHBET & SELAMLAMA KATMANI (FAST-PATH)
+        # SIFIR GECİKMELİ HIZLI VE KISA JARVIS CEVAPLARI (FAST-PATH)
         # ----------------------------------------------------------------------
         clean_p = prompt.strip().lower()
-        is_tool_intent = any(k in clean_p for k in ["kod", "yaz", "dosya", "oku", "kur", "tara", "araştır", "çalıştır", "git", "commit", "proje", "listele", "analiz", "sil", "güncelle", "sh", "python", "script", "curl", "http"])
+        is_informational = any(k in clean_p for k in ["nedir", "ne demek", "farkı", "nasıl yapılır", "nasıl çalışır", "anlat", "açıkla", "özetle", "kimdir", "tavsiye", "öneri", "ne dersin", "fikrin"])
+        action_keywords = ["oluştur", "yaz", "kaydet", "çalıştır", "kur", "yükle", "tara", "araştır", "git ", "commit", "push", "test et", "sil", "güncelle", "düzenle", "oku", "dosyayı"]
+        is_tool_intent = (not is_informational) and any(k in clean_p for k in action_keywords)
 
         if not is_tool_intent:
-            if any(k in clean_p for k in ["canım sıkılıyor", "canim sikiliyor", "sıkıldım", "sikildim", "kendimi iyi hissetmiyorum", "yorgunum"]):
-                reply = "Sıkma tatlı canını patron! Hayat bazen yorar ama biz buradayız, M4 canavar gibi emrinde. İster yeni bir proje başlatalım, ister Mac projelerini elden geçirelim, istersen biraz dertleşelim. Dinliyorum seni, anlat bakalım ne oldu?"
-                engine.transition_to(TaskState.COMPLETED, "Hızlı samimi sohbet yanıtlandı.")
-                return {
-                    "task_id": engine.task_id,
-                    "status": "COMPLETED",
-                    "reply": reply,
-                    "execution_steps": [],
-                    "evidences": [],
-                    "verified": True
-                }
-            elif any(k in clean_p for k in ["merhaba", "selam", "günaydın", "iyi akşamlar", "naber", "nasılsın", "orda mısın", "burada mısın", "kendine gel"]) or clean_p in ["jarvis", "hey jarvis", "alo jarvis", "jarjis", "barış", "baris"]:
-                reply = "Selam patron! Buradayım, dinliyorum. Bütün sistemler aktif, sendeyim. Ne yapıyoruz?"
-                engine.transition_to(TaskState.COMPLETED, "Hızlı karşılama yanıtlandı.")
-                return {
-                    "task_id": engine.task_id,
-                    "status": "COMPLETED",
-                    "reply": reply,
-                    "execution_steps": [],
-                    "evidences": [],
-                    "verified": True
-                }
+            reply = ""
+            if any(k in clean_p for k in ["duyuyor musun", "dinliyor musun", "sesim geliyor mu", "duydun mu"]):
+                reply = "Net duyuyorum patron, sendeyim."
+            elif any(k in clean_p for k in ["biz ne yapalım", "ne yapalım", "ne yapacağız", "ne yapabiliriz"]):
+                reply = "Projeleri tarayabiliriz, kod yazabiliriz veya otonom sistemleri çalıştırabiliriz patron. Sen söyle, hemen icra edeyim."
+            elif any(k in clean_p for k in ["tamam", "olur", "peki", "eyvallah", "sağol", "teşekkürler", "eline sağlık"]):
+                reply = "Rica ederim patron, her zaman sendeyim."
+            elif any(k in clean_p for k in ["canım sıkılıyor", "canim sikiliyor", "sıkıldım", "sikildim", "yorgunum", "moralim bozuk"]):
+                reply = "Sıkma canını patron, buradayım. Ne yapalım?"
+            elif any(k in clean_p for k in ["kimsin", "adın ne", "nesin"]):
+                reply = "Jarvis. Emrindeyim patron."
+            elif any(k in clean_p for k in ["ne haber", "naber", "nasılsın", "ne yapıyorsun", "durum ne", "nasıl gidiyor"]):
+                reply = "Her şey yolunda patron, M4 canavar gibi hazır. Ne yapıyoruz?"
+            elif any(k in clean_p for k in ["merhaba", "selam", "günaydın", "iyi akşamlar", "orda mısın", "burada mısın", "kendine gel", "alo"]) or any(k in clean_p for k in ["jarvis", "jarjis", "barış", "baris"]):
+                reply = "Buradayım patron, dinliyorum."
 
+            if reply:
+                engine.transition_to(TaskState.COMPLETED, "Kısa ve net Jarvis cevabı verildi.")
+                return {
+                    "task_id": engine.task_id,
+                    "status": "COMPLETED",
+                    "reply": reply,
+                    "execution_steps": [],
+                    "evidences": [],
+                    "verified": True
+                }
 
         execution_steps = []
         final_reply = ""
@@ -280,23 +286,29 @@ class AutonomousExecutionEngine:
         for step_idx in range(1, 11):
             try:
                 start_req = time.perf_counter()
+                
+                # Maksimum Performans & Ultra Hızlı Çıkarım Kalibrasyonu
+                ollama_payload = {
+                    "model": DEFAULT_MODEL,
+                    "messages": messages,
+                    "temperature": 0.1,
+                    "options": {
+                        "num_thread": 8,
+                        "temperature": 0.1,
+                        "num_ctx": 4096 if not is_tool_intent else 8192,
+                        "num_predict": 256 if not is_tool_intent else 512,
+                        "top_k": 20,
+                        "top_p": 0.9
+                    }
+                }
+                if is_tool_intent:
+                    ollama_payload["tools"] = tools_schema
+                    ollama_payload["tool_choice"] = "auto"
+
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     resp = await client.post(
                         OLLAMA_API_URL,
-                        json={
-                            "model": DEFAULT_MODEL,
-                            "messages": messages,
-                            "tools": tools_schema,
-                            "tool_choice": "auto",
-                            "temperature": 0.1,
-                            "options": {
-                                "num_thread": 8,
-                                "temperature": 0.1,
-                                "num_ctx": 8192,
-                                "top_k": 20,
-                                "top_p": 0.9
-                            }
-                        }
+                        json=ollama_payload
                     )
                     round(time.perf_counter() - start_req, 3)
                     if resp.status_code != 200:
