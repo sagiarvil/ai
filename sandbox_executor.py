@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 SANDBOX_DIR = WORKSPACE_ROOT / 'sandbox_workspace'
 SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
 

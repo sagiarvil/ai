@@ -26,7 +26,7 @@ from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox
 from model_manager import ModelManager
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
 INDEX_HTML = PUBLIC_DIR / 'index.html'
 

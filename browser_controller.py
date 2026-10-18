@@ -22,7 +22,7 @@ try:
 except ImportError:
     async_playwright = None
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 SESSIONS_DIR = WORKSPACE_ROOT / "tools" / "browser_sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 

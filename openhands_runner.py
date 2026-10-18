@@ -18,7 +18,7 @@ import httpx
 from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
 from verification_gate import IndependentVerificationGate
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 OLLAMA_GENERATE_URL = "http://127.0.0.1:11434/api/generate"
 DEFAULT_MODEL = "mistral-small-24b-abliterated:latest"
 

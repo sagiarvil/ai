@@ -8,7 +8,7 @@ import time
 import json
 from pathlib import Path
 
-TASKS_LOG_DIR = Path("/Users/macair1/projects/ai/tasks")
+TASKS_LOG_DIR = Path(__file__).resolve().parent / "tasks"
 TASKS_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 class DeterministicEngine:

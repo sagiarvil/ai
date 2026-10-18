@@ -9,7 +9,7 @@ import os
 import secrets
 from pathlib import Path
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 ENV_FILE = WORKSPACE_ROOT / ".env"
 
 def get_secure_api_key() -> str:

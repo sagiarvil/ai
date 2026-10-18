@@ -26,7 +26,7 @@ import httpx
 from sandbox_executor import secure_sandbox_run
 from verification_gate import IndependentVerificationGate
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
 TASKS_DIR.mkdir(parents=True, exist_ok=True)
 TOOLS_DIR = WORKSPACE_ROOT / "tools"
