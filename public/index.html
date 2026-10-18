@@ -277,33 +277,31 @@
     .visualizer-container {
       max-width: 960px;
       margin: 0 auto 4px auto;
-      background: #06070a;
-      border: 1px solid #260c0e;
-      border-radius: 5px;
+      background: #090a0f;
+      border: 1px solid #1c1f26;
+      border-radius: 4px;
       padding: 3px 10px;
       display: flex;
       align-items: center;
       gap: 10px;
-      box-shadow: 0 0 10px rgba(239, 68, 68, 0.08);
-      transition: all 0.25s;
+      box-shadow: none;
+      transition: border-color 0.3s;
       cursor: pointer;
       user-select: none;
     }
     .visualizer-container:hover {
-      border-color: #dc2626;
-      background: #0a0405;
+      border-color: #3b1d22;
     }
     .visualizer-container.active {
-      border-color: #ef4444;
-      box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
-      background: #0a0304;
+      border-color: #632228;
+      background: #0d0a0c;
     }
     .visualizer-canvas {
       flex: 1;
-      height: 18px;
+      height: 12px;
       width: 100%;
-      border-radius: 3px;
-      background: #040507;
+      border-radius: 2px;
+      background: #06070a;
     }
     .visualizer-meta {
       font-size: 11px;
@@ -336,8 +334,9 @@
       <span>BARIŞ AI // JARVIS & FAST EXECUTION CORE</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
+      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#3c1618; border-color:#da3633; color:#f85149; font-weight:bold;" title="Jarvis sistemini tamamen uyut veya aç">🔴 Jarvis: AÇIK</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
-      <button id="wakeWordToggleBtn" onclick="toggleWakeWord()" class="voice-btn" style="background:#161b22;" title="Sadece 'Jarvis' dediğinizde devreye girsin (çevre seslerini engeller)">🎯 Jarvis Şartı: Kapalı</button>
+      <button id="wakeWordToggleBtn" onclick="toggleWakeWord()" class="voice-btn" style="background:#161b22;" title="Sadece 'Jarvis' dendiğinde uyan (çevre seslerini engeller)">🎯 Hands-Free: Kapalı</button>
       <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
       <div class="status-pill">
         <span class="status-dot"></span>
@@ -361,7 +360,7 @@
     <div id="attachmentTray" class="attachment-tray"></div>
     <div id="visualizerContainer" class="visualizer-container" onclick="enableAudioAndListen()" title="Canlı Renkli Ekolayzırı ve Sesli Dinlemeyi Başlatmak / Açmak İçin Tıklayın">
       <div style="font-size:16px; color:#06b6d4;" title="Canlı Ses Dalga Analizi">⚡</div>
-      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="18"></canvas>
+      <canvas id="audioVisualizer" class="visualizer-canvas" width="640" height="12"></canvas>
       <div class="visualizer-meta">
         <div id="visualizerStatus" class="visualizer-status"><span id="vStatusDot" style="color:#64748b;">⚫</span> <span id="vStatusText">Mikrofon Kapalı (Tıklayın)</span></div>
         <div id="visualizerDb" class="visualizer-db">Ekolayzırı Başlatmak İçin Dokunun</div>
@@ -477,6 +476,35 @@
     }
 
     // --- SESLİ YANIT (TTS) YÖNETİMİ ---
+    
+    // --- JARVIS GÜÇ ANAHTARI (ON / OFF) ---
+    function toggleJarvisPower() {
+      jarvisPowerOn = !jarvisPowerOn;
+      const btn = document.getElementById('jarvisPowerBtn');
+      if (jarvisPowerOn) {
+        if (btn) {
+          btn.textContent = '🔴 Jarvis: AÇIK';
+          btn.style.background = '#3c1618';
+          btn.style.borderColor = '#da3633';
+          btn.style.color = '#f85149';
+        }
+        input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et... (Enter ile gönder)';
+      } else {
+        if (btn) {
+          btn.textContent = '⚪ Jarvis: KAPALI';
+          btn.style.background = '#161b22';
+          btn.style.borderColor = '#30363d';
+          btn.style.color = '#8b949e';
+        }
+        // Tüm konuşma ve sesleri salisesinde öldür
+        stopAction();
+        if (recognition) {
+          try { recognition.abort(); } catch(e){}
+        }
+        input.placeholder = 'Jarvis kapatıldı. Açmak için yukarıdaki "Jarvis: KAPALI" butonuna tıklayın.';
+      }
+    }
+
     let voiceEnabled = localStorage.getItem('baris_voice') !== 'false';
     function updateVoiceBtn() {
       const btn = document.getElementById('voiceToggleBtn');
@@ -491,8 +519,10 @@
       voiceEnabled = !voiceEnabled;
       localStorage.setItem('baris_voice', voiceEnabled);
       updateVoiceBtn();
-      if (!voiceEnabled && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+      if (!voiceEnabled) {
+        fetch('/api/voice/stop', { method: 'POST' }).catch(() => {});
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        isSpeakingNow = false;
       }
     }
 
@@ -512,150 +542,36 @@
       const clean = cleanMarkdownForSpeech(text);
       if (!clean) return;
 
-      // 🛡️ KESİN YANKILANMA VE DÖNGÜ KALKANI (ANTI-ECHO SHIELD)
-      // Jarvis konuşurken mikrofonu KESİNLİKLE durdur, kendi sesini dinlemesin!
+      // 1. MİKROFONU MUTLAK SUSTUR (Hoparlör sesini dinleyip papağan gibi tekrar etmesin)
       isSpeakingNow = true;
       if (recognition) {
         try { recognition.abort(); } catch(e){}
       }
 
+      // 2. ÇİFT SES ÇAKIŞMASINI BİTİR: window.speechSynthesis ASLA ÇAĞRILMAZ, SADECE YEREL MACOS SAY
       fetch('/api/voice/speak', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: clean.substring(0, 400)})
+        body: JSON.stringify({text: clean.substring(0, 350)})
       }).then(() => {
-        // Konuşma uzunluğu + 1.8 saniye akustik sönümlenme tamponu
-        const speechDuration = Math.min(10000, Math.max(1800, clean.length * 70));
+        const duration = Math.min(8000, Math.max(1500, clean.length * 65));
         setTimeout(() => {
           isSpeakingNow = false;
           if (alwaysListen) {
-            startContinuousListening();
+            try { recognition.start(); } catch(e){}
           }
-        }, speechDuration + 1800);
+        }, duration + 1500);
       }).catch(() => {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-          const utter = new SpeechSynthesisUtterance(clean);
-          utter.lang = 'tr-TR';
-          utter.rate = 1.05;
-          utter.pitch = 1.0;
-          utter.onend = () => {
-            setTimeout(() => {
-              isSpeakingNow = false;
-              if (alwaysListen) startContinuousListening();
-            }, 1800);
-          };
-          utter.onerror = () => {
-            isSpeakingNow = false;
-            if (alwaysListen) startContinuousListening();
-          };
-          window.speechSynthesis.speak(utter);
-        } else {
-          isSpeakingNow = false;
-          if (alwaysListen) startContinuousListening();
-        }
+        isSpeakingNow = false;
       });
     }
 
-    // --- JARVIS CANLI NEON SES EKOLAYZIRI (WEB AUDIO API & FFT) ---
-    const visualizerCanvas = document.getElementById('audioVisualizer');
-    const visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
-    const vContainer = document.getElementById('visualizerContainer');
-    const vStatusDot = document.getElementById('vStatusDot');
-    const vStatusText = document.getElementById('vStatusText');
-    const vDb = document.getElementById('visualizerDb');
-
-    let audioContext = null;
-    let analyserNode = null;
-    let micStream = null;
-    let freqData = null;
-    let isAudioEngineStarted = false;
-
-    // Tepe noktası yerçekimi (Peak hold) dizisi
-    const BAR_COUNT = 32;
-    let peakValues = new Array(BAR_COUNT).fill(0);
-    let idleAngle = 0;
-
-    // Fütüristik İki Tonlu Uyanma Chime (880Hz -> 1320Hz)
-    function playWakeChime() {
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = audioContext || new AudioCtx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        const now = ctx.currentTime;
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.12);
-        gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.2);
-      } catch(e) {}
-    }
-
-    async function initAudioEngine() {
-      if (isAudioEngineStarted && audioContext && audioContext.state === 'running') return true;
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) {
-          if (vStatusText) vStatusText.textContent = 'Tarayıcı Ses API Desteklemiyor';
-          return false;
-        }
-        if (!audioContext) {
-          audioContext = new AudioCtx();
-        }
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-
-        if (!micStream) {
-          micStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: false,
-              autoGainControl: true
-            }
-          });
-        }
-
-        const source = audioContext.createMediaStreamSource(micStream);
-        analyserNode = audioContext.createAnalyser();
-        analyserNode.fftSize = 64;
-        analyserNode.smoothingTimeConstant = 0.72;
-        source.connect(analyserNode);
-
-        freqData = new Uint8Array(analyserNode.frequencyBinCount);
-        isAudioEngineStarted = true;
-
-        if (vStatusDot) vStatusDot.textContent = '🟢';
-        if (vStatusText) {
-          vStatusText.textContent = 'Canlı Ekolayzır & Jarvis Aktif';
-          vStatusText.style.color = '#10b981';
-        }
-        if (vDb) vDb.textContent = 'Mikrofon odadaki sesleri dinliyor';
-        return true;
-      } catch (err) {
-        console.warn('Web Audio API başlatma hatası:', err);
-        if (vStatusDot) vStatusDot.textContent = '🔴';
-        if (vStatusText) {
-          vStatusText.textContent = 'Mikrofon İzni Gerekli (Tıklayın)';
-          vStatusText.style.color = '#f85149';
-        }
-        if (vDb) vDb.textContent = 'Tarayıcıda mikrofona izin verin';
-        return false;
-      }
-    }
-
-    // --- KARA ŞİMŞEK (KITT) MİNİMALİST İNCE KIRMIZI LAZER TARAYICI ---
-    const KITT_SEGMENTS = 40;
-    let kittScanPos = 0;       // 0 ile 1 arası tarayıcı pozisyonu
-    let kittScanDir = 1;       // 1: sağa, -1: sola
+    // --- KARA ŞİMŞEK (KITT) ZARİF VE SOLUK LAZER ÇİZGİSİ (SIFIR GÖZ YORMA) ---
+    const KITT_SEGMENTS = 48;
+    let kittScanPos = 0;
+    let kittScanDir = 1;
     let kittTrail = new Array(KITT_SEGMENTS).fill(0);
+    let jarvisPowerOn = true;
 
     function renderVisualizer() {
       if (!visualizerCtx || !visualizerCanvas) return;
@@ -665,112 +581,88 @@
       const height = visualizerCanvas.height;
 
       visualizerCtx.clearRect(0, 0, width, height);
-
-      // Koyu HUD Zemin
-      visualizerCtx.fillStyle = '#050608';
+      visualizerCtx.fillStyle = '#06070a';
       visualizerCtx.fillRect(0, 0, width, height);
+
+      // EĞER JARVIS KAPALIYSA: DÜZ SÖNÜK ÇİZGİ
+      if (!jarvisPowerOn) {
+        visualizerCtx.fillStyle = '#1c1f26';
+        visualizerCtx.fillRect(4, Math.round(height/2)-1, width-8, 1);
+        if (vStatusDot) vStatusDot.textContent = '⚫';
+        if (vStatusText) { vStatusText.textContent = 'Jarvis Kapalı (Uyuyor)'; vStatusText.style.color = '#64748b'; }
+        if (vDb) vDb.textContent = 'Devre dışı';
+        return;
+      }
 
       const barCount = KITT_SEGMENTS;
       const barWidth = Math.floor(width / barCount) - 2;
       let x = 3;
       let sum = 0;
 
-      // Ses verisini analiz et
       let hasSound = false;
       let avg = 0;
       if (isAudioEngineStarted && analyserNode && freqData) {
         analyserNode.getByteFrequencyData(freqData);
         for (let i = 0; i < freqData.length; i++) sum += freqData[i];
         avg = sum / freqData.length;
-        hasSound = avg > 11;
+        hasSound = avg > 14;
       }
 
-      // KITT Tarayıcı Hızı: Ses varken hafif canlı, sessizken sakin ve minik
-      const scanSpeed = hasSound ? Math.min(0.032, 0.014 + (avg / 255) * 0.025) : 0.009;
+      // Yavaş, sakin, zarif süzülme
+      const scanSpeed = hasSound ? 0.014 : 0.007;
       kittScanPos += kittScanDir * scanSpeed;
-      if (kittScanPos >= 1) {
-        kittScanPos = 1;
-        kittScanDir = -1;
-      } else if (kittScanPos <= 0) {
-        kittScanPos = 0;
-        kittScanDir = 1;
-      }
+      if (kittScanPos >= 1) { kittScanPos = 1; kittScanDir = -1; }
+      else if (kittScanPos <= 0) { kittScanPos = 0; kittScanDir = 1; }
 
       const activeBarCenter = kittScanPos * (barCount - 1);
       const centerY = height / 2;
 
-      // 40 İnce Kırmızı KITT LED Segmenti Çiz
       for (let i = 0; i < barCount; i++) {
-        // Tarayıcı kafasına olan mesafe
         const dist = Math.abs(i - activeBarCenter);
-        const intensity = Math.max(0, 1 - (dist / 2.6));
+        const intensity = Math.max(0, 1 - (dist / 2.2));
 
-        // Kuyruk sönümleme
-        kittTrail[i] = Math.max(kittTrail[i] * 0.84, intensity);
+        kittTrail[i] = Math.max(kittTrail[i] * 0.88, intensity);
         const currentBright = Math.max(kittTrail[i], intensity);
 
-        // İNCE & MİNİK YÜKSEKLİK: Sessizlikte 2px, ses geldiğinde en fazla 4-6px minik hareket!
-        let barHeight = 2;
-        if (hasSound && freqData) {
-          const freqIndex = Math.min(freqData.length - 1, Math.floor(i * (freqData.length / barCount)));
-          const fVal = freqData[freqIndex] || 0;
-          // Devasa blok yok: maksimum 5.5 piksel minik lazer kıpırdaması
-          barHeight = Math.max(2, Math.min(6, 2 + (fVal / 255) * 4 * (0.5 + currentBright * 0.5)));
-        } else {
-          // Sessizlikte kayan ışık sadece 3px, diğerleri 1.5px
-          barHeight = currentBright > 0.6 ? 3 : (currentBright > 0.2 ? 2 : 1.5);
+        // İNCECİK ZARİF ÇİZGİ (1 ila 3 piksel)
+        let barHeight = currentBright > 0.6 ? 2.5 : 1.5;
+        if (hasSound) {
+          barHeight = currentBright > 0.6 ? 3.5 : 2;
         }
 
-        // Renk Paleti: İnce Akkor Kırmızı Lazer
+        // SOLUK VE MATTE KIRMIZI (Gözü asla almaz)
         if (currentBright > 0.7) {
-          visualizerCtx.fillStyle = '#ffffff'; // Akkor Çekirdek
-        } else if (currentBright > 0.4) {
-          visualizerCtx.fillStyle = '#ff1a40'; // Canlı KITT Kırmızı
-        } else if (currentBright > 0.15) {
-          visualizerCtx.fillStyle = '#991b1b'; // Sönük Kuyruk
+          visualizerCtx.fillStyle = '#f87171'; // Yumuşak açık kırmızı
+        } else if (currentBright > 0.35) {
+          visualizerCtx.fillStyle = '#991b1b'; // Koyu kırmızı
+        } else if (currentBright > 0.12) {
+          visualizerCtx.fillStyle = '#4c0519'; // Soluk zemin
         } else {
-          visualizerCtx.fillStyle = '#26080a'; // Bekleme Ray Çizgisi
+          visualizerCtx.fillStyle = '#171922'; // Nötr ray
         }
 
         const yPos = Math.round(centerY - (barHeight / 2));
-        visualizerCtx.fillRect(x, yPos, barWidth, barHeight);
-
-        // İnce lazer parıltısı (Glow)
-        if (currentBright > 0.75) {
-          visualizerCtx.fillStyle = 'rgba(255, 26, 64, 0.4)';
-          visualizerCtx.fillRect(x - 1, yPos - 1, barWidth + 2, barHeight + 2);
-        }
-
+        visualizerCtx.fillRect(x, yPos, barWidth, Math.round(barHeight));
         x += barWidth + 2;
       }
 
-      // Canlı Durum ve Telemetri Bildirimi
-      const pct = Math.min(100, Math.round((avg / 90) * 100));
       if (hasSound) {
-        if (vContainer) vContainer.classList.add('active');
         if (vStatusDot) vStatusDot.textContent = '🔴';
-        if (vStatusText) {
-          vStatusText.textContent = '⚡ KITT Dinliyor';
-          vStatusText.style.color = '#ef4444';
-        }
-        if (vDb) vDb.textContent = 'Ses: %' + pct;
+        if (vStatusText) { vStatusText.textContent = 'Ses Algılanıyor'; vStatusText.style.color = '#ef4444'; }
+        if (vDb) vDb.textContent = 'Giriş: %' + Math.min(100, Math.round((avg / 90) * 100));
       } else {
-        if (vContainer) vContainer.classList.remove('active');
-        if (vStatusDot) vStatusDot.textContent = alwaysListen ? '🔴' : '⚫';
-        if (vStatusText) {
-          vStatusText.textContent = alwaysListen ? 'KITT Beklemede' : 'Mikrofon Kapalı';
-          vStatusText.style.color = '#94a3b8';
-        }
-        if (vDb) vDb.textContent = alwaysListen ? '"Jarvis..." bekleniyor' : 'Dinleme kapalı';
+        if (vStatusDot) vStatusDot.textContent = '⚫';
+        if (vStatusText) { vStatusText.textContent = 'Sessiz • Dinlemede'; vStatusText.style.color = '#94a3b8'; }
+        if (vDb) vDb.textContent = 'Hazır';
       }
     }
-    // Sayfa açılır açılmaz render döngüsünü başlat
+// Sayfa açılır açılmaz render döngüsünü başlat
     requestAnimationFrame(renderVisualizer);
 
     // --- MİKROFON İLE KESİNTİSİZ HANDS-FREE JARVIS DİNLEME MİMARİSİ ---
     let recognition = null;
     let isListening = false;
-    let alwaysListen = localStorage.getItem('always_listen') !== 'false'; // Varsayılan olarak AÇIK
+    let alwaysListen = localStorage.getItem('always_listen') === 'true'; // İstenmedikçe çevre sesleri devreye girmez // Varsayılan olarak AÇIK
     let isSpeakingNow = false;
     let restartTimer = null;
     let wakeChimedForTurn = false;
@@ -801,7 +693,7 @@
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRec();
       recognition.lang = 'tr-TR';
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
 
       recognition.onstart = () => {
@@ -818,6 +710,8 @@
       };
 
       recognition.onresult = (event) => {
+        if (!jarvisPowerOn) return; // Güç kapalıysa yok say
+
         let interim = '';
         let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -831,6 +725,13 @@
         if (!text || text.length < 2) return;
 
         const lower = text.toLowerCase();
+
+        // 🛡️ PAPAĞAN VE HOPARLÖR YANKI ENGELİ: Jarvis kendi sesini duyduysa KESİNLİKLE YOK SAY!
+        const selfEchoFilter = ['selam patron', 'buradayım dinliyorum', 'bütün sistemler aktif', 'ne yapıyoruz', 'sıkma tatlı canını', 'm4 canavar gibi'];
+        if (selfEchoFilter.some(w => lower.includes(w))) {
+          console.warn('Jarvis kendi sesini duydu, yok sayıldı.');
+          return;
+        }
         const wakeWords = ['jarvis', 'jarjis', 'carvis', 'yarvis', 'barış', 'baris', 'patron', 'hey jarvis', 'merhaba jarvis', 'alo jarvis'];
         const hasWakeWord = wakeWords.some(w => lower.includes(w));
 
@@ -983,20 +884,23 @@
 
     // --- İŞLEMİ DURDURMA (STOP ACTION) ---
     function stopAction() {
+      // macOS yerel say sürecini anında öldür
+      fetch('/api/voice/stop', { method: 'POST' }).catch(() => {});
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      isSpeakingNow = false;
+
       if (currentAbortController) {
         currentAbortController.abort();
         currentAbortController = null;
       }
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      sendBtn.style.display = 'inline-flex';
       sendBtn.disabled = false;
+      sendBtn.textContent = 'İCRA ET';
+      sendBtn.style.opacity = '1';
       stopBtn.style.display = 'none';
 
       const lastAi = feed.querySelector('.msg-ai:last-child');
       if (lastAi && lastAi.innerHTML.includes('⚡')) {
-        lastAi.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: İşlem kullanıcı tarafından durduruldu.</strong>';
+        lastAi.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: Ses ve işlem anında durduruldu.</strong>';
       }
     }
 

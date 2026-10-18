@@ -783,6 +783,15 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
 class VoiceSpeakRequest(BaseModel):
     text: str
 
+@app.post("/api/voice/stop")
+async def voice_stop():
+    """Devam eden macOS seslendirme işlemlerini anında bıçak gibi keser."""
+    try:
+        subprocess.run(["pkill", "-9", "say"], check=False)
+    except Exception:
+        pass
+    return {"status": "STOPPED"}
+
 @app.post("/api/voice/speak")
 async def voice_speak(req: VoiceSpeakRequest):
     """macOS yerel Yelda Türkçe sesi ile sesli konuşma desteği."""
@@ -791,7 +800,8 @@ async def voice_speak(req: VoiceSpeakRequest):
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()[:500]
     if clean_text:
         try:
-            subprocess.Popen(["/usr/bin/say", "-v", "Yelda", clean_text])  # nosec B603
+            subprocess.run(["pkill", "-9", "say"], check=False)
+            subprocess.Popen(["/usr/bin/say", "-v", "Yelda", "-r", "185", clean_text])  # nosec B603
         except Exception:
             pass
     return {"status": "SPEAKING", "text": clean_text}
