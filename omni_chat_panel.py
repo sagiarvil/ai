@@ -648,10 +648,7 @@ async def root():
     if INDEX_HTML.exists():
         html_text = INDEX_HTML.read_text(encoding="utf-8")
         secure_key = get_secure_api_key()
-        html_text = html_text.replace(
-            '<input type="password" id="omniKeyInput"',
-            f'<input type="password" id="omniKeyInput" value="{secure_key}"'
-        )
+        html_text = html_text.replace("</head>", f"<script>window.OMNI_KEY = '{secure_key}';</script></head>")
         return HTMLResponse(content=html_text)
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 

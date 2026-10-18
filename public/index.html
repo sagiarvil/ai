@@ -334,13 +334,11 @@
       <span>BARIŞ AI // JARVIS & FAST EXECUTION CORE</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
-      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#3c1618; border-color:#da3633; color:#f85149; font-weight:bold;" title="Jarvis sistemini tamamen uyut veya aç">🔴 Jarvis: AÇIK</button>
+      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#3c1618; border-color:#da3633; color:#f85149; font-weight:bold;" title="Jarvis ve KITT Lazer sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
-      <button id="wakeWordToggleBtn" onclick="toggleWakeWord()" class="voice-btn" style="background:#161b22;" title="Sadece 'Jarvis' dendiğinde uyan (çevre seslerini engeller)">🎯 Hands-Free: Kapalı</button>
-      <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
       <div class="status-pill">
         <span class="status-dot"></span>
-        <span id="sysStatus">Apple M4 Metal • 127.0.0.1:5050</span>
+        <span id="sysStatus">Apple M4 Metal</span>
       </div>
     </div>
   </header>
@@ -417,7 +415,7 @@
       if (!files || files.length === 0) return;
 
       const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
-      const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
+      const apiKey = (window.OMNI_KEY || localStorage.getItem('omni_key') || '').trim();
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -566,7 +564,7 @@
       });
     }
 
-    // --- KARA ŞİMŞEK (KITT) ZARİF VE SOLUK LAZER ÇİZGİSİ (SIFIR GÖZ YORMA) ---
+    // --- KARA ŞİMŞEK (KITT) ZARİF VE SOLUK LAZER ÇİZGİSİ (JARVIS ANAHTARINA BAĞLI) ---
     const KITT_SEGMENTS = 48;
     let kittScanPos = 0;
     let kittScanDir = 1;
@@ -584,13 +582,13 @@
       visualizerCtx.fillStyle = '#06070a';
       visualizerCtx.fillRect(0, 0, width, height);
 
-      // EĞER JARVIS KAPALIYSA: DÜZ SÖNÜK ÇİZGİ
+      // EĞER JARVIS KAPALIYSA: KITT LAZERİ TAMAMEN SÖNER
       if (!jarvisPowerOn) {
-        visualizerCtx.fillStyle = '#1c1f26';
+        visualizerCtx.fillStyle = '#171922';
         visualizerCtx.fillRect(4, Math.round(height/2)-1, width-8, 1);
         if (vStatusDot) vStatusDot.textContent = '⚫';
         if (vStatusText) { vStatusText.textContent = 'Jarvis Kapalı (Uyuyor)'; vStatusText.style.color = '#64748b'; }
-        if (vDb) vDb.textContent = 'Devre dışı';
+        if (vDb) vDb.textContent = 'Sistem kapalı';
         return;
       }
 
@@ -605,11 +603,11 @@
         analyserNode.getByteFrequencyData(freqData);
         for (let i = 0; i < freqData.length; i++) sum += freqData[i];
         avg = sum / freqData.length;
-        hasSound = avg > 14;
+        hasSound = avg > 12;
       }
 
-      // Yavaş, sakin, zarif süzülme
-      const scanSpeed = hasSound ? 0.014 : 0.007;
+      // KITT LAZER HAREKETİ: Jarvis AÇIK ise her zaman akar! Ses varken daha canlı!
+      const scanSpeed = hasSound ? Math.min(0.035, 0.016 + (avg / 255) * 0.03) : 0.012;
       kittScanPos += kittScanDir * scanSpeed;
       if (kittScanPos >= 1) { kittScanPos = 1; kittScanDir = -1; }
       else if (kittScanPos <= 0) { kittScanPos = 0; kittScanDir = 1; }
@@ -619,26 +617,26 @@
 
       for (let i = 0; i < barCount; i++) {
         const dist = Math.abs(i - activeBarCenter);
-        const intensity = Math.max(0, 1 - (dist / 2.2));
+        const intensity = Math.max(0, 1 - (dist / 2.5));
 
-        kittTrail[i] = Math.max(kittTrail[i] * 0.88, intensity);
+        kittTrail[i] = Math.max(kittTrail[i] * 0.85, intensity);
         const currentBright = Math.max(kittTrail[i], intensity);
 
-        // İNCECİK ZARİF ÇİZGİ (1 ila 3 piksel)
+        // İNCECİK ZARİF LAZER ÇİZGİSİ
         let barHeight = currentBright > 0.6 ? 2.5 : 1.5;
         if (hasSound) {
           barHeight = currentBright > 0.6 ? 3.5 : 2;
         }
 
-        // SOLUK VE MATTE KIRMIZI (Gözü asla almaz)
+        // SOLUK MATTE KIRMIZI (Gözü yormaz, kaliteli KITT hissi verir)
         if (currentBright > 0.7) {
-          visualizerCtx.fillStyle = '#f87171'; // Yumuşak açık kırmızı
+          visualizerCtx.fillStyle = '#f87171'; // Yumuşak akkor kırmızı
         } else if (currentBright > 0.35) {
           visualizerCtx.fillStyle = '#991b1b'; // Koyu kırmızı
         } else if (currentBright > 0.12) {
-          visualizerCtx.fillStyle = '#4c0519'; // Soluk zemin
+          visualizerCtx.fillStyle = '#4c0519'; // Soluk iz
         } else {
-          visualizerCtx.fillStyle = '#171922'; // Nötr ray
+          visualizerCtx.fillStyle = '#171922'; // Taban rayı
         }
 
         const yPos = Math.round(centerY - (barHeight / 2));
@@ -648,12 +646,12 @@
 
       if (hasSound) {
         if (vStatusDot) vStatusDot.textContent = '🔴';
-        if (vStatusText) { vStatusText.textContent = 'Ses Algılanıyor'; vStatusText.style.color = '#ef4444'; }
-        if (vDb) vDb.textContent = 'Giriş: %' + Math.min(100, Math.round((avg / 90) * 100));
+        if (vStatusText) { vStatusText.textContent = '⚡ KITT Ses Algılıyor'; vStatusText.style.color = '#ef4444'; }
+        if (vDb) vDb.textContent = 'Şiddet: %' + Math.min(100, Math.round((avg / 90) * 100));
       } else {
-        if (vStatusDot) vStatusDot.textContent = '⚫';
-        if (vStatusText) { vStatusText.textContent = 'Sessiz • Dinlemede'; vStatusText.style.color = '#94a3b8'; }
-        if (vDb) vDb.textContent = 'Hazır';
+        if (vStatusDot) vStatusDot.textContent = '🔴';
+        if (vStatusText) { vStatusText.textContent = 'KITT Lazer Aktif'; vStatusText.style.color = '#94a3b8'; }
+        if (vDb) vDb.textContent = 'Dinlemeye hazır';
       }
     }
 // Sayfa açılır açılmaz render döngüsünü başlat
@@ -837,15 +835,34 @@
     }
 
     async function toggleMic() {
+      if (!jarvisPowerOn) {
+        toggleJarvisPower(); // Jarvis kapalıysa aç
+      }
       await initAudioEngine();
       if (!recognition) {
         alert('Tarayıcınız ses tanıma (Web Speech API) özelliğini desteklemiyor.');
         return;
       }
       if (isListening) {
-        stopContinuousListening();
+        try { recognition.stop(); } catch(e){}
+        isListening = false;
+        if (micBtn) {
+          micBtn.classList.remove('listening');
+          micBtn.textContent = '🎙️';
+        }
+        input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et... (Enter ile gönder)';
       } else {
-        startContinuousListening();
+        try {
+          recognition.start();
+          isListening = true;
+          if (micBtn) {
+            micBtn.classList.add('listening');
+            micBtn.textContent = '🔴';
+          }
+          input.placeholder = '🎙️ Dinleniyor... Konuşun (cümle bitince otomatik gönderir)...';
+        } catch(e) {
+          console.warn('Mikrofon başlatma hatası:', e);
+        }
       }
     }
 
@@ -949,7 +966,7 @@
       }, 100);
 
       const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
-      const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
+      const apiKey = (window.OMNI_KEY || localStorage.getItem('omni_key') || '').trim();
 
       const attachmentsToSend = [...pendingAttachments];
       pendingAttachments = [];
