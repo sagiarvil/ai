@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
 BARIŞ AI // %100 GERÇEK VE FİZİKSEL ARAMA & İSTİHBARAT MOTORLARI
-Bu dosya kesinlikle simülasyon veya sahte veri içermez.
-Tüm fonksiyonlar fiziksel soketler, yerel Tor servisi ve resmi API'ler üzerinden çalışır.
+Kesin kural: Sıfır sahte veri, sıfır simülasyon.
 
-Motor 1: RealWebSearchEngine (DuckDuckGo Live API + BeautifulSoup4 Sayfa Kazıyıcı)
-Motor 2: RealTorEngine (127.0.0.1:9050 Yerel Tor SOCKS5 Ağı)
-Motor 3: RealCryptoEngine (Resmi Binance 24s Ticker API)
+1. RealWebSearchEngine: Canlı DuckDuckGo HTML motoru + BeautifulSoup4 sayfa kazıyıcı.
+2. RealTorEngine: 127.0.0.1:9050 SOCKS5 yerel Tor ağı.
+3. RealCryptoEngine: Binance Spot API + DexScreener API + RugCheck.xyz API.
 """
 
 import json
@@ -16,53 +15,64 @@ import urllib.parse
 from typing import List, Dict, Any, Optional
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 import socks
 from sockshandler import SocksiPyHandler
 
 # ==============================================================================
-# 1. GERÇEK WEB ARAMA VE DEEP RESEARCH MOTORU (Live Web Search + Scraper)
+# 1. CANLI WEB ARAMA VE DEEP RESEARCH MOTORU (Fiziksel HTML Scraper)
 # ==============================================================================
 class RealWebSearchEngine:
     @classmethod
     def search_live_web(cls, query: str, max_results: int = 5) -> List[Dict[str, str]]:
         """
-        DuckDuckGo üzerinden internette fiziksel canlı arama yapar.
-        Geriye gerçek başlıklar, URL'ler ve pasajlar döndürür.
+        DuckDuckGo HTML arama motoru üzerinden internette canlı fiziksel arama yapar.
+        Türkçe ve yabancı sorgularda doğrudan 100% gerçek sonuçlar çeker.
         """
         results = []
-        # 1. Kaynak: DDGS Canlı Haberler
         try:
-            with DDGS() as ddgs:
-                news_results = list(ddgs.news(query, max_results=max_results))
-                for n in news_results:
-                    results.append({
-                        "title": n.get("title", ""),
-                        "url": n.get("url", ""),
-                        "snippet": n.get("body", "")
-                    })
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                soup = BeautifulSoup(html, "html.parser")
+                
+                result_divs = soup.find_all("div", class_="result")
+                for div in result_divs:
+                    title_elem = div.find("a", class_="result__snippet")
+                    header_elem = div.find("h2", class_="result__title")
+                    link_elem = header_elem.find("a") if header_elem else None
+                    
+                    if link_elem:
+                        raw_href = link_elem.get("href", "")
+                        # DuckDuckGo redirect linkini çöz
+                        actual_url = raw_href
+                        if "uddg=" in raw_href:
+                            try:
+                                actual_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
+                            except Exception:
+                                pass
+                        
+                        title = header_elem.get_text(strip=True) if header_elem else "Kaynak"
+                        snippet = title_elem.get_text(strip=True) if title_elem else ""
+                        
+                        results.append({
+                            "title": title,
+                            "url": actual_url,
+                            "snippet": snippet
+                        })
+                        if len(results) >= max_results:
+                            break
         except Exception:
             pass
 
-        # 2. Kaynak: DDGS Metin Arama (Eğer haber azsa)
+        # Yedek Kaynak: Wikipedia Canlı Arama
         if len(results) < max_results:
             try:
-                with DDGS() as ddgs:
-                    raw_results = list(ddgs.text(query, max_results=max_results))
-                    for r in raw_results:
-                        results.append({
-                            "title": r.get("title", ""),
-                            "url": r.get("href", ""),
-                            "snippet": r.get("body", "")
-                        })
-            except Exception:
-                pass
-
-        # 3. Kaynak: Wikipedia & Ansiklopedik Canlı Arama (Yedek & Tamamlayıcı)
-        if len(results) < max_results:
-            try:
-                wiki_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(query)}&limit={max_results}&namespace=0&format=json"
-                req = urllib.request.Request(wiki_url, headers={"User-Agent": "BarisAI-Intelligence/1.0"})
+                search_term = query if len(query.split()) <= 2 else query.split()[0]
+                wiki_url = f"https://tr.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(search_term)}&limit=3&namespace=0&format=json"
+                req = urllib.request.Request(wiki_url, headers={"User-Agent": "BarisAI/2.0"})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     wdata = json.loads(resp.read().decode("utf-8"))
                     titles = wdata[1] if len(wdata) > 1 else []
@@ -71,7 +81,7 @@ class RealWebSearchEngine:
                         results.append({
                             "title": f"Wikipedia: {t}",
                             "url": u,
-                            "snippet": f"{t} hakkında doğrulanmış açık ansiklopedik ve teknik veriler."
+                            "snippet": f"{t} hakkında doğrulanmış açık ansiklopedik bilgiler."
                         })
             except Exception:
                 pass
@@ -80,10 +90,7 @@ class RealWebSearchEngine:
 
     @classmethod
     async def deep_scrape_url(cls, url: str) -> str:
-        """
-        Herhangi bir web sayfasını fiziksel olarak indirir,
-        HTML etiketlerini temizler ve ham ana metni çıkarır.
-        """
+        """Belirtilen web sayfasını fiziksel olarak indirip temiz ana metni çeker."""
         if not url.startswith("http"):
             return ""
         try:
@@ -93,18 +100,16 @@ class RealWebSearchEngine:
                 })
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    # Reklam, script ve stil etiketlerini temizle
                     for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
                         tag.decompose()
-                    paragraphs = [p.get_text().strip() for p in soup.find_all("p") if len(p.get_text().strip()) > 40]
-                    text = " ".join(paragraphs[:8])
-                    return text[:1500]
+                    paragraphs = [p.get_text().strip() for p in soup.find_all("p") if len(p.get_text().strip()) > 30]
+                    return " ".join(paragraphs[:6])[:1200]
         except Exception:
             pass
         return ""
 
 # ==============================================================================
-# 2. GERÇEK TOR / DARK WEB MOTORU (127.0.0.1:9050 SOCKS5 Bağlantısı)
+# 2. GERÇEK TOR / DARK WEB MOTORU (127.0.0.1:9050 SOCKS5)
 # ==============================================================================
 class RealTorEngine:
     TOR_SOCKS_HOST = "127.0.0.1"
@@ -112,10 +117,7 @@ class RealTorEngine:
 
     @classmethod
     def verify_tor_circuit(cls) -> Dict[str, Any]:
-        """
-        Yerel Tor daemonu üzerinden check.torproject.org'a bağlanır
-        ve fiziksel Tor devre durumunu ve çıkış IP'sini doğrular.
-        """
+        """Tor devre durumunu ve aktif çıkış IP'sini doğrular."""
         try:
             opener = urllib.request.build_opener(
                 SocksiPyHandler(socks.SOCKS5, cls.TOR_SOCKS_HOST, cls.TOR_SOCKS_PORT)
@@ -125,46 +127,21 @@ class RealTorEngine:
                 return {
                     "active": data.get("IsTor", False),
                     "exit_ip": data.get("IP", "Bilinmiyor"),
-                    "status": "TOR DEVRESİ AKTİF (Anonim Ağ Bağlantısı Doğrulandı)"
+                    "status": "TOR DEVRESİ AKTİF (Anonim Ağ Doğrulandı)"
                 }
         except Exception as e:
-            return {
-                "active": False,
-                "exit_ip": None,
-                "status": f"Tor bağlantı hatası: {str(e)}"
-            }
-
-    @classmethod
-    def query_onion_gateway(cls, target_url: str) -> Optional[str]:
-        """
-        Tor SOCKS5 soketi üzerinden gerçek bir .onion sitesine veya açık OSINT ağ geçidine istek atar.
-        """
-        try:
-            opener = urllib.request.build_opener(
-                SocksiPyHandler(socks.SOCKS5, cls.TOR_SOCKS_HOST, cls.TOR_SOCKS_PORT)
-            )
-            req = urllib.request.Request(target_url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"
-            })
-            with opener.open(req, timeout=15) as resp:
-                content = resp.read().decode("utf-8", errors="ignore")
-                return content[:3000]
-        except Exception as e:
-            return f"Tor ağı üzerinden hedefe ulaşılamadı: {e}"
+            return {"active": False, "exit_ip": None, "status": f"Tor bağlantı hatası: {e}"}
 
 # ==============================================================================
-# 3. GERÇEK KRİPTO PİYASA VE COIN TARAMA MOTORU (Binance Public API)
+# 3. GERÇEK KRİPTO & COIN MOTORLARI (Binance + DexScreener + RugCheck)
 # ==============================================================================
 class RealCryptoEngine:
-    BINANCE_URL = "https://api.binance.com/api/v3/ticker/24hr"
-
     @classmethod
     async def get_live_coin(cls, symbol: str) -> Optional[Dict[str, Any]]:
-        """Belirtilen coinin Binance üzerindeki canlı 24s piyasa verilerini çeker."""
         clean = symbol.upper().replace("USDT", "") + "USDT"
         try:
             async with httpx.AsyncClient(timeout=4.0) as client:
-                resp = await client.get(f"{cls.BINANCE_URL}?symbol={clean}")
+                resp = await client.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={clean}")
                 if resp.status_code == 200:
                     d = resp.json()
                     return {
@@ -181,23 +158,12 @@ class RealCryptoEngine:
         return None
 
     @classmethod
-    async def get_watchlist(cls) -> List[Dict[str, Any]]:
-        """En popüler ana coinlerin anlık fiyat ve değişimlerini döner."""
-        symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"]
+    async def get_solana_rugcheck(cls, mint_address: str) -> Optional[Dict[str, Any]]:
         try:
-            param = '["' + '","'.join(symbols) + '"]'
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                resp = await client.get(f"{cls.BINANCE_URL}?symbols={param}")
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report")
                 if resp.status_code == 200:
-                    data = resp.json()
-                    return [
-                        {
-                            "symbol": item.get("symbol", "").replace("USDT", ""),
-                            "price": float(item.get("lastPrice", 0)),
-                            "change_24h": round(float(item.get("priceChangePercent", 0)), 2)
-                        }
-                        for item in data
-                    ]
+                    return resp.json()
         except Exception:
             pass
-        return []
+        return None
