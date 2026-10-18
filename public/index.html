@@ -393,7 +393,7 @@
     <div id="attachmentTray" class="attachment-tray"></div>
     <div class="gemini-pill" id="geminiPill">
       <div class="pill-input-row">
-        <textarea id="promptInput" class="pill-textarea" rows="1" maxlength="5000" placeholder="Bir şeyler sorun veya talimat verin..." autofocus></textarea>
+        <textarea id="promptInput" class="pill-textarea" rows="1" maxlength="50000" placeholder="Bir şeyler sorun veya talimat verin..." autofocus></textarea>
       </div>
       <div class="pill-bottom-bar">
         <div class="pill-bottom-left">
@@ -479,10 +479,10 @@
       autoResizePill();
       if (charCounter) {
         const len = input.value.length;
-        charCounter.textContent = `${len} / 5000`;
-        if (len >= 5000) {
+        charCounter.textContent = `${len} / 50000`;
+        if (len >= 50000) {
           charCounter.className = 'char-counter danger';
-        } else if (len >= 4500) {
+        } else if (len >= 45000) {
           charCounter.className = 'char-counter warning';
         } else {
           charCounter.className = 'char-counter';

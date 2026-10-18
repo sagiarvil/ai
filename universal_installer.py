@@ -218,6 +218,7 @@ def install_repo(url: str) -> dict[str, Any]:
                     queries.append(words[0])
 
                 alt_url = None
+                # Seviye 1: gh CLI ile yıldız sıralı arama
                 for q in queries:
                     try:
                         gh_p = subprocess.run(
@@ -232,6 +233,23 @@ def install_repo(url: str) -> dict[str, Any]:
                                 break
                     except Exception:
                         pass
+
+                # Seviye 2: GitHub REST API ile doğrudan HTTPS araması (gh CLI yoksa veya rate limit varsa)
+                if not alt_url:
+                    for q in queries:
+                        try:
+                            import urllib.request, urllib.parse, json as _json
+                            api_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(q)}&sort=stars&order=desc&per_page=3"
+                            req = urllib.request.Request(api_url, headers={"User-Agent": "OmniCore-Universal-Agent/3.0"})
+                            with urllib.request.urlopen(req, timeout=10) as resp:
+                                if resp.status == 200:
+                                    api_data = _json.loads(resp.read().decode('utf-8'))
+                                    api_items = api_data.get('items', [])
+                                    if api_items and api_items[0].get('html_url'):
+                                        alt_url = api_items[0]['html_url']
+                                        break
+                        except Exception:
+                            pass
 
                 if alt_url and alt_url != safe_url:
                     shutil.rmtree(source, ignore_errors=True)

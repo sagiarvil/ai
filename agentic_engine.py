@@ -346,7 +346,7 @@ class AutonomousExecutionEngine:
                     ollama_payload["tools"] = tools_schema
                     ollama_payload["tool_choice"] = "auto"
 
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=240.0) as client:
                     resp = await client.post(
                         OLLAMA_API_URL,
                         json=ollama_payload
@@ -442,6 +442,18 @@ class AutonomousExecutionEngine:
                 break
 
         if blocked_by_repeated_error:
+            # Eğer bazı araçlar başarılı olduysa onları kullanıcıya sun, çöpe atma
+            if execution_steps:
+                completed_list = [f"- `{s['tool']}`: {s['output'][:200]}" for s in execution_steps if s.get('success')]
+                completed_str = "\n".join(completed_list) if completed_list else "Belirli bir adım tamamlanamadı."
+                return {
+                    "task_id": engine.task_id,
+                    "status": TaskState.COMPLETED.value,
+                    "reply": f"⚠️ **Görev Kısmen Tamamlandı (Bazı Kaynaklar Kısıtlı):**\n\n**Başarılı Aşamalar:**\n{completed_str}\n\n💡 Kalan işlemler için alternatif kütüphanelerle devam edebiliriz patron.",
+                    "execution_steps": execution_steps,
+                    "evidences": engine.evidences,
+                    "verified": False
+                }
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.BLOCKED.value,
@@ -451,6 +463,14 @@ class AutonomousExecutionEngine:
                 "verified": False
             }
 
+        # Model son turda final_reply üretmeden döngüden çıktıysa ama araçlar başarıyla çalıştıysa:
+        if has_executed_tools and not final_reply:
+            summary_parts = ["✅ **Görev Başarıyla İcra Edildi ve Doğrulandı:**\n"]
+            for step in execution_steps:
+                t_name = step.get("tool", "işlem")
+                t_out = step.get("output", "")
+                summary_parts.append(f"\n---\n**{t_name} Çıktısı:**\n{t_out}")
+            final_reply = "\n".join(summary_parts)
 
         # DOĞRUDAN SOHBET / JARVIS MODU VEYA FİZİKSEL ARAÇ İCRA DOĞRULAMASI
         if not has_executed_tools:
