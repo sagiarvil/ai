@@ -220,8 +220,12 @@
 
     const keyInput = document.getElementById('omniKeyInput');
     if (keyInput) {
-      const savedKey = localStorage.getItem('omni_key');
-      if (savedKey) keyInput.value = savedKey;
+      if (keyInput.value) {
+        localStorage.setItem('omni_key', keyInput.value.trim());
+      } else {
+        const savedKey = localStorage.getItem('omni_key');
+        if (savedKey) keyInput.value = savedKey;
+      }
       keyInput.addEventListener('change', () => {
         localStorage.setItem('omni_key', keyInput.value.trim());
       });

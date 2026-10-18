@@ -16,7 +16,7 @@ from typing import List, Optional
 from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -462,7 +462,13 @@ class ChatRequest(BaseModel):
 @app.get("/")
 async def root():
     if INDEX_HTML.exists():
-        return FileResponse(str(INDEX_HTML))
+        html_text = INDEX_HTML.read_text(encoding="utf-8")
+        secure_key = get_secure_api_key()
+        html_text = html_text.replace(
+            '<input type="password" id="omniKeyInput"',
+            f'<input type="password" id="omniKeyInput" value="{secure_key}"'
+        )
+        return HTMLResponse(content=html_text)
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 
 @app.get("/favicon.ico")
