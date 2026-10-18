@@ -678,6 +678,13 @@ async def favicon_png():
         return FileResponse(str(png), media_type="image/png")
     raise HTTPException(status_code=404)
 
+@app.get("/b_logo.png")
+async def b_logo_png():
+    png = PUBLIC_DIR / 'b_logo.png'
+    if png.exists():
+        return FileResponse(str(png), media_type="image/png")
+    raise HTTPException(status_code=404)
+
 @app.get("/logo.png")
 async def logo_png():
     logo = PUBLIC_DIR / 'logo.png'
