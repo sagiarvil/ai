@@ -27,6 +27,9 @@ from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox
 from model_manager import ModelManager
 from model_observability import ModelObservabilityEngine
 from omnicore_orchestrator import OmniCoreXOrchestrator
+from resilience_kernel import ResilienceKernel, OmniCoreToolAdapters, State
+
+RESILIENCE_KERNEL = ResilienceKernel()
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
@@ -365,8 +368,32 @@ tools = [
 ]
 
 async def dispatch_tool_call(fname: str, fargs: dict) -> str:
-    if fname == "tool_search_and_install_github_repo":
-        return tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
+    if fname == "tool_write_file":
+        spec = OmniCoreToolAdapters.get_file_write_spec(WORKSPACE_ROOT)
+        report = await RESILIENCE_KERNEL.execute(spec, fargs)
+        if report.state == State.VERIFIED:
+            return f"✅ Dosya başarıyla yazıldı ve doğrulandı: `{fargs.get('filepath')}`"
+        return f"[{report.state.value}]: {report.message} (Hata Türü: {report.error_kind})"
+    elif fname == "tool_read_file":
+        spec = OmniCoreToolAdapters.get_file_read_spec(WORKSPACE_ROOT)
+        report = await RESILIENCE_KERNEL.execute(spec, fargs)
+        if report.state == State.VERIFIED:
+            return tool_read_file(fargs.get("filepath", ""))
+        return f"[{report.state.value}]: {report.message} (Hata Türü: {report.error_kind})"
+    elif fname == "tool_run_shell":
+        from sandbox_executor import secure_sandbox_run
+        spec = OmniCoreToolAdapters.get_shell_spec(secure_sandbox_run)
+        report = await RESILIENCE_KERNEL.execute(spec, fargs)
+        if report.state == State.VERIFIED:
+            return tool_run_shell(fargs.get("command", ""))
+        return f"[{report.state.value}]: {report.message} (Hata Türü: {report.error_kind})"
+    elif fname == "tool_search_and_install_github_repo":
+        from universal_installer import install_repo
+        spec = OmniCoreToolAdapters.get_github_install_spec(install_repo)
+        report = await RESILIENCE_KERNEL.execute(spec, fargs)
+        if report.state == State.VERIFIED:
+            return tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
+        return f"[{report.state.value}]: {report.message} (Hata Türü: {report.error_kind})"
     elif fname == "tool_browser_navigate":
         return await tool_browser_navigate(
             url=fargs.get("url", ""),
@@ -376,17 +403,12 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
         )
     elif fname == "tool_list_browser_sessions":
         return tool_list_browser_sessions()
-    elif fname == "tool_run_shell":
-        return tool_run_shell(fargs.get("command", ""))
-    elif fname == "tool_write_file":
-        return tool_write_file(fargs.get("filepath", ""), fargs.get("content", ""))
-    elif fname == "tool_read_file":
-        return tool_read_file(fargs.get("filepath", ""))
     elif fname == "tool_crawl_website":
         return await tool_crawl_website(fargs.get("url", ""))
     elif fname == "tool_run_slither":
         return tool_run_slither(fargs.get("solidity_code", ""))
     return f"[Bilinmeyen Araç]: {fname}"
+
 
 class ChatRequest(BaseModel):
     message: str

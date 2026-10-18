@@ -40,3 +40,5 @@ sandbox_workspace/
 tasks/*.json
 data/
 tools/browser_sessions/
+*.lock
+installed_engines_registry.lock

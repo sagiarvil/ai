@@ -201,6 +201,8 @@ class AutonomousExecutionEngine:
         execution_steps = []
         final_reply = ""
         has_executed_tools = False
+        seen_error_signatures: Dict[str, int] = {}
+        blocked_by_repeated_error = False
 
         # Maksimum 10 tur ReAct döngüsü
         for step_idx in range(1, 11):
@@ -224,7 +226,6 @@ class AutonomousExecutionEngine:
                             }
                         }
                     )
-                    # request timer
                     round(time.perf_counter() - start_req, 3)
                     if resp.status_code != 200:
                         engine.transition_to(TaskState.FAILED, f"Model API yanıt vermedi: HTTP {resp.status_code}")
@@ -241,6 +242,7 @@ class AutonomousExecutionEngine:
                 has_executed_tools = True
                 messages.append(msg)
 
+                should_break_outer = False
                 for tc in tool_calls:
                     fname = tc["function"]["name"]
                     raw_args = tc["function"].get("arguments", "{}")
@@ -253,6 +255,23 @@ class AutonomousExecutionEngine:
                     out = await call_tool_fn(fname, fargs)
 
                     is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
+
+                    # Deterministik hata imzasını takip et
+                    if not is_tool_success:
+                        err_sig = f"{fname}:{out[:100].strip()}"
+                        seen_error_signatures[err_sig] = seen_error_signatures.get(err_sig, 0) + 1
+                        if seen_error_signatures[err_sig] >= 2 and any(k in out for k in ["Operation not permitted", "GÜVENLİK ENGELİ", "BLOCKED", "could not create work tree"]):
+                            blocked_by_repeated_error = True
+                            engine.transition_to(TaskState.BLOCKED, f"Aynı deterministik izin hatası tekrarlandı: {err_sig}")
+                            execution_steps.append({
+                                "step": step_idx,
+                                "tool": fname,
+                                "args": fargs,
+                                "output": f"[DÖNGÜ ENGELİ - BLOCKED]: Deterministik hata ikinci kez tekrarlandı, görev sonlandırıldı: {err_sig}",
+                                "success": False
+                            })
+                            should_break_outer = True
+                            break
 
                     engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", is_tool_success, out[:500])
 
@@ -269,9 +288,22 @@ class AutonomousExecutionEngine:
                         "tool_call_id": tc["id"],
                         "content": out
                     })
+                if should_break_outer:
+                    break
             else:
                 final_reply = (msg.get("content") or "").strip()
                 break
+
+        if blocked_by_repeated_error:
+            return {
+                "task_id": engine.task_id,
+                "status": TaskState.BLOCKED.value,
+                "reply": "Deterministik izin hatası ikinci kez tekrarlandığı için görev BLOCKED durumuna geçirildi ve döngü durduruldu.",
+                "execution_steps": execution_steps,
+                "evidences": engine.evidences,
+                "verified": False
+            }
+
 
         # SIFIR SAHTE BAŞARI KAPISI (ZERO-FAKE VERIFICATION)
         if not has_executed_tools:

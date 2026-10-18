@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
-SANDBOX_DIR = WORKSPACE_ROOT / 'sandbox_workspace'
+OMNICORE_HOME = Path.home() / '.omnicore'
+SANDBOX_DIR = OMNICORE_HOME / 'sandbox_workspace'
+OMNICORE_HOME.mkdir(parents=True, exist_ok=True)
 SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
 
 BLOCKED_COMMAND_PATTERNS = [
@@ -63,7 +65,8 @@ def check_sandbox_availability() -> bool:
 def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -> str:
     """
     macOS Seatbelt kernel politikası üretir.
-    - Yazma: SADECE staging/sandbox çalışma ağacı ve /tmp dizinine izin verilir. Proje köküne ve korumalı dosyalara yazma kesinlikle reddedilir.
+    - Varsayılan: (deny default)
+    - Yazma: SADECE staging/sandbox çalışma ağacı (~/.omnicore) ve geçici sistem dizinleri (/tmp). Proje köküne yazma kesinlikle reddedilir.
     - Okuma: Sistem kütüphanelerine izin verilir, ancak sırlar (.env, .ssh, .aws) kesinlikle reddedilir.
     - Ağ: Varsayılan olarak (deny network*), yalnızca açıkça allow_network=True istendiğinde izin verilir.
     """
@@ -71,35 +74,44 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
     home = Path.home()
 
     profile = f"""(version 1)
-(allow default)
-{network_rule}
-
-;; 1. DOSYA SİSTEMİ YAZMA KISITLAMALARI
-;; Proje köküne ve ev dizinine yazma kesinlikle YASAK
+(deny default)
+(allow process-exec*)
+(allow process-fork)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow signal (target self))
+(allow ipc-posix*)
+(allow pseudo-tty)
+(allow file-ioctl)
+(allow file-read*)
+(allow file-write*
+    (subpath "{sandbox_path}")
+    (subpath "{OMNICORE_HOME}")
+    (subpath "/private/tmp")
+    (subpath "/private/var/folders")
+    (subpath "/dev")
+)
 (deny file-write* (subpath "{WORKSPACE_ROOT}"))
-(deny file-write* (subpath "{home}"))
-
-;; Sadece izole staging/sandbox alanı ve geçici dizinlere yazılabilir
-(allow file-write* (subpath "{sandbox_path}"))
-(allow file-write* (subpath "{SANDBOX_DIR}"))
-(allow file-write* (subpath "/private/tmp"))
-(allow file-write* (subpath "/private/var/folders"))
-
-;; Korumalı proje dosyaları ve git dizini (kesin red)
-(deny file-write* (subpath "{WORKSPACE_ROOT}/omni_chat_panel.py"))
-(deny file-write* (subpath "{WORKSPACE_ROOT}/agentic_engine.py"))
-(deny file-write* (subpath "{WORKSPACE_ROOT}/sandbox_executor.py"))
-(deny file-write* (subpath "{WORKSPACE_ROOT}/universal_installer.py"))
-(deny file-write* (subpath "{WORKSPACE_ROOT}/.git"))
-
-;; 2. HASSAS SIR VE BİLGİ OKUMA ENGELLEME
+(deny file-write* (subpath "{home}/.ssh"))
+(deny file-write* (subpath "{home}/.aws"))
 (deny file-read* (subpath "{WORKSPACE_ROOT}/.env"))
 (deny file-read* (subpath "{home}/.ssh"))
 (deny file-read* (subpath "{home}/.aws"))
 (deny file-read* (subpath "{home}/.gnupg"))
 (deny file-read* (subpath "{home}/.gemini/antigravity"))
+{network_rule}
 """
     return profile
+
+def verify_sandbox_runtime_probe(target_dir: Path, allow_network: bool = True) -> Dict[str, Any]:
+    """
+    Kurulum öncesi gerçek sandbox süreci içinde mkdir, touch, git --version
+    yazma ve ikili çalıştırma ön testlerini icra eder.
+    Ana süreçte değil, sandbox içinde çalıştırılır.
+    """
+    probe_cmd = "mkdir -p .probe_test && touch .probe_test/probe.tmp && git --version && rm -rf .probe_test"
+    return secure_sandbox_run(probe_cmd, cwd=target_dir, timeout=15, allow_network=allow_network)
+
 
 def get_sanitized_env() -> Dict[str, str]:
     """Hassas anahtarları süzerek güvenli bir ortam değişkenleri sözlüğü üretir."""
@@ -166,6 +178,7 @@ def secure_sandbox_run(
         import tempfile
         sys_tmp = tempfile.gettempdir()
         allowed_roots = [
+            str(OMNICORE_HOME),
             str(SANDBOX_DIR),
             str(WORKSPACE_ROOT / "tools"),
             sys_tmp,
