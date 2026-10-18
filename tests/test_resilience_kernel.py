@@ -146,6 +146,47 @@ class ResilienceTests(unittest.TestCase):
         res_bad = asyncio.run(ResilienceKernel().execute(git_spec, {"query_or_url": "ftp://bad.url"}))
         self.assertEqual(res_bad.state, State.BLOCKED)
 
+    # 10. Doğal Dil ve Slug Çözümleme Testi
+    def test_github_natural_language_and_slug_resolution(self):
+        """GitHub adaptörü 'owner/repo' ve doğal dil metinlerini otomatik çözümlemelidir."""
+        from resilience_kernel import OmniCoreToolAdapters
+
+        url1, meta1 = OmniCoreToolAdapters.resolve_github_repo("bottlepy/bottle reposunu kur")
+        self.assertEqual(url1, "https://github.com/bottlepy/bottle")
+        self.assertEqual(meta1.get("slug"), "bottlepy/bottle")
+
+        url2, meta2 = OmniCoreToolAdapters.resolve_github_repo("https://github.com/pallets/flask.git")
+        self.assertEqual(url2, "https://github.com/pallets/flask")
+
+    # 11. Kayıpsız Hata Yayılımı (Lossless Error Propagation) Testi
+    def test_lossless_error_propagation_with_stage_and_exit_code(self):
+        """Hata durumunda stage, exit_code ve stderr ExecutionReport üzerinden kayıpsız taşınmalıdır."""
+        from resilience_kernel import OmniCoreToolAdapters
+
+        def mock_failing_install(url):
+            return {
+                "success": False,
+                "state": "FAILED",
+                "stage": "DEPENDENCIES",
+                "error": "pip install failed: package not found",
+                "exit_code": 1,
+                "target_path": "/Users/macair1/.omnicore/staging/job_failed",
+                "evidence": [
+                    {"stage": "PRE_PROBE", "exit_code": 0},
+                    {"stage": "CLONE", "exit_code": 0},
+                    {"stage": "DEPENDENCIES", "exit_code": 1, "stderr": "package not found"}
+                ]
+            }
+
+        git_spec = OmniCoreToolAdapters.get_github_install_spec(mock_failing_install)
+        res = asyncio.run(ResilienceKernel().execute(git_spec, {"query_or_url": "https://github.com/test/failing-repo"}))
+        self.assertFalse(res.verified)
+        self.assertEqual(res.state, State.FAILED)
+        self.assertIsNotNone(res.data)
+        self.assertEqual(res.data.get("stage"), "DEPENDENCIES")
+        self.assertEqual(res.data.get("exit_code"), 1)
+        self.assertIn("package not found", res.message)
+
 
 if __name__ == "__main__":
     unittest.main()

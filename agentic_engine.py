@@ -204,6 +204,7 @@ class AutonomousExecutionEngine:
         final_reply = ""
         has_executed_tools = False
         seen_error_signatures: Dict[str, int] = {}
+        failed_call_signatures: set = set()
         blocked_by_repeated_error = False
 
         # Maksimum 10 tur ReAct döngüsü
@@ -253,23 +254,45 @@ class AutonomousExecutionEngine:
                     except Exception:
                         fargs = {}
 
+                    # Eğer aynı araç aynı parametrelerle daha önce başarısız olduysa, tekrar çalıştırma!
+                    call_sig = f"{fname}:{json.dumps(fargs, sort_keys=True)}"
+                    if call_sig in failed_call_signatures:
+                        blocked_by_repeated_error = True
+                        engine.transition_to(TaskState.BLOCKED, f"Aynı başarısız araç çağrısı tekrarlandı: {call_sig}")
+                        out = f"[DÖNGÜ ENGELİ - BLOCKED]: '{fname}' aracı aynı parametrelerle daha önce başarısız oldu; tekrarlanan çağrı derhal engellendi."
+                        execution_steps.append({
+                            "step": step_idx,
+                            "tool": fname,
+                            "args": fargs,
+                            "output": out,
+                            "success": False
+                        })
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": out
+                        })
+                        should_break_outer = True
+                        break
+
                     # İlgili aracı çalıştır
                     out = await call_tool_fn(fname, fargs)
 
-                    is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
+                    is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("❌") and not out.startswith("[GÜVENLİK ENGELİ") and not out.startswith("[BLOCKED]") and not out.startswith("[FAILED]")
 
                     # Deterministik hata imzasını takip et
                     if not is_tool_success:
+                        failed_call_signatures.add(call_sig)
                         err_sig = f"{fname}:{out[:100].strip()}"
                         seen_error_signatures[err_sig] = seen_error_signatures.get(err_sig, 0) + 1
-                        if seen_error_signatures[err_sig] >= 2 and any(k in out for k in ["Operation not permitted", "GÜVENLİK ENGELİ", "BLOCKED", "could not create work tree"]):
+                        if any(k in out for k in ["Operation not permitted", "GÜVENLİK ENGELİ", "BLOCKED", "could not create work tree", "Permission denied"]) or seen_error_signatures[err_sig] >= 2:
                             blocked_by_repeated_error = True
-                            engine.transition_to(TaskState.BLOCKED, f"Aynı deterministik izin hatası tekrarlandı: {err_sig}")
+                            engine.transition_to(TaskState.BLOCKED, f"Kalıcı hata tespit edildi veya tekrarlandı: {err_sig}")
                             execution_steps.append({
                                 "step": step_idx,
                                 "tool": fname,
                                 "args": fargs,
-                                "output": f"[DÖNGÜ ENGELİ - BLOCKED]: Deterministik hata ikinci kez tekrarlandı, görev sonlandırıldı: {err_sig}",
+                                "output": f"[DÖNGÜ ENGELİ - BLOCKED]: {out}",
                                 "success": False
                             })
                             should_break_outer = True

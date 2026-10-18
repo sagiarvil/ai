@@ -391,27 +391,53 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
         from universal_installer import install_repo
         spec = OmniCoreToolAdapters.get_github_install_spec(install_repo)
         report = await RESILIENCE_KERNEL.execute(spec, fargs)
+        data = report.data or {}
         if report.state == State.VERIFIED:
-            ev = report.evidence[-1] if report.evidence else {}
-            commit_sha = ev.get("commit", "unknown")
-            path_str = ev.get("path", "")
-            best_url = fargs.get("query_or_url", "")
+            commit_sha = data.get("commit") or (report.outcome.evidence.get("commit") if report.outcome and report.outcome.evidence else "unknown")
+            path_str = data.get("path") or (report.outcome.evidence.get("path") if report.outcome and report.outcome.evidence else "")
+            best_url = data.get("resolved_url") or data.get("repo") or fargs.get("query_or_url", "")
+            stages_ev = data.get("evidence", [])
+            stage_lines = []
+            for s in stages_ev:
+                stg = s.get("stage")
+                ec = s.get("exit_code")
+                extra = f" (exit_code: {ec})" if ec is not None else ""
+                if s.get("commit"):
+                    extra += f" [sha: {s['commit'][:8]}]"
+                stage_lines.append(f"  - {stg}: PASS{extra}")
+            stages_block = "\n".join(stage_lines) if stage_lines else "  - PRE_PROBE, CLONE, REVISION, DEPENDENCIES, BUILD, FUNCTIONAL_TEST: PASS"
             return (
                 f"📦 [DEPO KURULDU VE FONKSİYONEL TESTİ GEÇTİ]\n"
                 f"- **Depo:** `{best_url}`\n"
                 f"- **Commit:** `{commit_sha}`\n"
                 f"- **Konum:** `{path_str}`\n"
-                f"- **Durum:** FUNCTIONAL_TESTED (100% PASS)\n"
-                f"- **Önemli Not:** Depo testleri geçmiştir ancak henüz çalışan bir servis olarak AKTiF DEĞİLDİR. "
-                f"Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
+                f"- **Durum:** FUNCTIONAL_TESTED (Doğrulandı)\n"
+                f"- **Aşamalar:**\n{stages_block}\n"
+                f"- **Önemli Not:** Depo sandbox içinde derlenmiş ve testleri geçmiştir; ancak henüz çalışan bir arka plan servisi olarak AKTİF DEĞİLDİR (FUNCTIONAL_TESTED ≠ ACTIVE). Canlı servis aktivasyonu servise özel aktivasyon adaptörü ve sağlık kontrolü (health-probe) gerektirir."
             )
-        err_detail = report.message
-        if report.evidence:
-            for ev_item in reversed(report.evidence):
-                if isinstance(ev_item, dict) and ev_item.get("error"):
-                    err_detail = ev_item.get("error")
-                    break
-        return f"[Kurulum Başarısız / Doğrulanamadı]: {err_detail} (Durum: {report.state.value})"
+        stage = data.get("stage", "UNKNOWN")
+        exit_code = data.get("exit_code", -1)
+        target_path = data.get("target_path", "")
+        error_reason = data.get("error") or report.message
+        error_kind_str = report.error_kind.value if report.error_kind else "UNKNOWN"
+
+        stages_ev = data.get("evidence", [])
+        stage_lines = []
+        for s in stages_ev:
+            stg = s.get("stage")
+            ec = s.get("exit_code")
+            stage_lines.append(f"  - {stg}: exit {ec}")
+        stages_block = ("\n- **Aşama Detayları:**\n" + "\n".join(stage_lines)) if stage_lines else ""
+
+        return (
+            f"❌ [Kurulum Başarısız]: {error_reason}\n"
+            f"- **Aşama (Stage):** `{stage}`\n"
+            f"- **Durum (State):** `{report.state.value}`\n"
+            f"- **Hata Türü (Error Kind):** `{error_kind_str}`\n"
+            f"- **Çıkış Kodu (Exit Code):** `{exit_code}`\n"
+            f"- **Hedef Dizin:** `{target_path}`"
+            f"{stages_block}"
+        )
     elif fname == "tool_browser_navigate":
         return await tool_browser_navigate(
             url=fargs.get("url", ""),

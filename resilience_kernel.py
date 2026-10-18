@@ -8,7 +8,11 @@ import asyncio
 import enum
 import hashlib
 import json
+import re
+import subprocess
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -60,6 +64,8 @@ class ExecutionReport:
     evidence: list[dict[str, Any]]
     message: str
     verified: bool = False
+    data: Any = None
+    outcome: ToolOutcome | None = None
 
 class ResilienceKernel:
     """Fail-closed retry policy. No unbounded repeats or fake success."""
@@ -108,6 +114,7 @@ class ResilienceKernel:
                 return ExecutionReport(State.BLOCKED, spec.name, 0, ErrorKind.UNSAFE, evidence, "Preflight rejected")
             maximum = max(1, min(spec.max_attempts, 4)) if spec.idempotent else 1
             latest = ErrorKind.UNKNOWN
+            last_outcome: ToolOutcome | None = None
             for attempt in range(1, maximum + 1):
                 try:
                     result = await asyncio.wait_for(spec.action(args), timeout=spec.timeout_s)
@@ -115,6 +122,7 @@ class ResilienceKernel:
                     result = ToolOutcome(False, code="TIMEOUT", stderr="timed out")
                 except Exception as exc:
                     result = ToolOutcome(False, code=type(exc).__name__, stderr=str(exc)[:250])
+                last_outcome = result
                 latest = self.classify(result) if not result.ok else None
                 proof = {"attempt": attempt, "ok": result.ok, "exit_code": result.exit_code,
                          "error_kind": latest.value if latest else None, "proof": result.evidence}
@@ -126,12 +134,13 @@ class ResilienceKernel:
                         validated = False
                     if validated:
                         self.failures.pop(spec.name, None)
-                        return ExecutionReport(State.VERIFIED, spec.name, attempt, None, evidence, "Independent postcondition passed", True)
+                        return ExecutionReport(State.VERIFIED, spec.name, attempt, None, evidence, "Independent postcondition passed", True, data=result.data, outcome=result)
                     latest = ErrorKind.UNKNOWN
                     evidence[-1]["postcondition"] = "FAILED"
 
                 # Kalıcı hata: PERMISSION, SANDBOX, AUTH, UNSAFE -> ASLA tekrar deneme!
                 if latest in {ErrorKind.PERMISSION, ErrorKind.SANDBOX, ErrorKind.AUTH, ErrorKind.UNSAFE}:
+                    self.blocked_until[key] = time.monotonic() + self.circuit_seconds
                     break
 
                 # Düzeltilebilir hata ise otomatik onarım adaptörünü çalıştır
@@ -157,9 +166,26 @@ class ResilienceKernel:
                     evidence.append({"rollback": "OK"})
                 except Exception as exc:
                     evidence.append({"rollback": "FAILED", "error": type(exc).__name__})
-            return ExecutionReport(State.BLOCKED if latest in {ErrorKind.PERMISSION, ErrorKind.SANDBOX, ErrorKind.AUTH, ErrorKind.UNSAFE} else State.FAILED,
-                                   spec.name, len([e for e in evidence if "attempt" in e]), latest, evidence,
-                                   "No verified completion; do not report success")
+
+            # Hata mesajını son gerçekleşen outcome'dan gerçek detaylarla üret
+            err_msg = "No verified completion; do not report success"
+            if last_outcome:
+                if last_outcome.stderr:
+                    err_msg = last_outcome.stderr
+                elif last_outcome.code:
+                    err_msg = f"{last_outcome.code}: işlem başarısız oldu"
+
+            return ExecutionReport(
+                State.BLOCKED if latest in {ErrorKind.PERMISSION, ErrorKind.SANDBOX, ErrorKind.AUTH, ErrorKind.UNSAFE} else State.FAILED,
+                spec.name,
+                len([e for e in evidence if "attempt" in e]),
+                latest,
+                evidence,
+                err_msg,
+                False,
+                data=last_outcome.data if last_outcome else None,
+                outcome=last_outcome
+            )
 
 
 class OmniCoreToolAdapters:
@@ -301,29 +327,123 @@ class OmniCoreToolAdapters:
         )
 
     @staticmethod
+    def resolve_github_repo(query_or_url: str) -> tuple[str, dict[str, Any]]:
+        raw = (query_or_url or "").strip()
+        if not raw:
+            return "", {"error": "Boş repo veya arama sorgusu"}
+
+        # 1. Doğrudan URL (https:// veya http://github.com/owner/repo)
+        url_match = re.search(r"https?://(?:www\.)?github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", raw)
+        if url_match:
+            slug = url_match.group(1).removesuffix(".git")
+            return f"https://github.com/{slug}", {"source": "direct_url", "slug": slug}
+
+        # 2. Doğrudan owner/repo veya metin içinde açık slug (örn: 'bottlepy/bottle' veya 'bottlepy/bottle reposunu kur')
+        slug_match = re.search(r"\b([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)\b", raw)
+        if slug_match:
+            slug = slug_match.group(1).removesuffix(".git")
+            if not slug.lower().startswith(("http/", "https/", "api/", "ftp/", "file/")):
+                return f"https://github.com/{slug}", {"source": "slug_match", "slug": slug}
+
+        # 3. Geçersiz veya desteklenmeyen protokoller
+        if any(raw.lower().startswith(p) for p in ["ftp://", "file://", "ssh://"]):
+            return "", {"error": f"Desteklenmeyen protokol: {raw}"}
+
+        # 4. Doğal Dil Araması: Türkçe ve İngilizce arama/dolgu sözcüklerini temizle
+        clean = raw
+        stop_words = [
+            "github'da", "githubda", "github", "depo", "deposu", "reposu", "reposunu", "repoyu", "repo",
+            "açık kaynak", "acik kaynak", "açık", "kaynak", "popüler", "populer", "en iyi", "en", "iyi",
+            "bul", "ve", "kur", "yükle", "yukle", "indir", "bana", "bir", "tane", "ara", "araştır",
+            "motoru", "motorunu", "kütüphanesi", "frameworkü", "framework"
+        ]
+        for w in stop_words:
+            clean = re.sub(r"(?i)\b" + re.escape(w) + r"\b", " ", clean)
+        clean = re.sub(r"['\".,;!?]", " ", clean).strip()
+        clean = " ".join(clean.split())
+
+        search_query = clean if clean else raw
+
+        # A) gh CLI ile ara
+        try:
+            cmd = ["gh", "search", "repos", search_query, "--limit", "5", "--json", "fullName,url,stargazersCount,description"]
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if p.returncode == 0 and p.stdout.strip():
+                items = json.loads(p.stdout)
+                if items:
+                    best = max(items, key=lambda x: x.get("stargazersCount", 0))
+                    return best["url"], {"source": "gh_cli", "slug": best["fullName"], "stars": best.get("stargazersCount"), "query": search_query}
+        except Exception:
+            pass
+
+        # B) GitHub REST API ile ara (Fallback)
+        try:
+            api_url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(search_query)}&sort=stars&order=desc&per_page=5"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "OmniCore-Kernel/2.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                items = data.get("items", [])
+                if items:
+                    best = items[0]
+                    return best["html_url"], {"source": "github_api", "slug": best["full_name"], "stars": best.get("stargazers_count"), "query": search_query}
+        except Exception:
+            pass
+
+        return "", {"error": f"Arama sonucu bulunamadı: '{search_query}'"}
+
+    @staticmethod
     def get_github_install_spec(install_repo_fn: Any) -> ToolSpec:
         async def preflight(args: dict[str, Any]) -> bool:
-            url = args.get("query_or_url", "").strip()
-            if not url or not url.startswith("https://github.com/"):
+            raw = args.get("query_or_url", "").strip()
+            if not raw:
+                return False
+            # ftp://, file://, ssh:// gibi bariz geçersiz URL şemalarını preflight'ta engelle
+            if any(raw.lower().startswith(p) for p in ["ftp://", "file://", "ssh://"]):
+                return False
+            # Güvenlik: Doğrudan shell komut enjeksiyonu karakterleri barındırmamalı
+            if any(c in raw for c in [";", "&&", "||", "`", "$("]):
                 return False
             return True
 
         async def action(args: dict[str, Any]) -> ToolOutcome:
-            url = args.get("query_or_url", "").strip()
-            res = install_repo_fn(url)
+            raw = args.get("query_or_url", "").strip()
+            resolved_url, meta = OmniCoreToolAdapters.resolve_github_repo(raw)
+            if not resolved_url:
+                err_msg = meta.get("error", f"GitHub üzerinde '{raw}' için geçerli bir depo tespit edilemedi.")
+                return ToolOutcome(
+                    ok=False,
+                    code="REPO_NOT_FOUND",
+                    stderr=err_msg,
+                    data={"stage": "PRE_PROBE", "error": err_msg, "exit_code": -1, "query": raw, "target_path": ""}
+                )
+
+            res = install_repo_fn(resolved_url)
             is_ok = res.get("success", False) and res.get("state") == "FUNCTIONAL_TESTED"
+            res["resolved_url"] = resolved_url
+            res["resolution_meta"] = meta
+
+            code = res.get("state", "UNKNOWN")
+            stderr = res.get("error", "")
             return ToolOutcome(
                 ok=is_ok,
                 data=res,
-                code=res.get("state", "UNKNOWN"),
-                stderr=res.get("error", ""),
-                evidence={"commit": res.get("commit"), "path": res.get("path"), "verified": is_ok}
+                code=code,
+                exit_code=res.get("exit_code"),
+                stderr=stderr,
+                evidence={
+                    "commit": res.get("commit"),
+                    "path": res.get("path"),
+                    "verified": is_ok,
+                    "stage": res.get("stage", "FUNCTIONAL_TEST" if is_ok else "FAILED"),
+                    "resolved_url": resolved_url
+                }
             )
 
         async def verify(outcome: ToolOutcome, args: dict[str, Any]) -> bool:
             if not outcome.ok or not outcome.data:
                 return False
-            return outcome.data.get("state") == "FUNCTIONAL_TESTED" and outcome.data.get("commit") is not None
+            d = outcome.data
+            return d.get("state") == "FUNCTIONAL_TESTED" and d.get("commit") is not None and bool(d.get("path"))
 
         return ToolSpec(
             name="tool_search_and_install_github_repo",
@@ -331,6 +451,6 @@ class OmniCoreToolAdapters:
             verify=verify,
             preflight=preflight,
             idempotent=True,
-            max_attempts=2
+            max_attempts=1
         )
 
