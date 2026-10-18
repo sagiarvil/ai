@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local Data & Cache
+*.db
+*.db-wal
+*.db-shm
+*.bin
+prompt_cache/
+models/
+*.gguf
+
+# Logs
+*.log
+*.err
+
+# Firebase
+.firebase/
+firebase-debug.log*

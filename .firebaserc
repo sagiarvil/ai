@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "yesilay-finans-kokpit"
+  },
+  "targets": {
+    "yesilay-finans-kokpit": {
+      "hosting": {
+        "baris-ai": [
+          "baris-ai"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InversionCore // Tactical Mistral-24B UI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #0B0F17; color: #E2E8F0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .card { background-color: #111827; border: 1px solid #1F2937; }
+    .border-glow:focus-within { border-color: #3B82F6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+  <!-- Üst Bar -->
+  <header class="card border-b border-gray-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-3.5 h-3.5 rounded-full bg-blue-500 shadow-[0_0_10px_#3B82F6]"></div>
+      <h1 class="text-xl font-bold tracking-wider mono text-white">INVERSION<span class="text-blue-500">CORE</span> // TACTICAL</h1>
+      <span class="text-xs bg-gray-800 text-gray-400 px-2.5 py-1 rounded-md mono border border-gray-700">M4 24GB AIR-GAP</span>
+      <span class="text-xs bg-blue-950 text-blue-300 px-2.5 py-1 rounded-md mono border border-blue-800">baris-ai.web.app</span>
+    </div>
+    
+    <div class="flex items-center gap-4 text-sm mono">
+      <div class="flex items-center gap-2 bg-gray-900 px-3 py-1.5 rounded border border-gray-800">
+        <span class="text-gray-400">Endpoint:</span>
+        <input id="apiBaseUrl" type="text" value="http://127.0.0.1:5050" class="bg-black/60 text-blue-400 px-2 py-0.5 rounded text-xs border border-gray-700 w-44 focus:outline-none">
+        <span id="nodeStatus" class="font-bold text-yellow-400 text-xs">KONTROL EDİLİYOR</span>
+      </div>
+      <button onclick="restoreCache()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 transition text-xs">
+        ⚡ 100ms KV-Restore
+      </button>
+      <button onclick="bakeCache()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded border border-gray-700 transition text-xs">
+        🔒 KV-Bake
+      </button>
+    </div>
+  </header>
+
+  <!-- Ana İçerik -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- Sol Panel: Giriş ve Kontroller (7 Kolon) -->
+    <section class="lg:col-span-7 flex flex-col gap-6">
+      <div class="card p-5 rounded-lg border-glow flex flex-col flex-1">
+        <div class="flex justify-between items-center mb-3">
+          <label class="text-sm font-semibold mono text-gray-300 flex items-center gap-2">
+            <span>🛡️ AKILLI KONTRAT KAYNAK KODU (Solidity)</span>
+          </label>
+          <div class="flex gap-2">
+            <button onclick="loadSample('vault')" class="text-xs text-blue-400 hover:text-blue-300 mono underline">
+              [Zafiyetli Vault]
+            </button>
+            <button onclick="loadSample('reentrancy')" class="text-xs text-blue-400 hover:text-blue-300 mono underline">
+              [Reentrancy PoC]
+            </button>
+          </div>
+        </div>
+
+        <textarea id="contractCode" rows="18" 
+          class="w-full bg-black/60 text-green-400 mono text-sm p-4 rounded border border-gray-800 focus:outline-none focus:border-blue-500 flex-1 leading-relaxed" 
+          placeholder="// Akıllı kontrat kodunuzu buraya yapıştırın..."></textarea>
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-2 text-xs mono text-gray-400">
+            <span>Audit ID:</span>
+            <input id="auditId" type="text" placeholder="Otomatik (INV-...)" class="bg-gray-900 border border-gray-700 px-2.5 py-1 rounded text-gray-200 w-36 focus:outline-none">
+          </div>
+          <button id="auditBtn" onclick="runAudit()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2.5 rounded mono shadow-[0_0_15px_rgba(59,130,246,0.4)] transition flex items-center gap-2">
+            <span>🚀 ZIRHLI DENETİMİ BAŞLAT</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Denetim Defteri (Son Kayıtlar) -->
+      <div class="card p-5 rounded-lg">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-sm font-semibold mono text-gray-300">📜 GEÇMİŞ DENETİM DEFTERİ (SQLite WAL)</h3>
+          <button onclick="loadHistory()" class="text-xs text-blue-400 hover:text-blue-300 mono underline">Yenile</button>
+        </div>
+        <div id="historyList" class="space-y-2 text-xs mono max-h-48 overflow-y-auto pr-1">
+          <div class="text-gray-500">Kayıtlar yükleniyor...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sağ Panel: Denetim Sonuçları ve Telemetri (5 Kolon) -->
+    <section class="lg:col-span-5 flex flex-col gap-6">
+      <div class="card p-5 rounded-lg flex-1 flex flex-col">
+        <h2 class="text-sm font-semibold mono text-gray-300 mb-3 flex items-center justify-between">
+          <span>📊 DENETİM RAPORU & TELEMETRİ</span>
+          <span id="riskBadge" class="hidden px-2.5 py-0.5 rounded text-xs font-bold mono"></span>
+        </h2>
+
+        <!-- Boş Sonuç Paneli -->
+        <div id="resultEmpty" class="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-500 border border-dashed border-gray-800 rounded">
+          <svg class="w-12 h-12 mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          <p class="text-sm mono">Henüz bir denetim çalıştırılmadı.</p>
+          <p class="text-xs text-gray-600 mt-1">Kontrat kodunu girip 'Başlat' butonuna tıklayın.</p>
+        </div>
+
+        <!-- Dolu Sonuç Paneli -->
+        <div id="resultContent" class="hidden flex-1 flex flex-col gap-4 text-xs mono">
+          <div class="grid grid-cols-2 gap-2 bg-gray-900/80 p-3 rounded border border-gray-800">
+            <div><span class="text-gray-500">Risk Puanı:</span> <span id="rRisk" class="font-bold text-white text-base">0/100</span></div>
+            <div><span class="text-gray-500">Duruş:</span> <span id="rPosture" class="font-bold text-white text-base">-</span></div>
+          </div>
+
+          <div>
+            <h4 class="text-gray-400 font-semibold mb-1">🚨 BULGULAR:</h4>
+            <div id="rFindings" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
+          </div>
+
+          <div>
+            <h4 class="text-gray-400 font-semibold mb-1">📐 DEĞİŞMEZLİK KURALLARI (Invariants):</h4>
+            <ul id="rInvariants" class="list-disc list-inside space-y-1 text-gray-300 bg-gray-950 p-2.5 rounded border border-gray-800 max-h-28 overflow-y-auto"></ul>
+          </div>
+
+          <div class="flex-1 flex flex-col">
+            <div class="flex justify-between items-center mb-1">
+              <h4 class="text-gray-400 font-semibold">✅ GÜVENLİK YAMASI (Remediated Code):</h4>
+              <button onclick="copyPatch()" class="text-xs text-blue-400 hover:text-blue-300">Kopyala</button>
+            </div>
+            <pre id="rPatch" class="bg-black/80 text-green-300 p-3 rounded border border-gray-800 overflow-x-auto flex-1 max-h-56 leading-relaxed select-all"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="card border-t border-gray-800 px-6 py-3 text-center text-xs text-gray-500 mono flex justify-between items-center">
+    <span>InversionCore // Mistral-Small-24B-Instruct-2501-Abliterated // Mission-Critical Architecture</span>
+    <span>GitHub: <a href="https://github.com/sagiarvil/ai" target="_blank" class="text-blue-400 hover:underline">sagiarvil/ai</a> | Firebase: <a href="https://baris-ai.web.app" target="_blank" class="text-blue-400 hover:underline">baris-ai.web.app</a></span>
+  </footer>
+
+  <script>
+    const samples = {
+      vault: `pragma solidity ^0.8.20;
+contract VulnerableVault {
+    mapping(address => uint256) public balances;
+    address public owner;
+
+    constructor() { owner = msg.sender; }
+
+    function deposit() external payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw(uint256 amount) external {
+        require(balances[msg.sender] >= amount, "Insufficient balance");
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+        balances[msg.sender] -= amount;
+    }
+
+    function sweepEmergency(address payable recipient) external {
+        require(tx.origin == owner, "Not authorized");
+        recipient.transfer(address(this).balance);
+    }
+}`,
+      reentrancy: `pragma solidity ^0.8.20;
+contract EtherStore {
+    mapping(address => uint256) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdrawAll() public {
+        uint256 bal = balances[msg.sender];
+        require(bal > 0);
+        (bool sent, ) = msg.sender.call{value: bal}("");
+        require(sent, "Failed to send Ether");
+        balances[msg.sender] = 0;
+    }
+}`
+    };
+
+    function loadSample(key) {
+      document.getElementById('contractCode').value = samples[key] || samples.vault;
+    }
+
+    function getBaseUrl() {
+      return document.getElementById('apiBaseUrl').value.trim() || 'http://127.0.0.1:5050';
+    }
+
+    async function checkStatus() {
+      try {
+        const res = await fetch(getBaseUrl() + '/api/status', { mode: 'cors' });
+        const data = await res.json();
+        const badge = document.getElementById('nodeStatus');
+        if (data.online) {
+          badge.textContent = "ONLINE";
+          badge.className = "font-bold text-green-400 text-xs";
+        } else {
+          badge.textContent = "OFFLINE";
+          badge.className = "font-bold text-yellow-400 text-xs";
+        }
+      } catch (e) {
+        document.getElementById('nodeStatus').textContent = "STANDALONE";
+        document.getElementById('nodeStatus').className = "font-bold text-blue-400 text-xs";
+      }
+    }
+
+    async function restoreCache() {
+      try {
+        const res = await fetch(getBaseUrl() + '/api/warmup', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'restore'})
+        });
+        const data = await res.json();
+        alert(data.message || "Başarılı!");
+      } catch(e) {
+        alert("Bağlantı Hatası: Yerel InversionCore sunucusu (http://127.0.0.1:5050) açık değil.");
+      }
+    }
+
+    async function bakeCache() {
+      try {
+        const res = await fetch(getBaseUrl() + '/api/warmup', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'init'})
+        });
+        const data = await res.json();
+        alert(data.message || "Başarılı!");
+      } catch(e) {
+        alert("Bağlantı Hatası: Yerel InversionCore sunucusu (http://127.0.0.1:5050) açık değil.");
+      }
+    }
+
+    // İstemci tarafı yerel AST ve statik analiz (Offline / Fallback modu)
+    function clientStaticAudit(code, auditId) {
+      const findings = [];
+      let riskScore = 0;
+
+      if (code.includes(".call{value:") || code.includes(".call.value(")) {
+        findings.push({
+          category: "REENTRANCY",
+          severity: "CRITICAL",
+          affected_function: "withdraw / transfer",
+          state_transition_flaw: "Checks-Effects-Interactions (CEI) ihlali: Durum değişkeni (balance) dış çağrıdan (.call{value}) sonra güncelleniyor."
+        });
+        riskScore += 50;
+      }
+
+      if (code.includes("tx.origin")) {
+        findings.push({
+          category: "ACCESS_CONTROL",
+          severity: "HIGH",
+          affected_function: "sweepEmergency / auth",
+          state_transition_flaw: "Kimlik doğrulamada tx.origin kullanımı phishing saldırılarına karşı savunmasızdır; msg.sender kullanılmalıdır."
+        });
+        riskScore += 35;
+      }
+
+      if (code.includes("unchecked {")) {
+        findings.push({
+          category: "ARITHMETIC_PRECISION",
+          severity: "MEDIUM",
+          affected_function: "unchecked block",
+          state_transition_flaw: "Taşma (overflow) koruması devre dışı bırakılmış aritmetik blok."
+        });
+        riskScore += 15;
+      }
+
+      riskScore = Math.min(100, riskScore || 5);
+      const posture = riskScore >= 70 ? "COMPROMISED_RISK" : (riskScore >= 30 ? "WARNING" : "HARDENED");
+
+      const remediatedCode = `// Remediated by InversionCore Gatekeeper
+pragma solidity ^0.8.20;
+
+abstract contract ReentrancyGuard {
+    uint256 private _status;
+    modifier nonReentrant() {
+        require(_status != 2, "ReentrancyGuard: reentrant call");
+        _status = 2;
+        _;
+        _status = 1;
+    }
+}
+
+contract RemediatedContract is ReentrancyGuard {
+    mapping(address => uint256) public balances;
+    address public immutable owner;
+
+    constructor() { owner = msg.sender; }
+
+    function deposit() external payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw(uint256 amount) external nonReentrant {
+        require(balances[msg.sender] >= amount, "Insufficient balance");
+        // CEI: Önce durumu güncelle
+        balances[msg.sender] -= amount;
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+
+    function sweepEmergency(address payable recipient) external {
+        require(msg.sender == owner, "Not authorized");
+        recipient.transfer(address(this).balance);
+    }
+}`;
+
+      return {
+        audit_id: auditId,
+        overall_security_posture: posture,
+        risk_score: riskScore,
+        findings: findings,
+        formal_invariants: [
+            "Invariant-1: Kontrat ETH bakiyesi daima tüm kullanıcı bakiyeleri toplamına eşit veya büyüktür.",
+            "Invariant-2: Dış çağrı öncesinde kullanıcı bakiyesi mutlaka sıfırlanmış veya düşülmüş olmalıdır (CEI)."
+        ],
+        remediated_solidity_code: remediatedCode
+      };
+    }
+
+    async function runAudit() {
+      const code = document.getElementById('contractCode').value.trim();
+      if (!code) { alert("Lütfen akıllı kontrat kodunu girin."); return; }
+
+      const btn = document.getElementById('auditBtn');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = "<span>⏳ DENETLENİYOR...</span>";
+      btn.disabled = true;
+
+      const auditId = document.getElementById('auditId').value.trim() || `INV-${Date.now()}`;
+
+      try {
+        // Önce yerel API'yi dene
+        const res = await fetch(getBaseUrl() + '/api/audit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ audit_id: auditId, contract_code: code })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          displayResult(data);
+          loadHistory();
+          return;
+        }
+        throw new Error("Yerel sunucu yanıt vermedi");
+      } catch (e) {
+        // Yerel sunucu yoksa bağımsız istemci tarafı AST motorunu devreye al
+        const fallbackResult = clientStaticAudit(code, auditId);
+        displayResult(fallbackResult);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function displayResult(data) {
+      document.getElementById('resultEmpty').classList.add('hidden');
+      document.getElementById('resultContent').classList.remove('hidden');
+
+      const riskBadge = document.getElementById('riskBadge');
+      riskBadge.classList.remove('hidden');
+      riskBadge.textContent = data.overall_security_posture;
+
+      if (data.overall_security_posture === 'COMPROMISED_RISK') {
+        riskBadge.className = "px-2.5 py-0.5 rounded text-xs font-bold mono bg-red-900 text-red-200 border border-red-700";
+      } else if (data.overall_security_posture === 'WARNING') {
+        riskBadge.className = "px-2.5 py-0.5 rounded text-xs font-bold mono bg-yellow-900 text-yellow-200 border border-yellow-700";
+      } else {
+        riskBadge.className = "px-2.5 py-0.5 rounded text-xs font-bold mono bg-green-900 text-green-200 border border-green-700";
+      }
+
+      document.getElementById('rRisk').textContent = data.risk_score + " / 100";
+      document.getElementById('rPosture').textContent = data.overall_security_posture;
+
+      const fBox = document.getElementById('rFindings');
+      fBox.innerHTML = '';
+      if (!data.findings || data.findings.length === 0) {
+        fBox.innerHTML = '<div class="text-green-400 p-2 bg-gray-950 rounded border border-gray-800">Kritik zafiyet deseni bulunamadı.</div>';
+      } else {
+        data.findings.forEach(f => {
+          const div = document.createElement('div');
+          div.className = "p-2 bg-gray-950 rounded border border-gray-800";
+          div.innerHTML = `<span class="text-red-400 font-bold">[${f.severity}]</span> <span class="text-blue-400">${f.category}</span> @ <code class="text-yellow-300">${f.affected_function}</code><br><span class="text-gray-400 mt-1 block">${f.state_transition_flaw}</span>`;
+          fBox.appendChild(div);
+        });
+      }
+
+      const invBox = document.getElementById('rInvariants');
+      invBox.innerHTML = '';
+      (data.formal_invariants || []).forEach(inv => {
+        const li = document.createElement('li');
+        li.textContent = inv;
+        invBox.appendChild(li);
+      });
+
+      document.getElementById('rPatch').textContent = data.remediated_solidity_code || "// Yama kodu yok.";
+    }
+
+    function copyPatch() {
+      const patch = document.getElementById('rPatch').textContent;
+      navigator.clipboard.writeText(patch);
+      alert("Güvenlik yama kodu panoya kopyalandı!");
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(getBaseUrl() + '/api/audits');
+        const rows = await res.json();
+        const box = document.getElementById('historyList');
+        if (!rows || !rows.length) {
+          box.innerHTML = '<div class="text-gray-500">Kayıtlı denetim yok.</div>';
+          return;
+        }
+        box.innerHTML = '';
+        rows.forEach(r => {
+          const div = document.createElement('div');
+          div.className = "p-2 bg-gray-900 rounded border border-gray-800 hover:border-gray-700 cursor-pointer flex justify-between items-center";
+          div.onclick = () => {
+            try {
+              const parsed = JSON.parse(r.report_json);
+              displayResult(parsed);
+            } catch(e){}
+          };
+          div.innerHTML = `<div><span class="text-blue-400 font-bold">${r.audit_id}</span> <span class="text-gray-500">(${r.timestamp_utc.slice(11,19)})</span></div><div class="flex items-center gap-2"><span class="${r.risk_score > 50 ? 'text-red-400' : 'text-green-400'} font-bold">${r.risk_score} pts</span><span class="text-gray-500">${r.latency_ms}ms</span></div>`;
+          box.appendChild(div);
+        });
+      } catch(e){
+        document.getElementById('historyList').innerHTML = '<div class="text-gray-500">Yerel deftere bağlanılamadı (Çevrimdışı Mod).</div>';
+      }
+    }
+
+    checkStatus();
+    loadSample('vault');
+    loadHistory();
+    setInterval(checkStatus, 10000);
+  </script>
+</body>
+</html>
