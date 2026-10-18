@@ -8,7 +8,7 @@ import base64
 import urllib.request
 from pathlib import Path
 from typing import List, Dict, Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import git
@@ -105,10 +105,24 @@ def extract_file_content(file_bytes: bytes, filename: str) -> str:
 # UÇ NOKTALAR (ENDPOINTS)
 # ------------------------------------------------------------------------------
 @app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...)):
-    content = await file.read()
-    extracted_text = extract_file_content(content, file.filename)
-    return {"filename": file.filename, "extracted_text": extracted_text}
+async def upload_document(request: Request):
+    filename = "uploaded_file"
+    content_bytes = b""
+    try:
+        form = await request.form()
+        file_obj = form.get("file")
+        if file_obj and hasattr(file_obj, "read"):
+            filename = getattr(file_obj, "filename", "uploaded_file") or "uploaded_file"
+            content_bytes = await file_obj.read()
+        elif file_obj and isinstance(file_obj, str):
+            content_bytes = file_obj.encode("utf-8")
+        else:
+            content_bytes = await request.body()
+    except Exception:
+        content_bytes = await request.body()
+
+    extracted_text = extract_file_content(content_bytes, filename)
+    return {"filename": filename, "extracted_text": extracted_text}
 
 @app.post("/api/fs/write")
 async def fs_write(data: Dict[str, str]):

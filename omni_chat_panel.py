@@ -15,7 +15,7 @@ import tempfile
 import io
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends, UploadFile, File
+from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -567,12 +567,24 @@ def extract_content_from_file(filename: str, file_bytes: bytes) -> dict:
     }
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), authorized: bool = Depends(verify_api_key)):
+async def upload_file(request: Request, authorized: bool = Depends(verify_api_key)):
     """PDF, Word, Görsel ve Kod belgelerini yükleyip anlamsal içeriğini ayıklar."""
-    filename = file.filename or "uploaded_file"
-    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
-    content_bytes = await file.read()
+    filename = "uploaded_file"
+    content_bytes = b""
+    try:
+        form = await request.form()
+        file_obj = form.get("file")
+        if file_obj and hasattr(file_obj, "read"):
+            filename = getattr(file_obj, "filename", "uploaded_file") or "uploaded_file"
+            content_bytes = await file_obj.read()
+        elif file_obj and isinstance(file_obj, str):
+            content_bytes = file_obj.encode("utf-8")
+        else:
+            content_bytes = await request.body()
+    except Exception:
+        content_bytes = await request.body()
 
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
     dest_path = UPLOAD_DIR / safe_name
     dest_path.write_bytes(content_bytes)
 
