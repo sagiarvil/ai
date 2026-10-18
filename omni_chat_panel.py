@@ -12,9 +12,10 @@ import re
 import secrets
 import subprocess
 import tempfile
+import io
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends
+from fastapi import FastAPI, Request, Header, HTTPException, Security, Depends, UploadFile, File
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -33,22 +34,34 @@ from resilience_kernel import ResilienceKernel, OmniCoreToolAdapters, State
 RESILIENCE_KERNEL = ResilienceKernel()
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
+PROJECTS_ROOT = Path("/Users/macair1/projects").resolve()
+OMNICORE_ROOT = Path("/Users/macair1/.omnicore").resolve()
+
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
 INDEX_HTML = PUBLIC_DIR / 'index.html'
 
 TOOLS_DIR = WORKSPACE_ROOT / 'tools'
 TOOLS_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = WORKSPACE_ROOT / 'uploads'
+UPLOAD_DIR.mkdir(exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / 'active_engines.json'
 PROTECTED_PATHS = [".env", ".git", ".github", "config_manager.py", "sandbox_executor.py"]
 
 def is_path_authorized(filepath: str, for_write: bool = False) -> tuple[bool, str]:
     try:
-        resolved = (WORKSPACE_ROOT / filepath).resolve()
-        if not str(resolved).startswith(str(WORKSPACE_ROOT)):
+        raw = Path(filepath)
+        target = raw if raw.is_absolute() else (WORKSPACE_ROOT / raw)
+        resolved = target.resolve()
+        is_allowed = (
+            str(resolved).startswith(str(WORKSPACE_ROOT)) or
+            str(resolved).startswith(str(PROJECTS_ROOT)) or
+            str(resolved).startswith(str(OMNICORE_ROOT))
+        )
+        if not is_allowed:
             return False, "Proje çalışma alanı dışına erişim engellendi."
         for prot in PROTECTED_PATHS:
             prot_path = (WORKSPACE_ROOT / prot).resolve()
-            if resolved == prot_path or str(resolved).startswith(str(prot_path) + os.sep):
+            if resolved == prot_path or str(resolved).startswith(str(prot_path) + os.sep) or resolved.name == prot:
                 return False, f"Kritik güvenlik korumalı dosya/dizine erişim engellendi: {prot}"
         return True, ""
     except Exception as e:
@@ -170,7 +183,8 @@ def tool_write_file(filepath: str, content: str) -> str:
         allowed, err_msg = is_path_authorized(filepath, for_write=True)
         if not allowed:
             return f"[GÜVENLİK ENGELİ]: {err_msg}"
-        target = (WORKSPACE_ROOT / filepath).resolve()
+        raw = Path(filepath)
+        target = (raw if raw.is_absolute() else (WORKSPACE_ROOT / raw)).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
             f.write(content)
@@ -183,7 +197,8 @@ def tool_read_file(filepath: str) -> str:
         allowed, err_msg = is_path_authorized(filepath, for_write=False)
         if not allowed:
             return f"[GÜVENLİK ENGELİ]: {err_msg}"
-        target = (WORKSPACE_ROOT / filepath).resolve()
+        raw = Path(filepath)
+        target = (raw if raw.is_absolute() else (WORKSPACE_ROOT / raw)).resolve()
         if not target.exists():
             return f"[Hata]: Dosya bulunamadı: `{filepath}`"
         with open(target, "r", encoding="utf-8", errors="ignore") as f:
@@ -468,10 +483,90 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
     return f"[Bilinmeyen Araç]: {fname}"
 
 
+class AttachmentItem(BaseModel):
+    filename: str
+    file_type: str = ""
+    summary: str = ""
+    extracted_text: str = ""
+
 class ChatRequest(BaseModel):
     message: str
     mode: str = "auto"
     history: List[dict] = []
+    attachments: Optional[List[AttachmentItem]] = []
+
+def extract_content_from_file(filename: str, file_bytes: bytes) -> dict:
+    ext = Path(filename).suffix.lower()
+    extracted_text = ""
+    summary = ""
+    file_type = "Bilinmeyen Dosya"
+
+    try:
+        if ext == ".pdf":
+            file_type = "PDF Dokümanı"
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            pages_text = []
+            for i, page in enumerate(reader.pages):
+                t = page.extract_text() or ""
+                if t.strip():
+                    pages_text.append(f"--- Sayfa {i+1} ---\n{t.strip()}")
+            extracted_text = "\n\n".join(pages_text)
+            summary = f"{len(reader.pages)} sayfalık PDF içeriği ayıklandı ({len(extracted_text)} karakter)."
+
+        elif ext in [".docx", ".doc"]:
+            file_type = "Word Belgesi"
+            import docx
+            doc = docx.Document(io.BytesIO(file_bytes))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        paragraphs.append(row_text)
+            extracted_text = "\n".join(paragraphs)
+            summary = f"Word belgesinden {len(paragraphs)} paragraf/tablo içeriği ayıklandı."
+
+        elif ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]:
+            file_type = "Görsel Dosyası"
+            from PIL import Image
+            img = Image.open(io.BytesIO(file_bytes))
+            width, height = img.size
+            format_name = img.format or ext[1:].upper()
+            mode = img.mode
+            summary = f"Görsel Boyutu: {width}x{height} piksel, Format: {format_name}, Renk Modu: {mode}."
+            extracted_text = f"[Görsel Metaverisi: {summary} - Dosya Adı: {filename}]"
+
+        else:
+            file_type = "Metin/Kod Belgesi"
+            extracted_text = file_bytes.decode("utf-8", errors="replace")
+            summary = f"Metin/Kod dosyası ({len(extracted_text)} karakter)."
+
+    except Exception as e:
+        extracted_text = f"[İçerik ayrıştırma hatası]: {str(e)}"
+        summary = f"Ayrıştırma hatası: {str(e)}"
+
+    return {
+        "filename": filename,
+        "file_type": file_type,
+        "summary": summary,
+        "extracted_text": extracted_text[:15000]
+    }
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...), authorized: bool = Depends(verify_api_key)):
+    """PDF, Word, Görsel ve Kod belgelerini yükleyip anlamsal içeriğini ayıklar."""
+    filename = file.filename or "uploaded_file"
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+    content_bytes = await file.read()
+
+    dest_path = UPLOAD_DIR / safe_name
+    dest_path.write_bytes(content_bytes)
+
+    res = extract_content_from_file(safe_name, content_bytes)
+    res["saved_path"] = str(dest_path)
+    res["status"] = "SUCCESS"
+    return res
 
 @app.get("/")
 async def root():
@@ -588,10 +683,25 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
             "verified": agent_res.get("runtime_verified", False)
         }
 
+    # Eklenen belgeleri ve görselleri bağlama dahil et
+    attachment_context = ""
+    if req.attachments:
+        att_parts = []
+        for att in req.attachments:
+            att_parts.append(
+                f"📎 [EKLENEN BELGE: {att.filename} ({att.file_type})]:\n"
+                f"Özet: {att.summary}\n"
+                f"İçerik:\n```\n{att.extracted_text}\n```"
+            )
+        attachment_context = "\n\n".join(att_parts) + "\n\n"
+
+    full_prompt = (attachment_context + query).strip() if attachment_context else query
+
     res = await AutonomousExecutionEngine.execute_verified_task(
-        prompt=query,
+        prompt=full_prompt,
         tools_schema=tools,
-        call_tool_fn=dispatch_tool_call
+        call_tool_fn=dispatch_tool_call,
+        history=req.history
     )
     return res
 

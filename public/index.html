@@ -17,6 +17,7 @@
       --accent: #2f81f7;
       --green: #3fb950;
       --red: #f85149;
+      --orange: #d29922;
       --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }
@@ -130,6 +131,32 @@
       border-top: 1px solid var(--border);
       padding: 10px 16px;
     }
+    .attachment-tray {
+      max-width: 960px;
+      margin: 0 auto 6px auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .attachment-chip {
+      background: #161b22;
+      border: 1px solid var(--accent);
+      color: #79c0ff;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .attachment-chip .remove-btn {
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .attachment-chip .remove-btn:hover {
+      color: var(--red);
+    }
     .input-box {
       max-width: 960px;
       margin: 0 auto;
@@ -151,7 +178,7 @@
       outline: none;
     }
     textarea:focus { border-color: var(--accent); }
-    .mic-btn {
+    .tool-btn, .mic-btn {
       background: #161b22;
       border: 1px solid var(--border);
       color: var(--text);
@@ -165,7 +192,7 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .mic-btn:hover {
+    .tool-btn:hover, .mic-btn:hover {
       border-color: var(--accent);
       background: #1f242c;
     }
@@ -193,16 +220,38 @@
       cursor: pointer;
     }
     button.send:disabled { opacity: 0.5; cursor: not-allowed; }
-    .quick-bar {
+    button.stop-btn {
+      background: #da3633;
+      color: #fff;
+      border: none;
+      padding: 0 20px;
+      height: 48px;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button.stop-btn:hover { background: #b62324; }
+    .footer-bar {
       max-width: 960px;
       margin: 6px auto 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .quick-bar {
       display: flex;
       gap: 8px;
       font-size: 10px;
       color: var(--muted);
       overflow-x: auto;
       white-space: nowrap;
-      padding-top: 4px;
+      padding-top: 2px;
     }
     .quick-chip {
       background: var(--bg);
@@ -215,6 +264,33 @@
       gap: 4px;
     }
     .quick-chip:hover { color: var(--text); border-color: var(--muted); }
+    .char-counter {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      font-family: var(--mono);
+      padding: 2px 6px;
+    }
+    .char-counter.warning { color: var(--orange); }
+    .char-counter.danger { color: var(--red); font-weight: bold; }
+    .clear-btn {
+      background: #161b22;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .clear-btn:hover {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(248, 81, 73, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -225,6 +301,7 @@
       <span>BARIŞ AI // JARVIS & FAST EXECUTION CORE</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
+      <button id="clearBtn" onclick="clearFeed()" class="clear-btn" title="Sayfayı ve sohbet geçmişini temizle">🗑️ Sayfayı Temizle</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
       <input type="password" id="omniKeyInput" placeholder="X-Omni-Key" style="background:#0a0c10; border:1px solid #1e2430; color:#e6edf3; font-size:11px; padding:3px 8px; border-radius:4px; width:120px;" title="API Anahtarınızı girin veya boş bırakın (yerel mod)">
       <div class="status-pill">
@@ -237,24 +314,34 @@
   <div id="feed">
     <div class="msg-ai" id="welcomeMsg">
       <strong>[BARIŞ AI HAZIR]:</strong> Apple M4 GPU hızlandırmalı Mistral-24B (Abliterated) çekirdeği devrede.<br>
-      • <strong>Jarvis Modu:</strong> Açık sözlü, dobra, 360° tüm talimatları icra eden ve doğrudan konuşan dostun.<br>
-      • <strong>Sesli Etkileşim:</strong> Aşağıdaki 🎙️ mikrofon butonuna basarak konuşabilir veya yanıtları Türkçe dinleyebilirsin.<br>
-      • <strong>İcra Yetenekleri:</strong> Chrome, Tor, I2P, Slither, Crawl4AI ve sandbox içinde derlenen tüm yeni motorlar.
+      • <strong>Jarvis & Türk İnsanı Zekası:</strong> Açık sözlü, dobra, 360° tüm talimatları icra eden ve doğrudan konuşan dostun.<br>
+      • <strong>Bağlam Hafızası:</strong> En az son 10 talimatın bağlamını kaybetmeden 5000+ karaktere kadar emirleri işletir.<br>
+      • <strong>Çoklu Format & Proje Hakimiyeti:</strong> .py, .md, .sh, .json ve tüm uzantılarda dosya üretir; Mac proje klasörlerini okur ve yazar.<br>
+      • <strong>Multimodal & Belge Analizi:</strong> Aşağıdaki 📎 butonuyla PDF, Word (.docx), kod ve görsel yükleyip inceletebilirsin.<br>
+      • <strong>Sesli Etkileşim:</strong> 🎙️ mikrofon butonuna basarak konuşabilir veya yanıtları sesli dinleyebilirsin.
     </div>
   </div>
 
   <footer>
+    <div id="attachmentTray" class="attachment-tray"></div>
     <div class="input-box">
-      <textarea id="promptInput" placeholder="Emir ver veya Jarvis gibi dobra sohbet et... (Enter ile gönder)" autofocus></textarea>
+      <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
+      <button type="button" class="tool-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle (PDF, Word, Görsel, Kod)">📎</button>
+      <textarea id="promptInput" maxlength="5000" placeholder="Emir ver, dosya üret veya Jarvis gibi dobra sohbet et... (5000 karaktere kadar)" autofocus></textarea>
       <button class="mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş (Mikrofon)">🎙️</button>
       <button class="send" id="sendBtn" onclick="sendAction()">İCRA ET</button>
+      <button class="stop-btn" id="stopBtn" onclick="stopAction()" style="display:none;" title="İşlemi anında durdur">⏹ DURDUR</button>
     </div>
-    <div class="quick-bar">
-      <span class="quick-chip" onclick="quickFill('Selam Barış, nasılsın? Durumlar ne?')">💬 Jarvis Sohbet</span>
-      <span class="quick-chip" onclick="quickFill('Sistemine kurulan tüm motorları ve aktif yetenekleri listele')">📦 Kurulu Motorlar</span>
-      <span class="quick-chip" onclick="quickFill('Chrome ile https://checkip.amazonaws.com adresine bağlan ve kaydet')">🌐 Chrome Ziyaret</span>
-      <span class="quick-chip" onclick="quickFill('I2P ağ sürümünü i2pd --version ile kontrol et')">🔒 I2P Kontrol</span>
-      <span class="quick-chip" onclick="quickFill('Crawl4AI ile https://example.com sayfasını kazı')">🕷️ Crawl4AI Kazıma</span>
+    <div class="footer-bar">
+      <div class="quick-bar">
+        <span class="quick-chip" onclick="clearFeed()" style="color:#f85149; border-color:#da363355;" title="Sohbeti ve ekranı sıfırla">🗑️ Sayfayı Temizle</span>
+        <span class="quick-chip" onclick="quickFill('Selam Barış, nasılsın? Durumlar ne?')">💬 Jarvis Sohbet</span>
+        <span class="quick-chip" onclick="quickFill('Sistemine kurulan tüm motorları ve aktif yetenekleri listele')">📦 Kurulu Motorlar</span>
+        <span class="quick-chip" onclick="quickFill('/Users/macair1/projects dizinindeki projeleri analiz et')">📁 Projeleri Tara</span>
+        <span class="quick-chip" onclick="quickFill('Chrome ile https://checkip.amazonaws.com adresine bağlan ve kaydet')">🌐 Chrome Ziyaret</span>
+        <span class="quick-chip" onclick="quickFill('Crawl4AI ile https://example.com sayfasını kazı')">🕷️ Crawl4AI Kazıma</span>
+      </div>
+      <div id="charCounter" class="char-counter">0 / 5000</div>
     </div>
   </footer>
 
@@ -262,8 +349,108 @@
     const feed = document.getElementById('feed');
     const input = document.getElementById('promptInput');
     const sendBtn = document.getElementById('sendBtn');
+    const stopBtn = document.getElementById('stopBtn');
     const micBtn = document.getElementById('micBtn');
+    const charCounter = document.getElementById('charCounter');
+    const attachmentTray = document.getElementById('attachmentTray');
     let history = [];
+    let pendingAttachments = [];
+    let currentAbortController = null;
+
+    // --- SAYFA VE SOHBET TEMİZLEME ---
+    function clearFeed() {
+      if (currentAbortController) {
+        stopAction();
+      }
+      history = [];
+      pendingAttachments = [];
+      renderAttachmentTray();
+      feed.innerHTML = `
+        <div class="msg-ai" id="welcomeMsg">
+          <strong>[SAYFA TEMİZLENDİ]:</strong> Bellek ve ekran sıfırlandı. Yeni talimat veya sohbet için hazırım.
+        </div>
+      `;
+      input.value = '';
+      updateCharCounter();
+      input.focus();
+    }
+
+    // --- KARAKTER SAYACI (0 - 5000) ---
+    input.addEventListener('input', () => {
+      const len = input.value.length;
+      charCounter.textContent = `${len} / 5000`;
+      if (len >= 5000) {
+        charCounter.className = 'char-counter danger';
+      } else if (len >= 4500) {
+        charCounter.className = 'char-counter warning';
+      } else {
+        charCounter.className = 'char-counter';
+      }
+    });
+
+    // --- DOSYA VE BELGE YÜKLEME (PDF, WORD, GÖRSEL, METİN) ---
+    async function handleFileUpload(event) {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+
+      const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
+      const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Geçici yükleniyor çipi
+        const tempChip = document.createElement('div');
+        tempChip.className = 'attachment-chip';
+        tempChip.textContent = `⏳ Yükleniyor: ${file.name}...`;
+        attachmentTray.appendChild(tempChip);
+
+        try {
+          const res = await fetch(API_BASE + '/api/upload', {
+            method: 'POST',
+            headers: {
+              'X-Omni-Key': apiKey
+            },
+            body: formData
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            pendingAttachments.push(data);
+            renderAttachmentTray();
+          } else {
+            tempChip.style.borderColor = 'var(--red)';
+            tempChip.style.color = 'var(--red)';
+            tempChip.textContent = `❌ ${file.name} yüklenemedi`;
+            setTimeout(() => tempChip.remove(), 3000);
+          }
+        } catch(e) {
+          tempChip.style.borderColor = 'var(--red)';
+          tempChip.style.color = 'var(--red)';
+          tempChip.textContent = `❌ Hata: ${e.message}`;
+          setTimeout(() => tempChip.remove(), 3000);
+        }
+      }
+      event.target.value = '';
+    }
+
+    function renderAttachmentTray() {
+      attachmentTray.innerHTML = '';
+      pendingAttachments.forEach((att, index) => {
+        const chip = document.createElement('div');
+        chip.className = 'attachment-chip';
+        const icon = att.file_type.includes('PDF') ? '📄' : (att.file_type.includes('Word') ? '📝' : (att.file_type.includes('Görsel') ? '🖼️' : '📁'));
+        chip.innerHTML = `${icon} <strong>${att.filename}</strong> (${att.file_type}) <span class="remove-btn" onclick="removeAttachment(${index})">✕</span>`;
+        attachmentTray.appendChild(chip);
+      });
+    }
+
+    function removeAttachment(index) {
+      pendingAttachments.splice(index, 1);
+      renderAttachmentTray();
+    }
 
     // --- SESLİ YANIT (TTS) YÖNETİMİ ---
     let voiceEnabled = localStorage.getItem('baris_voice') !== 'false';
@@ -292,8 +479,7 @@
         .replace(/`([^`]+)`/g, '$1')
         .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
         .replace(/[#*_\->~]/g, '')
-        .replace(/
-+/g, ' ')
+        .replace(/\n+/g, ' ')
         .trim();
     }
 
@@ -350,6 +536,7 @@
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         input.value = transcript;
+        input.dispatchEvent(new Event('input'));
         input.placeholder = 'Emir ver veya Jarvis gibi dobra sohbet et...';
       };
 
@@ -398,6 +585,7 @@
 
     function quickFill(txt) {
       input.value = txt;
+      input.dispatchEvent(new Event('input'));
       input.focus();
     }
 
@@ -421,20 +609,47 @@
       });
     }
 
+    // --- İŞLEMİ DURDURMA (STOP ACTION) ---
+    function stopAction() {
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      sendBtn.style.display = 'inline-flex';
+      sendBtn.disabled = false;
+      stopBtn.style.display = 'none';
+
+      const lastAi = feed.querySelector('.msg-ai:last-child');
+      if (lastAi && lastAi.innerHTML.includes('⚡')) {
+        lastAi.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: İşlem kullanıcı tarafından durduruldu.</strong>';
+      }
+    }
+
     async function sendAction() {
       const q = input.value.trim();
-      if (!q) return;
+      if (!q && pendingAttachments.length === 0) return;
 
       const welcome = document.getElementById('welcomeMsg');
       if (welcome) welcome.remove();
 
       input.value = '';
-      sendBtn.disabled = true;
+      input.dispatchEvent(new Event('input'));
+      sendBtn.style.display = 'none';
+      stopBtn.style.display = 'inline-flex';
 
       // Kullanıcı mesajı
       const uDiv = document.createElement('div');
       uDiv.className = 'msg-user';
-      uDiv.textContent = q;
+      let userDisplay = q;
+      if (pendingAttachments.length > 0) {
+        const attNames = pendingAttachments.map(a => `📎 ${a.filename}`).join(', ');
+        userDisplay = `[${attNames}]
+` + (q || '(Belgeler inceleniyor)');
+      }
+      uDiv.textContent = userDisplay;
       feed.appendChild(uDiv);
       feed.scrollTop = feed.scrollHeight;
 
@@ -446,18 +661,28 @@
       feed.scrollTop = feed.scrollHeight;
 
       const t0 = performance.now();
-
       const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
       const apiKey = (document.getElementById('omniKeyInput')?.value || localStorage.getItem('omni_key') || '').trim();
+
+      const attachmentsToSend = [...pendingAttachments];
+      pendingAttachments = [];
+      renderAttachmentTray();
+
+      currentAbortController = new AbortController();
 
       try {
         const res = await fetch(API_BASE + '/api/chat', {
           method: 'POST',
+          signal: currentAbortController.signal,
           headers: {
             'Content-Type': 'application/json',
             'X-Omni-Key': apiKey
           },
-          body: JSON.stringify({ message: q, history: history })
+          body: JSON.stringify({
+            message: q,
+            history: history,
+            attachments: attachmentsToSend
+          })
         });
 
         const contentType = res.headers.get('content-type') || '';
@@ -495,13 +720,20 @@
           aDiv.innerHTML = `<span style="color:#f85149">Hata: Sunucu ${res.status} yanıtı döndü.</span>`;
         }
       } catch(e) {
-        let errText = e.message;
-        if (window.location.protocol === 'https:' && (errText.includes('Failed to fetch') || errText.includes('NetworkError') || errText.includes('Load failed'))) {
-          errText += '<br><br>⚠️ <strong>Tarayıcı İzolasyon Engeli (Mixed Content):</strong><br>Tarayıcınız HTTPS sayfasından yerel HTTP servisine (127.0.0.1:5050) erişimi engelliyor.<br>👉 <strong>Çözüm:</strong> Arayüzü doğrudan yerel adresinden açın: <a href="http://127.0.0.1:5050" target="_blank" style="color:#2f81f7; text-decoration:underline; font-weight:bold;">http://127.0.0.1:5050</a>';
+        if (e.name === 'AbortError') {
+          aDiv.innerHTML = '<strong style="color:var(--red)">⏹ [DURDURULDU]: İşlem kullanıcı tarafından durduruldu.</strong>';
+        } else {
+          let errText = e.message;
+          if (window.location.protocol === 'https:' && (errText.includes('Failed to fetch') || errText.includes('NetworkError') || errText.includes('Load failed'))) {
+            errText += '<br><br>⚠️ <strong>Tarayıcı İzolasyon Engeli (Mixed Content):</strong><br>Tarayıcınız HTTPS sayfasından yerel HTTP servisine (127.0.0.1:5050) erişimi engelliyor.<br>👉 <strong>Çözüm:</strong> Arayüzü doğrudan yerel adresinden açın: <a href="http://127.0.0.1:5050" target="_blank" style="color:#2f81f7; text-decoration:underline; font-weight:bold;">http://127.0.0.1:5050</a>';
+          }
+          aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${errText}</span>`;
         }
-        aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${errText}</span>`;
       } finally {
+        currentAbortController = null;
+        sendBtn.style.display = 'inline-flex';
         sendBtn.disabled = false;
+        stopBtn.style.display = 'none';
         input.focus();
         feed.scrollTop = feed.scrollHeight;
       }

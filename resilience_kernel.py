@@ -201,8 +201,14 @@ class OmniCoreToolAdapters:
             if not filepath:
                 return False
             # Güvenlik denetimi
-            target = (root / filepath).resolve()
-            if not str(target).startswith(str(root)):
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+            is_allowed = (
+                str(target).startswith(str(root)) or
+                str(target).startswith("/Users/macair1/projects") or
+                str(target).startswith("/Users/macair1/.omnicore")
+            )
+            if not is_allowed:
                 return False
             if target.name.startswith(".env") or ".git" in target.parts:
                 return False
@@ -214,7 +220,8 @@ class OmniCoreToolAdapters:
         async def action(args: dict[str, Any]) -> ToolOutcome:
             filepath = args.get("filepath", "")
             content = args.get("content", "")
-            target = (root / filepath).resolve()
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
             target.parent.mkdir(parents=True, exist_ok=True)
             # Yedekleme için önceki içerik
             prev = target.read_text(encoding="utf-8") if target.exists() else None
@@ -224,7 +231,8 @@ class OmniCoreToolAdapters:
         async def verify(outcome: ToolOutcome, args: dict[str, Any]) -> bool:
             filepath = args.get("filepath", "")
             content = args.get("content", "")
-            target = (root / filepath).resolve()
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
             if not target.exists():
                 return False
             actual = target.read_text(encoding="utf-8")
@@ -232,14 +240,16 @@ class OmniCoreToolAdapters:
 
         async def rollback(args: dict[str, Any]) -> None:
             filepath = args.get("filepath", "")
-            target = (root / filepath).resolve()
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
             if target.exists():
                 target.unlink(missing_ok=True)
 
         async def remediate(outcome: ToolOutcome, args: dict[str, Any]) -> bool:
             # Dizin oluşturma veya salt okunur izinleri temizleme
             filepath = args.get("filepath", "")
-            target = (root / filepath).resolve()
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
             target.parent.mkdir(parents=True, exist_ok=True)
             return True
 
@@ -263,8 +273,14 @@ class OmniCoreToolAdapters:
             filepath = args.get("filepath", "")
             if not filepath:
                 return False
-            target = (root / filepath).resolve()
-            if not str(target).startswith(str(root)):
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+            is_allowed = (
+                str(target).startswith(str(root)) or
+                str(target).startswith("/Users/macair1/projects") or
+                str(target).startswith("/Users/macair1/.omnicore")
+            )
+            if not is_allowed:
                 return False
             if target.name.startswith(".env") or ".ssh" in target.parts:
                 return False
@@ -272,10 +288,12 @@ class OmniCoreToolAdapters:
 
         async def action(args: dict[str, Any]) -> ToolOutcome:
             filepath = args.get("filepath", "")
-            target = (root / filepath).resolve()
+            raw = Path(filepath)
+            target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
             if not target.exists():
                 return ToolOutcome(False, code="ENOENT", stderr="File not found")
             content = target.read_text(encoding="utf-8", errors="ignore")
+            return ToolOutcome(True, data={"content": content, "size": len(content)}, evidence={"verified": True})
             return ToolOutcome(True, data={"content": content, "size": len(content)}, evidence={"verified": True})
 
         async def verify(outcome: ToolOutcome, args: dict[str, Any]) -> bool:
