@@ -1168,7 +1168,8 @@
           
           let outHtml = '';
           outHtml += marked.parse(data.reply || '');
-          outHtml += '<div style="font-size:11px; color:var(--text-muted); margin-top:8px;">⏱ ' + elapsed + 's</div>';
+          const modelBadge = data.model_role ? '<span style="display:inline-block; padding:2px 8px; border-radius:12px; background:rgba(26,115,232,0.1); color:#1a73e8; font-weight:600; font-size:10.5px; margin-right:8px;">🧠 ' + data.model_role + '</span>' : '';
+          outHtml += '<div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; align-items:center;">' + modelBadge + '<span>⏱ ' + elapsed + 's</span></div>';
           aDiv.innerHTML = outHtml;
 
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });

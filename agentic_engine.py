@@ -36,7 +36,47 @@ TOOLS_DIR.mkdir(parents=True, exist_ok=True)
 ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / "active_engines.json"
 
 OLLAMA_API_URL = "http://127.0.0.1:11434/v1/chat/completions"
-DEFAULT_MODEL = "mistral-small-24b-abliterated:latest"
+
+# 3'LÜ SANSÜRSÜZ HİBRİT MODEL MİMARİSİ (TRIAD ARCHITECTURE)
+MODEL_GENERAL = "mistral-small-24b-abliterated:latest"
+MODEL_CODER = "qwen-coder-14b-abliterated:latest"
+MODEL_REASONER = "deepseek-r1-14b-abliterated:latest"
+DEFAULT_MODEL = MODEL_GENERAL
+
+
+def select_hybrid_model(prompt: str, is_tool_intent: bool) -> tuple[str, str]:
+    """3'lü Hibrit Model Yönlendirici (Triad Router):
+    1. Kodlama / Refactor / Bug / Repo / Dosya İcra -> Qwen2.5-Coder-14B-abliterated
+    2. Derin Akıl Yürütme / Strateji / Kuantum Mantık / Analiz -> DeepSeek-R1-14B-abliterated
+    3. Hızlı Sohbet / Genel Komut / Jarvis Ses İcrası -> Mistral-Small-24B-abliterated
+    """
+    p_lower = prompt.lower()
+
+    # 1. Kodlama & Mühendislik Tespiti
+    coding_triggers = [
+        "kod", "fonksiyon", "class ", "def ", "script", "hata ayıkla", "bug", "syntax",
+        "c++", "cpp", "python", "javascript", "typescript", "solidity", "rust", "golang",
+        "html", "css", "sql", "api", "endpoint", "refactor", "algoritma", "derle", "compile",
+        "git", "repo", "klasör", "dosya", "miner", "drainer", "bot", "crawler", "regex",
+        "unittest", "pytest", "test yaz", "fonksiyon yaz", "yazılım", "yazılımcı"
+    ]
+    is_coding = any(k in p_lower for k in coding_triggers)
+
+    # 2. Derin Akıl Yürütme & Strateji Tespiti
+    reasoning_triggers = [
+        "neden", "analiz et", "karşılaştır", "mantık", "strateji", "planla", "mimari",
+        "kuantum", "teori", "ispatla", "düşün", "derin", "tersine mühendislik", "reverse engineering",
+        "açık analizi", "risk", "senaryo", "farkı ne", "nasıl çalışır", "adım adım açıkla",
+        "felsefe", "yorumla", "değerlendir"
+    ]
+    is_reasoning = any(k in p_lower for k in reasoning_triggers)
+
+    if is_coding and not (is_reasoning and "strateji" in p_lower):
+        return MODEL_CODER, "Qwen2.5-Coder-14B (Saf Kodlama & Mühendislik)"
+    elif is_reasoning:
+        return MODEL_REASONER, "DeepSeek-R1-14B (Kuantum Mantık & Derin Muhakeme)"
+    else:
+        return MODEL_GENERAL, "Mistral-Small-24B (Genel İcra & Jarvis)"
 
 class TaskState(str, enum.Enum):
     RECEIVED = "RECEIVED"
@@ -338,6 +378,8 @@ class AutonomousExecutionEngine:
                     "verified": True
                 }
 
+        chosen_model, model_role = select_hybrid_model(prompt, is_tool_intent)
+
         execution_steps = []
         final_reply = ""
         has_executed_tools = False
@@ -350,18 +392,19 @@ class AutonomousExecutionEngine:
             try:
                 start_req = time.perf_counter()
                 
-                # Maksimum Performans & Ultra Hızlı Çıkarım Kalibrasyonu
+                # 3'LÜ HİBRİT MİMARİ: Modele Özel Optimize Parametreler
+                is_reasoning_model = (chosen_model == MODEL_REASONER)
                 ollama_payload = {
-                    "model": DEFAULT_MODEL,
+                    "model": chosen_model,
                     "messages": messages,
-                    "temperature": 0.1,
+                    "temperature": 0.6 if is_reasoning_model else 0.1,
                     "options": {
                         "num_thread": 8,
-                        "temperature": 0.1,
+                        "temperature": 0.6 if is_reasoning_model else 0.1,
                         "num_ctx": 4096 if not is_tool_intent else 8192,
-                        "num_predict": 256 if not is_tool_intent else 512,
+                        "num_predict": 512 if not is_tool_intent else 1024,
                         "top_k": 20,
-                        "top_p": 0.9
+                        "top_p": 0.95 if is_reasoning_model else 0.9
                     }
                 }
                 if is_tool_intent:
@@ -380,6 +423,11 @@ class AutonomousExecutionEngine:
 
                     data = resp.json()
                     msg = data["choices"][0]["message"]
+                    # DeepSeek-R1 düşünce zincirini (reasoning) yanıta entegre et
+                    if not msg.get("content") and msg.get("reasoning"):
+                        msg["content"] = msg["reasoning"]
+                    elif msg.get("reasoning") and msg.get("content"):
+                        msg["content"] = f"<details><summary>🧠 <i>Derin Düşünce Süreci (Thinking)</i></summary>\n\n{msg['reasoning']}\n\n</details>\n\n{msg['content']}"
             except Exception as e:
                 engine.transition_to(TaskState.FAILED, f"Model çağrım hatası: {str(e)}")
                 break
@@ -503,7 +551,9 @@ class AutonomousExecutionEngine:
                 "reply": final_reply or "Dinliyorum, sendeyim. Ne yapıyoruz?",
                 "execution_steps": [],
                 "evidences": engine.evidences,
-                "verified": True
+                "verified": True,
+                "model_used": chosen_model,
+                "model_role": model_role
             }
 
         # Tüm adımlar bağımsız başarıyla bitti mi?
@@ -539,7 +589,9 @@ class AutonomousExecutionEngine:
                             "execution_steps": execution_steps,
                             "evidences": engine.evidences,
                             "verified": False,
-                            "audit_status": "BLOCKED"
+                            "audit_status": "BLOCKED",
+                            "model_used": chosen_model,
+                            "model_role": model_role
                         }
             except Exception as e:
                 engine.evidences.append({"type": "central_audit_gate", "success": False, "error": str(e)})
@@ -552,7 +604,9 @@ class AutonomousExecutionEngine:
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
                 "verified": True,
-                "audit_meta": audit_meta
+                "audit_meta": audit_meta,
+                "model_used": chosen_model,
+                "model_role": model_role
             }
         else:
             engine.transition_to(TaskState.PARTIAL, "Bazı adımlar hata verdi veya kısmen tamamlandı.")
@@ -562,5 +616,7 @@ class AutonomousExecutionEngine:
                 "reply": final_reply or "Görev kısmen icra edildi; bazı araçlar hata üretti.",
                 "execution_steps": execution_steps,
                 "evidences": engine.evidences,
-                "verified": False
+                "verified": False,
+                "model_used": chosen_model,
+                "model_role": model_role
             }
