@@ -93,6 +93,7 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
 (allow file-write*
     (subpath "{sandbox_path}")
     (subpath "{OMNICORE_HOME}")
+    (subpath "{WORKSPACE_ROOT}/installed_engines")
     (subpath "{home}/.npm")
     (subpath "{home}/.pnpm-store")
     (subpath "{home}/.cache")
@@ -101,6 +102,7 @@ def generate_seatbelt_profile(sandbox_path: Path, allow_network: bool = False) -
     (subpath "/dev")
 )
 (deny file-write* (subpath "{WORKSPACE_ROOT}"))
+(allow file-write* (subpath "{WORKSPACE_ROOT}/installed_engines"))
 (deny file-write* (subpath "{home}/omnicore-auditor"))
 (deny file-write* (subpath "{home}/.ssh"))
 (deny file-write* (subpath "{home}/.aws"))
@@ -133,11 +135,11 @@ def get_sanitized_env() -> Dict[str, str]:
         if k in allowed_keys or k.startswith("LC_"):
             safe_env[k] = v
 
-    # Kurulu motorları dinamik olarak PYTHONPATH'e ekle (Öğrenilen kütüphaneleri kullanabilme kabiliyeti)
-    installed_engines_dir = OMNICORE_HOME / 'installed_engines'
+    # Kurulu motorları dinamik olarak PYTHONPATH'e ekle (Önce proje içi, sonra omnicore)
     installed_paths = []
-    if installed_engines_dir.exists():
-        installed_paths = [str(d) for d in installed_engines_dir.iterdir() if d.is_dir()]
+    for eng_dir in [WORKSPACE_ROOT / 'installed_engines', OMNICORE_HOME / 'installed_engines']:
+        if eng_dir.exists():
+            installed_paths.extend([str(d) for d in eng_dir.iterdir() if d.is_dir()])
 
     current_pythonpath = os.environ.get("PYTHONPATH", "")
     all_python_paths = installed_paths + ([current_pythonpath] if current_pythonpath else [])

@@ -222,7 +222,8 @@ class AutonomousExecutionEngine:
             "7. (BAĞLAM KORUMA VE EN AZ 10 TALİMAT HAFIZASI): Kullanıcının önceki talimatlarını, çalışma bağlamını, bahsedilen dosyaları ve hedefleri asla unutma; yeni talimatları bu bağlamın devamı olarak işlet.\n"
             "8. (TÜRKÇE YAZIM VE İMLA HATALARINI ANLAMA VE DÜZELTME): Kullanıcı hızlı yazarken harf hataları ('kurukum' -> kurulum, 'taımat' -> talimat, 'kabılıyert' -> kabiliyet, 'anayabılmelı' -> anlayabilmeli, 'muhenligi' -> mühendisliği), klavye sürçmeleri veya eksik harfler yapsa bile asıl kastı derhal kavra, zihninde düzelt ve hiç takılmadan işleme doğrudan devam et.\n"
             "9. (ANLAŞILIR İNSANİ ÖZET): Görev bittiğinde teknik çöplüğe boğmadan ne yapıldığını, neyin kurulduğunu ve nasıl kullanılacağını tane tane anlat.\n"
-            "10. (CANLI VE ENERJİK JARVIS TEPKİSİ): Kullanıcı 'merhaba', 'selam', 'merhaba jarvis', 'merhaba jarjis', 'orda mısın' dediğinde asla kuru ve resmi bir robot gibi değil; 'Selam patron! Buradayım, dinliyorum. Bütün sistemler aktif, sendeyim. Ne yapıyoruz?' gibi enerjik, hazırcevap, dobra ve samimi bir şekilde karşıla."
+            "10. (CANLI VE ENERJİK JARVIS TEPKİSİ): Kullanıcı 'merhaba', 'selam', 'merhaba jarvis', 'merhaba jarjis', 'orda mısın' dediğinde asla kuru ve resmi bir robot gibi değil; 'Selam patron! Buradayım, dinliyorum. Bütün sistemler aktif, sendeyim. Ne yapıyoruz?' gibi enerjik, hazırcevap, dobra ve samimi bir şekilde karşıla.\n"
+            "11. (SIFIR TEORİK TAVSİYE / DOĞRUDAN EYLEM KANUNU): Asla 'Bağımlılıkları kontrol edin, destek forumlarını inceleyin, kılavuzu okuyun, kurulumu tekrar deneyin' gibi boş tavsiye metinleri veya madde listeleri üretme! Bir hata, tekrar deneme veya teknik görev geldiğinde ASLA laf anlatma; doğrudan ilgili araçları çağır veya doğrudan icra et."
         )
 
         messages = [
@@ -250,7 +251,16 @@ class AutonomousExecutionEngine:
             if cu not in clean_urls:
                 clean_urls.append(cu)
 
-        is_install_prompt = any(k in prompt.lower() for k in ["kur", "yükle", "yukle", "indir", "install", "tamamla", "depo", "repo", "kurulum"])
+        # Eğer promptta URL yoksa ama "tekrar dene", "hata verenler", "kurulum" deniyorsa geçmişten çıkar
+        if not clean_urls and history and any(k in prompt.lower() for k in ["tekrar", "yeniden", "dene", "hata", "başarısız", "kalan"]):
+            past_text = " ".join([h.get("content", "") for h in history[-10:] if h.get("role") in ("user", "assistant")])
+            hist_urls = re.findall(r"https?://(?:www\.)?github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+", past_text)
+            for u in hist_urls:
+                cu = u.rstrip("()[]<>'\".,;:)")
+                if cu not in clean_urls:
+                    clean_urls.append(cu)
+
+        is_install_prompt = any(k in prompt.lower() for k in ["kur", "yükle", "yukle", "indir", "install", "tamamla", "depo", "repo", "kurulum", "dene", "tekrar", "yeniden"])
 
         if is_install_prompt and clean_urls:
             engine.transition_to(TaskState.RESEARCHING, f"{len(clean_urls)} adet GitHub reposu tespit edildi, toplu icra ve doğrulama başlatılıyor.")
@@ -285,7 +295,12 @@ class AutonomousExecutionEngine:
         # ----------------------------------------------------------------------
         clean_p = prompt.strip().lower()
         is_informational = any(k in clean_p for k in ["nedir", "ne demek", "farkı", "nasıl yapılır", "nasıl çalışır", "anlat", "açıkla", "özetle", "kimdir", "tavsiye", "öneri", "ne dersin", "fikrin"])
-        action_keywords = ["oluştur", "yaz", "kaydet", "çalıştır", "kur", "yükle", "tara", "araştır", "git ", "commit", "push", "test et", "sil", "güncelle", "düzenle", "oku", "dosyayı"]
+        action_keywords = [
+            "oluştur", "yaz", "kaydet", "çalıştır", "kur", "yükle", "tara", "araştır",
+            "git ", "commit", "push", "test", "sil", "güncelle", "düzenle", "oku", "dosya",
+            "dene", "tekrar", "yeniden", "indir", "ekle", "çöz", "hallet", "yap", "düzelt",
+            "ayarla", "bağla", "kurulum", "hata", "başarısız", "bunu", "depo", "repo", "klasör"
+        ]
         is_tool_intent = (not is_informational) and any(k in clean_p for k in action_keywords)
 
         if not is_tool_intent:

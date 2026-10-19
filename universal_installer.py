@@ -21,8 +21,9 @@ from typing import Any
 
 from sandbox_executor import OMNICORE_HOME, secure_sandbox_run, verify_sandbox_runtime_probe
 
+PROJECT_ROOT = Path('/Users/macair1/projects/ai').resolve()
 STAGING = OMNICORE_HOME / 'installations'
-DEPLOYED = OMNICORE_HOME / 'installed_engines'
+DEPLOYED = (PROJECT_ROOT / 'installed_engines').resolve()
 REGISTRY = OMNICORE_HOME / 'installed_engines_registry.json'
 REGISTRY_LOCK_FILE = OMNICORE_HOME / 'installed_engines_registry.lock'
 LOCK = threading.RLock()
@@ -584,6 +585,16 @@ def install_repo(url: str) -> dict[str, Any]:
                       'functional_test_pass': True, 'installed_at': time.time(), 'job_id': job_id,
                       'status': 'FUNCTIONAL_TESTED', 'manifest_count': len(manifest)}
             _record(f'{owner}/{name}', record)
+            try:
+                legacy_dir = OMNICORE_HOME / 'installed_engines'
+                legacy_dir.mkdir(parents=True, exist_ok=True)
+                legacy_target = legacy_dir / f'{owner}--{name}'
+                if legacy_target.is_symlink():
+                    legacy_target.unlink()
+                if not legacy_target.exists():
+                    legacy_target.symlink_to(final)
+            except Exception:
+                pass
         except Exception:
             if deployed and final.exists():
                 shutil.rmtree(final)

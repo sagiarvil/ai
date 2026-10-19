@@ -44,3 +44,5 @@ tools/browser_sessions/
 installed_engines_registry.lock
 uploads/
 tools/trnlp/
+installed_engines/
+.omnicore/
