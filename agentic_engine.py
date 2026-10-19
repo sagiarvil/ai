@@ -294,7 +294,11 @@ class AutonomousExecutionEngine:
         # SIFIR GECİKMELİ HIZLI VE KISA JARVIS CEVAPLARI (FAST-PATH)
         # ----------------------------------------------------------------------
         clean_p = prompt.strip().lower()
-        is_informational = any(k in clean_p for k in ["nedir", "ne demek", "farkı", "nasıl yapılır", "nasıl çalışır", "anlat", "açıkla", "özetle", "kimdir", "tavsiye", "öneri", "ne dersin", "fikrin"])
+        is_informational = any(k in clean_p for k in [
+            "nedir", "ne demek", "farkı", "nasıl yapılır", "nasıl çalışır", "anlat",
+            "açıkla", "özetle", "kimdir", "tavsiye", "öneri", "ne dersin", "fikrin",
+            "söyle", "soyle", "eksik", "gereklilik", "gereksinim", "neden"
+        ])
         action_keywords = [
             "oluştur", "yaz", "kaydet", "çalıştır", "kur", "yükle", "tara", "araştır",
             "git ", "commit", "push", "test", "sil", "güncelle", "düzenle", "oku", "dosya",
@@ -303,13 +307,16 @@ class AutonomousExecutionEngine:
         ]
         is_tool_intent = (not is_informational) and any(k in clean_p for k in action_keywords)
 
-        if not is_tool_intent:
+        # FAST-PATH SADECE ve SADECE kısa (en fazla 4 kelimelik) teyit/selamlama ifadelerinde çalışmalıdır.
+        # Bilgi isteyen (is_informational) veya uzun/karmaşık mesajlar ASLA burada kesilemez, LLM'e gider.
+        words = set(re.findall(r'\b\w+\b', clean_p))
+        if not is_tool_intent and not is_informational and len(clean_p.split()) <= 4:
             reply = ""
             if any(k in clean_p for k in ["duyuyor musun", "dinliyor musun", "sesim geliyor mu", "duydun mu"]):
                 reply = "Net duyuyorum patron, sendeyim."
             elif any(k in clean_p for k in ["biz ne yapalım", "ne yapalım", "ne yapacağız", "ne yapabiliriz"]):
                 reply = "Projeleri tarayabiliriz, kod yazabiliriz veya otonom sistemleri çalıştırabiliriz patron. Sen söyle, hemen icra edeyim."
-            elif any(k in clean_p for k in ["tamam", "olur", "peki", "eyvallah", "sağol", "teşekkürler", "eline sağlık"]):
+            elif any(w in words for w in ["tamam", "tamamdır", "olur", "peki", "eyvallah", "sağol", "sağolasın", "teşekkürler", "teşekkür", "eline sağlık"]):
                 reply = "Rica ederim patron, her zaman sendeyim."
             elif any(k in clean_p for k in ["canım sıkılıyor", "canim sikiliyor", "sıkıldım", "sikildim", "yorgunum", "moralim bozuk"]):
                 reply = "Sıkma canını patron, buradayım. Ne yapalım?"
@@ -317,7 +324,7 @@ class AutonomousExecutionEngine:
                 reply = "Jarvis. Emrindeyim patron."
             elif any(k in clean_p for k in ["ne haber", "naber", "nasılsın", "ne yapıyorsun", "durum ne", "nasıl gidiyor"]):
                 reply = "Her şey yolunda patron, M4 canavar gibi hazır. Ne yapıyoruz?"
-            elif any(k in clean_p for k in ["merhaba", "selam", "günaydın", "iyi akşamlar", "orda mısın", "burada mısın", "kendine gel", "alo"]) or any(k in clean_p for k in ["jarvis", "jarjis", "barış", "baris"]):
+            elif any(w in words for w in ["merhaba", "selam", "günaydın", "iyi akşamlar", "alo"]) or clean_p in ["jarvis", "jarjis", "barış", "baris"]:
                 reply = "Buradayım patron, dinliyorum."
 
             if reply:
