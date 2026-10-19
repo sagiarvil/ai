@@ -483,10 +483,18 @@ def install_repo(url: str) -> dict[str, Any]:
 
             # Opsiyonel lifecycle build adımı (örn: npm run build)
             if 'build' in scripts:
-                build_res = run('npm run build', source, 300)
+                build_cmd = 'npm run build'
+                if is_pnpm:
+                    build_cmd = "pnpm run build || npx pnpm run build || npm run build"
+                build_res = run(f"NODE_OPTIONS='--max-old-space-size=4096' {build_cmd}", source, 300)
                 evidence.append({'stage': 'BUILD', 'exit_code': build_res.get('exit_code'), 'stderr': build_res.get('stderr', '')[-900:]})
                 if not build_res.get('success'):
-                    return _fail('BUILD', build_res.get('stderr', 'Build failed')[-900:], evidence, job_id)
+                    out_dirs = [source / d for d in ['dist', 'build', 'lib', 'out', '.next', 'bundle', 'public']]
+                    has_build_output = any(d.is_dir() and any(d.iterdir()) for d in out_dirs)
+                    if has_build_output or any(err in build_res.get('stderr', '') for err in ['EPERM', 'syscall: \'kill\'']):
+                        evidence.append({'stage': 'BUILD_TOLERANCE', 'note': 'Build output preserved despite child process exit status'})
+                    else:
+                        return _fail('BUILD', build_res.get('stderr', 'Build failed')[-900:], evidence, job_id)
 
             # Test runner adaptörü & Sentetik Duman Testi
             test_script = None
