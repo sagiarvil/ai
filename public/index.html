@@ -368,7 +368,7 @@
       <img src="/b_logo.png" alt="Logo" class="brand-logo">
     </div>
     <div class="header-actions">
-      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#fce8e6; border-color:#fad2cf; color:#d93025; font-weight:600;" title="Jarvis sistemini aç veya kapat">🔴 Jarvis: AÇIK</button>
+      <button id="jarvisPowerBtn" onclick="toggleJarvisPower()" class="voice-btn" style="background:#f1f3f4; border-color:#dadce0; color:#5f6368; font-weight:600;" title="Jarvis sistemini aç veya kapat">⚪️ Jarvis: KAPALI</button>
       <button id="voiceToggleBtn" onclick="toggleVoice()" class="voice-btn" title="Sesli yanıtları aç/kapat">🔊 Ses: Açık</button>
       <button id="clearChatBtn" onclick="clearChatHistory()" class="voice-btn" style="color:var(--text-muted);" title="Konuşma geçmişini ve ekranı temizle">🗑️ Temizle</button>
     </div>
@@ -573,6 +573,7 @@
           btn.style.borderColor = '#fad2cf';
           btn.style.color = '#d93025';
         }
+        enableAudioAndListen();
       } else {
         if (btn) {
           btn.textContent = '⚪ Jarvis: KAPALI';
@@ -673,7 +674,7 @@
     let kittScanPos = 0;
     let kittScanDir = 1;
     let kittTrail = new Array(KITT_SEGMENTS).fill(0);
-    let jarvisPowerOn = true;
+    let jarvisPowerOn = false;
 
     // Fütüristik İki Tonlu Uyanma Chime (880Hz -> 1320Hz)
     function playWakeChime() {
@@ -1029,10 +1030,12 @@
       }
     }
 
-    // Sayfaya ilk kullanıcı etkileşiminde (tıklama, dokunma, tuş) mikrofonu ve ekolayzırı otomatik uyandır
+    // Sayfaya ilk kullanıcı etkileşiminde (tıklama, dokunma, tuş) mikrofonu SADECE jarvisPowerOn açık ise uyandır
     ['pointerdown', 'keydown', 'touchstart'].forEach(evt => {
       document.addEventListener(evt, () => {
-        enableAudioAndListen();
+        if (jarvisPowerOn) {
+          enableAudioAndListen();
+        }
       }, { once: true });
     });
 
