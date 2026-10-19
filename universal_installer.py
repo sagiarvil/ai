@@ -61,13 +61,38 @@ def classify(root: Path) -> str:
         return 'go'
     if (root / 'Dockerfile').is_file() or (root / 'compose.yaml').is_file():
         return 'container'
-        # Web3, Frontend, HTML, JS, Solidity, Shell veya script araç reposu (alt klasörler dahil)
-    code_exts = {'.html', '.sol', '.sh', '.jsx', '.tsx', '.mjs', '.js', '.ts', '.css'}
+
+    # C/C++, C#, .NET, Java, Web3, Script, Shell, Solidity veya derleme/araç kaynakları
+    code_exts = {
+        # C / C++ / Objective-C
+        '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx', '.m', '.mm',
+        # C# / .NET / F#
+        '.cs', '.csproj', '.sln', '.vb', '.fs',
+        # Java / Kotlin / Scala
+        '.java', '.kt', '.kts', '.scala', '.groovy',
+        # Scripts / Shell
+        '.sh', '.bash', '.zsh', '.fish', '.bat', '.cmd', '.ps1',
+        # Web / Frontend / Smart Contracts
+        '.html', '.htm', '.xhtml', '.vue', '.svelte', '.astro', '.sol',
+        '.jsx', '.tsx', '.mjs', '.cjs', '.js', '.ts', '.css', '.scss', '.sass', '.less',
+        # Python / Ruby / PHP / Perl / Lua / R / Dart / Swift
+        '.py', '.pyw', '.rb', '.php', '.pl', '.pm', '.lua', '.r', '.dart', '.swift',
+        # Assembly & Low-level
+        '.asm', '.s',
+        # Data / Query / Build
+        '.sql'
+    }
+    special_files = {
+        'makefile', 'cmakelists.txt', 'gemfile', 'rakefile'
+    }
+
     for p in root.rglob('*'):
         if '.git' in p.parts:
             continue
-        if p.is_file() and p.suffix.lower() in code_exts:
-            return 'static_tool'
+        if p.is_file():
+            if p.name.lower() in special_files or p.suffix.lower() in code_exts:
+                return 'static_tool'
+
     return 'unsupported' 
 
 

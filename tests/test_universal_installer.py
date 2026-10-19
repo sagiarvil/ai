@@ -62,6 +62,16 @@ class InstallerStaticTests(unittest.TestCase):
             (go_d / 'go.mod').write_text('', encoding='utf-8')
             self.assertEqual(classify(go_d), 'go')
 
+            cpp_d = root / "cpp_project"
+            cpp_d.mkdir()
+            (cpp_d / 'main.cpp').write_text('int main() { return 0; }', encoding='utf-8')
+            self.assertEqual(classify(cpp_d), 'static_tool')
+
+            cs_d = root / "csharp_project"
+            cs_d.mkdir()
+            (cs_d / 'Miner.cs').write_text('class Miner {}', encoding='utf-8')
+            self.assertEqual(classify(cs_d), 'static_tool')
+
     # 1. Transactional Registry Concurrency Test (Thread + Multi-Process)
     def test_transactional_registry_concurrency(self):
         """Eşzamanlı 20 thread ile registry yazımında bozulma ve veri kaybı olmamalıdır."""
