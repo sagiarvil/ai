@@ -24,6 +24,11 @@ from memory_store import memory_store
 from industrial_verifier import IndustrialVerificationEngine, FinalDecision
 from model_observability import DEFAULT_MODEL, OLLAMA_GENERATE_URL
 
+# 3'LÜ SANSÜRSÜZ HİBRİT MİMARİ MODELLERİ
+MODEL_GENERAL = "mistral-small-24b-abliterated:latest"
+MODEL_CODER = "qwen-coder-14b-abliterated:latest"
+MODEL_REASONER = "deepseek-r1-14b-abliterated:latest"
+
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 
 # ==============================================================================
@@ -34,6 +39,7 @@ class AgentWorkflowState(TypedDict):
     goal: str
     model_id: str
     plan: List[str]
+    plan_blueprint: Optional[str]
     retrieved_patterns: List[Dict[str, Any]]
     research_evidence: List[Dict[str, Any]]
     sandbox_workspace: str
@@ -59,22 +65,22 @@ class OpenHandsAgentRuntime:
         self.sandbox_path.mkdir(parents=True, exist_ok=True)
         self.conversation_history: List[Dict[str, str]] = []
 
-    async def call_model(self, prompt: str, system_prompt: str = "") -> str:
-        """Yerel M4 Mistral-24B modeline canlı çıkarım isteği gönderir."""
+    async def call_model(self, prompt: str, system_prompt: str = "", model: str = MODEL_GENERAL, num_predict: int = 600) -> str:
+        """Yerel M4 Triad hibrit modellerine (Mistral, Qwen-Coder, DeepSeek-R1) canlı çıkarım isteği gönderir."""
         full_p = f"System: {system_prompt}\nUser: {prompt}" if system_prompt else prompt
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 OLLAMA_GENERATE_URL,
                 json={
-                    "model": DEFAULT_MODEL,
+                    "model": model,
                     "prompt": full_p,
                     "stream": False,
-                    "options": {"num_thread": 8, "temperature": 0.1, "num_predict": 350}
+                    "options": {"num_thread": 8, "temperature": 0.1, "num_predict": num_predict}
                 }
             )
             if resp.status_code == 200:
                 return resp.json().get("response", "")
-            raise RuntimeError(f"Model servisi HTTP {resp.status_code} döndü.")
+            raise RuntimeError(f"Model servisi HTTP {resp.status_code} döndü: {resp.text}")
 
     def parse_code_blocks(self, text: str) -> List[str]:
         blocks = re.findall(r"```(?:python|py)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
@@ -105,7 +111,7 @@ class OpenHandsAgentRuntime:
 # FAZ 2: LANGGRAPH DÜĞÜM FONKSİYONLARI (NODES)
 # ==============================================================================
 async def planner_node(state: AgentWorkflowState) -> AgentWorkflowState:
-    """1. Planlama Düğümü: İsteği analiz eder, bellekten FTS5 ile benzer kalıpları çeker."""
+    """1. Planlama Düğümü: İsteği analiz eder, bellekten FTS5 ile kalıpları çeker ve DeepSeek-R1 mimari planı oluşturur."""
     goal = state["goal"]
     task_id = state["task_id"]
 
@@ -118,10 +124,30 @@ async def planner_node(state: AgentWorkflowState) -> AgentWorkflowState:
 
     state["plan"] = [
         "1. Bellek ve kaynak araştırması yap",
-        "2. OpenHands çalışma alanında kod ve birim test oluştur",
-        "3. İzole Seatbelt sandbox içinde çalıştır ve bağımsız kabul kapısından geçir",
-        "4. Başarılı ise tescille, hatalıysa rollback yap"
+        "2. DeepSeek-R1 ile mimari planlama ve edge-case stratejisi çıkar",
+        "3. Qwen-Coder ile OpenHands çalışma alanında kod ve birim test oluştur",
+        "4. İzole Seatbelt sandbox içinde çalıştır ve bağımsız kabul kapısından geçir",
+        "5. Başarılı ise tescille, hatalıysa rollback yap"
     ]
+
+    # DeepSeek-R1 Muhakeme Çekirdeğinden Mimari Blueprint İste
+    sandbox_dir = SANDBOX_DIR / task_id
+    runtime = OpenHandsAgentRuntime(task_id, sandbox_dir)
+    reasoning_prompt = (
+        f"Task: {goal}\n"
+        "Generate a concise 3-bullet architectural blueprint and edge cases to consider for implementation. Keep it under 150 words."
+    )
+    try:
+        blueprint = await runtime.call_model(
+            reasoning_prompt,
+            "You are DeepSeek-R1 reasoning core.",
+            model=MODEL_REASONER,
+            num_predict=250
+        )
+        state["plan_blueprint"] = blueprint
+    except Exception:
+        state["plan_blueprint"] = None
+
     return state
 
 async def research_node(state: AgentWorkflowState) -> AgentWorkflowState:
@@ -139,7 +165,7 @@ async def research_node(state: AgentWorkflowState) -> AgentWorkflowState:
     return state
 
 async def execution_node(state: AgentWorkflowState) -> AgentWorkflowState:
-    """3. Yürütme Düğümü: OpenHands izole sandbox içinde canlı model çıkarımı ve test işletir."""
+    """3. Yürütme Düğümü: DeepSeek-R1 planı ile Qwen-Coder üzerinden kod ve test üretir, sandbox'ta işletir."""
     task_id = state["task_id"]
     goal = state["goal"]
     sandbox_dir = SANDBOX_DIR / task_id
@@ -148,17 +174,18 @@ async def execution_node(state: AgentWorkflowState) -> AgentWorkflowState:
 
     runtime = OpenHandsAgentRuntime(task_id, sandbox_dir)
 
+    blueprint_context = f"\nArchitectural Blueprint:\n{state.get('plan_blueprint')}\n" if state.get("plan_blueprint") else ""
     prompt = (
-        f"Goal: {goal}\n"
+        f"Goal: {goal}\n{blueprint_context}"
         "Generate two concise Python code blocks:\n"
         "Block 1: 'solution.py' (concise implementation)\n"
         "Block 2: 'test_solution.py' (concise unittest)\n"
         "Wrap each in ```python ... ```."
     )
-    system_prompt = "You write concise, zero-defect Python code with unittest."
+    system_prompt = "You are Qwen2.5-Coder expert. Write clean, robust, zero-defect Python code with unittest."
 
     try:
-        model_out = await runtime.call_model(prompt, system_prompt)
+        model_out = await runtime.call_model(prompt, system_prompt, model=MODEL_CODER, num_predict=800)
         blocks = runtime.parse_code_blocks(model_out)
 
         sol_file = sandbox_dir / "solution.py"
@@ -191,15 +218,27 @@ async def execution_node(state: AgentWorkflowState) -> AgentWorkflowState:
             "stderr": run_res.get("stderr")
         })
 
-        # Self-Healing: Eğer test başarısızsa 1 tur hatayı vererek modeli onarıma sok
+        # Self-Healing: Eğer test başarısızsa DeepSeek-R1 kök neden teşhisi yapar, Qwen-Coder onarır
         if run_res.get("exit_code") != 0:
             err_msg = run_res.get("stderr") or run_res.get("stdout") or "Unknown error"
+            diag_prompt = f"Unit test failed with error:\n{err_msg}\nDiagnose root cause in 2 sentences."
+            try:
+                diag_out = await runtime.call_model(
+                    diag_prompt,
+                    "DeepSeek-R1 diagnostician.",
+                    model=MODEL_REASONER,
+                    num_predict=200
+                )
+            except Exception:
+                diag_out = ""
+
             fix_prompt = (
                 f"The unit test failed with error:\n{err_msg}\n"
+                f"Diagnosis: {diag_out}\n"
                 "Fix 'solution.py' and 'test_solution.py' so all tests pass. "
                 "Provide updated code in ```python ... ``` blocks."
             )
-            fix_out = await runtime.call_model(fix_prompt, system_prompt)
+            fix_out = await runtime.call_model(fix_prompt, system_prompt, model=MODEL_CODER, num_predict=800)
             fix_blocks = runtime.parse_code_blocks(fix_out)
             if len(fix_blocks) >= 2:
                 sol_file.write_text(fix_blocks[0], encoding="utf-8")

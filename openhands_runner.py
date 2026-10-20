@@ -20,7 +20,8 @@ from verification_gate import IndependentVerificationGate
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 OLLAMA_GENERATE_URL = "http://127.0.0.1:11434/api/generate"
-DEFAULT_MODEL = "mistral-small-24b-abliterated:latest"
+DEFAULT_MODEL = "qwen-coder-14b-abliterated:latest"
+REASONER_MODEL = "deepseek-r1-14b-abliterated:latest"
 
 class OpenHandsAgentEngine:
     def __init__(self, task_name: str = "openhands_agent_workspace"):
@@ -29,26 +30,32 @@ class OpenHandsAgentEngine:
         self.sandbox_dir.mkdir(parents=True, exist_ok=True)
         self.history: List[Dict[str, Any]] = []
 
-    async def prompt_mistral_model(self, task_description: str) -> str:
-        """Yerel Mistral-24B modeline native Ollama API üzerinden canlı çıkarım isteği gönderir."""
-        full_prompt = (
-            f"You are OpenHands autonomous engineer. Task: {task_description}\n"
-            "Provide two clean Python code blocks:\n"
-            "Block 1: token_vault.py implementing module functions or class TokenVault with generate_token(salt: str) and validate_token(token: str)\n"
-            "Block 2: test_token_vault.py using unittest to test token_vault.\n"
-            "Ensure python code is inside ```python ... ``` blocks."
-        )
+    async def prompt_mistral_model(self, task_description: str, model: str = DEFAULT_MODEL, raw_prompt: Optional[str] = None) -> str:
+        """Yerel Qwen-Coder-14B / Triad modeline native Ollama API üzerinden canlı çıkarım isteği gönderir."""
+        if raw_prompt:
+            full_prompt = raw_prompt
+        else:
+            full_prompt = (
+                f"You are OpenHands autonomous engineer. Task: {task_description}\n"
+                "Provide two clean, working Python code blocks:\n"
+                "Block 1: 'token_vault.py' implementing class TokenVault with:\n"
+                "  - generate_token(self, salt: str) -> str (e.g. using hmac.new or hashlib with secret/salt and verifying accurately)\n"
+                "  - validate_token(self, token: str, salt: str = '') -> bool\n"
+                "  Ensure validate_token returns True for tokens generated with that salt.\n"
+                "Block 2: 'test_token_vault.py' using unittest to verify TokenVault.\n"
+                "Ensure python code is inside ```python ... ``` blocks."
+            )
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 OLLAMA_GENERATE_URL,
                 json={
-                    "model": DEFAULT_MODEL,
+                    "model": model,
                     "prompt": full_prompt,
                     "stream": False,
                     "options": {
                         "num_thread": 8,
                         "temperature": 0.1,
-                        "num_predict": 300
+                        "num_predict": 800
                     }
                 }
             )
@@ -129,16 +136,23 @@ class OpenHandsAgentEngine:
         # 2. Aşama: İzole Seatbelt Sandbox içinde bağımsız birim test icrası
         run_res = secure_sandbox_run("python3 -m unittest test_token_vault.py", cwd=self.sandbox_dir, timeout=30)
 
-        # Self-Healing: Eğer test hata verdiyse model hatayı okuyup 1 tur düzeltir
+        # Self-Healing: Eğer test hata verdiyse DeepSeek-R1 teşhis koyar, Qwen-Coder onarır
         if not run_res["success"]:
             err_output = run_res.get("stderr") or run_res.get("stdout") or "Unknown test failure"
+            diag_prompt = f"Unit test failed with error:\n{err_output}\nDiagnose root cause concisely in 2 sentences."
+            try:
+                diag = await self.prompt_mistral_model("", model=REASONER_MODEL, raw_prompt=diag_prompt)
+            except Exception:
+                diag = ""
+
             fix_prompt = (
-                f"The previous unit test failed:\n{err_output}\n"
+                f"The previous unit test failed with error:\n{err_output}\n"
+                f"Root cause diagnosis: {diag}\n"
                 "Please fix 'token_vault.py' and 'test_token_vault.py' so all tests pass. "
                 "Provide updated code in ```python ... ``` blocks."
             )
             try:
-                fix_resp = await self.prompt_mistral_model(fix_prompt)
+                fix_resp = await self.prompt_mistral_model("", model=DEFAULT_MODEL, raw_prompt=fix_prompt)
                 fix_blocks = self.extract_python_blocks(fix_resp)
                 if len(fix_blocks) >= 2:
                     module_file.write_text(fix_blocks[0], encoding="utf-8")
