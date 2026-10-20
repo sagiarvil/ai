@@ -273,7 +273,12 @@ class AutonomousExecutionEngine:
                         "model": os.environ.get("BARIS_MODEL", DEFAULT_MODEL),
                         "messages": messages,
                         "tools": schemas,
-                        "tool_choice": "auto",
+                        # Require an action until the first tool result exists.
+                        # Afterwards auto lets the model finish the task.
+                        "tool_choice": (
+                            "auto" if any(m.get("role") == "tool" for m in messages)
+                            else "required"
+                        ),
                         "stream": False,
                         "temperature": 0.1,
                     },
