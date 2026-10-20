@@ -265,6 +265,9 @@ class AutonomousExecutionEngine:
         engine = cls()
         engine.transition_to(TaskState.PLANNED, "Araç yürütme döngüsü başlatıldı.")
 
+        from acceptance_checks import AcceptanceGuard
+        acceptance_guard = AcceptanceGuard()
+
         async def call_model(messages, schemas):
             from structured_actions import build_request, parse_action
             if verify_task_fn and any(m.get("role") == "tool" for m in messages):
@@ -274,6 +277,10 @@ class AutonomousExecutionEngine:
                     acceptance = {"success": False, "error": str(exc)}
                 if acceptance.get("success") is True:
                     return {"role": "assistant", "content": ""}
+                engine.transition_to(TaskState.TESTING, "Dosya kabul kontrolü başarısız.")
+                engine.add_evidence("ACCEPTANCE", "Beklenen/gerçek içerik karşılaştırması",
+                                    False, acceptance)
+                acceptance_guard.observe(acceptance)
                 messages = messages + [{
                     "role": "user",
                     "content": "Bağımsız kabul kontrolü başarısız; düzelt: " +
@@ -297,9 +304,24 @@ class AutonomousExecutionEngine:
                 event.get("success", False), event,
             )
 
-        result = await run_loop(
-            prompt, tools_schema, call_model, call_tool_fn,
-            verify_task=verify_task_fn, on_event=save_event,
-        )
+        try:
+            result = await asyncio.wait_for(
+                run_loop(prompt, tools_schema, call_model, call_tool_fn,
+                         max_steps=8, verify_task=verify_task_fn,
+                         on_event=save_event),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            engine.add_evidence("TIMEOUT", "Görev için 120 saniyelik süre sınırı doldu.", False)
+            result = {
+                "status": "FAILED", "verified": False,
+                "execution_completed": False,
+                "reply": "120 saniyelik görev süresi doldu; başarı bildirilmedi.",
+                "execution_steps": [
+                    e["raw_data"] for e in engine.evidences
+                    if isinstance(e.get("raw_data"), dict) and "step" in e["raw_data"]
+                ],
+                "acceptance": None,
+            }
         engine.transition_to(TaskState(result["status"]), result["reply"])
         return dict(result, task_id=engine.task_id, evidences=engine.evidences)

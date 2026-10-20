@@ -377,7 +377,8 @@ async def root():
 async def engine_info():
     return {"engine_protocol": "baris-execution-v2",
             "task_verification": "independent",
-            "tool_loop": True}
+            "tool_loop": True,
+            "build": "acceptance-feedback-v3"}
 
 
 @app.get("/api/system_status")
@@ -422,16 +423,17 @@ async def system_status():
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_key)):
     query = req.message.strip()
+    if req.expected_files:
+        query += (
+            "\nKESİN KABUL SÖZLEŞMESİ (metinleri değiştirmeden kullan):\n" +
+            json.dumps({"expected_files": req.expected_files}, ensure_ascii=False) +
+            "\nİçeriğe nokta veya satır sonu ekleme. İşlem sonunda motor kontrol edecek."
+        )
+
     async def verify_expected_files():
-        if not req.expected_files or len(req.expected_files) > 100:
-            return {"success": False, "error": "Geçerli kabul koşulu yok."}
-        def check():
-            results = {}
-            for path, expected in req.expected_files.items():
-                actual = checked_file_tool("tool_read_file", {"filepath": path})
-                results[path] = actual["content"] == expected
-            return {"success": all(results.values()), "files": results}
-        return await asyncio.to_thread(check)
+        from acceptance_checks import inspect_expected_files
+        return await asyncio.to_thread(
+            inspect_expected_files, WORKSPACE_ROOT, req.expected_files)
 
     res = await AutonomousExecutionEngine.execute_verified_task(
         prompt=query,
