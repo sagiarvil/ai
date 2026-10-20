@@ -207,7 +207,9 @@ class OmniCoreToolAdapters:
             is_allowed = (
                 str(target).startswith(str(root)) or
                 str(target).startswith("/Users/macair1/projects") or
-                str(target).startswith("/Users/macair1/.omnicore")
+                str(target).startswith("/Users/macair1/.omnicore") or
+                str(target).startswith("/tmp") or
+                str(target).startswith("/private/tmp")
             )
             if not is_allowed:
                 return False
@@ -279,7 +281,9 @@ class OmniCoreToolAdapters:
             is_allowed = (
                 str(target).startswith(str(root)) or
                 str(target).startswith("/Users/macair1/projects") or
-                str(target).startswith("/Users/macair1/.omnicore")
+                str(target).startswith("/Users/macair1/.omnicore") or
+                str(target).startswith("/tmp") or
+                str(target).startswith("/private/tmp")
             )
             if not is_allowed:
                 return False

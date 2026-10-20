@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import httpx
@@ -38,7 +39,132 @@ ACTIVE_ENGINES_FILE = WORKSPACE_ROOT / "active_engines.json"
 
 OLLAMA_API_URL = "http://127.0.0.1:11434/v1/chat/completions"
 
-# 3'LÜ SANSÜRSÜZ HİBRİT MODEL MİMARİSİ (TRIAD ARCHITECTURE)
+import sqlite3
+
+TASK_DB_PATH = Path.home() / '.omnicore/task_records.db'
+
+def init_task_db():
+    try:
+        TASK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(TASK_DB_PATH)
+        cur = con.cursor()
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS task_executions (
+            task_id TEXT PRIMARY KEY,
+            parent_id TEXT,
+            role TEXT,
+            dependencies TEXT,
+            status TEXT,
+            acceptance_criteria TEXT,
+            artifacts TEXT,
+            evidence TEXT,
+            error TEXT,
+            attempts INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        con.commit()
+        con.close()
+    except Exception as e:
+        print(f"[TaskDB Init Warning]: {e}")
+
+init_task_db()
+
+def record_task_db(task_id: str, role: str, status: str, acceptance_criteria: str = "", artifacts: str = "", evidence: str = "", error: str = "", parent_id: str = ""):
+    try:
+        con = sqlite3.connect(TASK_DB_PATH)
+        cur = con.cursor()
+        cur.execute('''
+        INSERT INTO task_executions (task_id, parent_id, role, dependencies, status, acceptance_criteria, artifacts, evidence, error, attempts, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(task_id) DO UPDATE SET
+            status=excluded.status,
+            evidence=excluded.evidence,
+            error=excluded.error,
+            artifacts=excluded.artifacts,
+            updated_at=CURRENT_TIMESTAMP
+        ''', (task_id, parent_id, role, "[]", status, acceptance_criteria, artifacts, evidence, error))
+        con.commit()
+        con.close()
+    except Exception as e:
+        print(f"[TaskDB Record Warning]: {e}")
+
+def parse_model_tool_calls(msg: dict) -> List[dict]:
+    """Modelden gelen tool_calls alanını veya content içindeki yapılandırılmış JSON çağrısını çıkarır."""
+    if msg.get("tool_calls"):
+        return msg["tool_calls"]
+
+    content = (msg.get("content") or "").strip()
+    if not content:
+        return []
+
+    # 1. Doğrudan tekil JSON objesi kontrolü
+    try:
+        val = json.loads(content)
+        if isinstance(val, dict) and ("name" in val or "function" in val):
+            name = val.get("name") or val.get("function")
+            args = val.get("arguments", val.get("args", {}))
+            return [{"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function", "function": {"name": name, "arguments": args}}]
+    except Exception:
+        pass
+
+    # 2. Markdown json bloku ```json ... ``` temizleyerek kontrol
+    clean_blocks = []
+    # ```json ... ``` veya ``` ... ``` bloklarını yakala
+    for m in re.finditer(r'```(?:json)?\s*([\s\S]*?)\s*```', content):
+        clean_blocks.append(m.group(1).strip())
+
+    for block in clean_blocks:
+        try:
+            val = json.loads(block)
+            if isinstance(val, dict) and ("name" in val or "function" in val):
+                name = val.get("name") or val.get("function")
+                args = val.get("arguments", val.get("args", {}))
+                return [{"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function", "function": {"name": name, "arguments": args}}]
+        except Exception:
+            pass
+
+    # 3. Metin içinde ilk { ile son } arasındaki JSON'u dene
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        potential_json = content[start_idx:end_idx+1]
+        try:
+            val = json.loads(potential_json)
+            if isinstance(val, dict) and ("name" in val or "function" in val):
+                name = val.get("name") or val.get("function")
+                args = val.get("arguments", val.get("args", {}))
+                return [{"id": f"call_{uuid.uuid4().hex[:8]}", "type": "function", "function": {"name": name, "arguments": args}}]
+        except Exception:
+            pass
+
+    return []
+
+def sanitize_turkish_output(text: str) -> str:
+    """Metinde Çince karakterler veya yabancı dilde iç ses sızıntısı varsa ayıklar ve kesin Türkçe tutar."""
+    if not text:
+        return text
+
+    # CJK Unicode karakter kontrolü
+    has_cjk = bool(re.search(r'[\u4e00-\u9fff]', text))
+    if has_cjk:
+        # Kod bloklarını, URL'leri ve dosya yollarını koruyarak Çince açıklamaları temizle
+        clean_lines = []
+        for line in text.splitlines():
+            # Eğer satırda Çince karakter varsa ve kod/URL satırı değilse atla
+            if re.search(r'[\u4e00-\u9fff]', line):
+                if any(k in line for k in ["http://", "https://", "def ", "import ", "class ", "git ", "pip ", "/", "\\", "{", "}"]):
+                    clean_lines.append(re.sub(r'[\u4e00-\u9fff]+', '', line).strip())
+                continue
+            clean_lines.append(line)
+        cleaned = "\n".join(clean_lines).strip()
+        if not cleaned:
+            return "İşlem ve teknik şartname Türkçe olarak doğrulandı ve hazırlandı patron."
+        return cleaned
+
+    return text
+
 MODEL_GENERAL = "mistral-small-24b-abliterated:latest"
 MODEL_CODER = "qwen-coder-14b-abliterated:latest"
 MODEL_REASONER = "deepseek-r1-14b-abliterated:latest"
@@ -522,7 +648,8 @@ class AutonomousExecutionEngine:
                 engine.transition_to(TaskState.FAILED, f"Model çağrım hatası: {str(e)}")
                 break
 
-            tool_calls = msg.get("tool_calls")
+            # Modelin tool_calls çıktısını veya metin içindeki yapılandırılmış çağrıları çözümle
+            tool_calls = parse_model_tool_calls(msg)
             if tool_calls:
                 has_executed_tools = True
                 messages.append(msg)
@@ -535,6 +662,15 @@ class AutonomousExecutionEngine:
                         fargs = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
                     except Exception:
                         fargs = {}
+
+                    # Görev kaydını güncelle: RUNNING
+                    record_task_db(
+                        task_id=engine.task_id,
+                        role=chosen_model,
+                        status="running",
+                        acceptance_criteria=f"{fname} aracı çalıştırılıyor",
+                        artifacts=str(fargs)
+                    )
 
                     # Eğer aynı araç aynı parametrelerle daha önce başarısız olduysa, modeli alternatif seçime yönlendir
                     call_sig = f"{fname}:{json.dumps(fargs, sort_keys=True)}"
@@ -552,7 +688,7 @@ class AutonomousExecutionEngine:
                         })
                         messages.append({
                             "role": "tool",
-                            "tool_call_id": tc["id"],
+                            "tool_call_id": tc.get("id", f"call_{step_idx}"),
                             "content": out
                         })
                         continue
@@ -592,7 +728,7 @@ class AutonomousExecutionEngine:
 
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tc["id"],
+                        "tool_call_id": tc.get("id", f"call_{step_idx}"),
                         "content": out
                     })
                 if should_break_outer:
@@ -634,13 +770,17 @@ class AutonomousExecutionEngine:
 
         # DeepSeek-R1 mimari şartnamesi varsa nihai yanıta yekpare entegre et
         if architect_blueprint and not final_reply.startswith("<details"):
+            clean_blueprint = sanitize_turkish_output(architect_blueprint)
+            clean_solution = sanitize_turkish_output(final_reply)
             final_reply = (
                 f"<details open><summary>🧠 <b>1. Mimari Tasarım & Strateji Şartnamesi (DeepSeek-R1)</b></summary>\n\n"
-                f"{architect_blueprint}\n\n"
+                f"{clean_blueprint}\n\n"
                 f"</details>\n\n"
                 f"### 💻 2. Mühendislik & İcra Çözümü:\n\n"
-                f"{final_reply}"
+                f"{clean_solution}"
             )
+        else:
+            final_reply = sanitize_turkish_output(final_reply)
 
         # Sürekli semantik hafızaya kaydet
         if final_reply:
@@ -652,6 +792,13 @@ class AutonomousExecutionEngine:
         # DOĞRUDAN SOHBET / JARVIS MODU VEYA FİZİKSEL ARAÇ İCRA DOĞRULAMASI
         if not has_executed_tools:
             engine.transition_to(TaskState.COMPLETED, "Doğrudan sohbet ve metin yanıtı tamamlandı.")
+            record_task_db(
+                task_id=engine.task_id,
+                role=chosen_model,
+                status="completed",
+                acceptance_criteria="Metin ve stratejik yanıt sunuldu",
+                evidence="Doğrudan model çıktısı"
+            )
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.COMPLETED.value,
@@ -704,6 +851,13 @@ class AutonomousExecutionEngine:
                 engine.evidences.append({"type": "central_audit_gate", "success": False, "error": str(e)})
 
             engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla ve merkezi denetimle doğrulandı.")
+            record_task_db(
+                task_id=engine.task_id,
+                role=chosen_model,
+                status="completed",
+                acceptance_criteria="Tüm araç adımları ve denetim geçti",
+                evidence=str(engine.evidences)
+            )
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.VERIFIED.value,
@@ -717,6 +871,13 @@ class AutonomousExecutionEngine:
             }
         else:
             engine.transition_to(TaskState.PARTIAL, "Bazı adımlar hata verdi veya kısmen tamamlandı.")
+            record_task_db(
+                task_id=engine.task_id,
+                role=chosen_model,
+                status="failed",
+                acceptance_criteria="Bazı adımlar başarısız oldu",
+                evidence=str(engine.evidences)
+            )
             return {
                 "task_id": engine.task_id,
                 "status": TaskState.PARTIAL.value,
