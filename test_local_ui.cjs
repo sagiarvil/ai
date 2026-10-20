@@ -170,3 +170,15 @@ test('previous-build terminal result is readable after upgrade', async () => {
   assert.equal(box.children[1].textContent, 'Eski görev zaman aşımına uğradı.');
   assert.equal(app.requests.filter(r => r.url.startsWith('/api/tasks/')).length, 1);
 });
+
+
+test('activity distinguishes recent progress, stalled telemetry, queue and terminal state', () => {
+  const app = setup();
+  const job = {status:'RUNNING', created:900, latest_event:{kind:'MODEL_PROGRESS',at:999}};
+  assert.equal(app.context.activityState(job,1000).label,'Model üretiyor');
+  assert.equal(app.context.activityState(job,1020).mode,'waiting');
+  assert.match(app.context.activityState(job,1100).label,/durduğu doğrulanmadı/);
+  assert.equal(app.context.activityState({...job,status:'QUEUED'},1100).mode,'queued');
+  assert.equal(app.context.activityState({...job,status:'FAILED'},1100).mode,'finished');
+  assert.equal(app.context.activityState({...job,latest_event:{kind:'MODEL_START',at:1000}},1000).label,'Model yanıtı bekleniyor');
+});

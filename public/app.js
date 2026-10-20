@@ -137,11 +137,29 @@ async function submitPayload(payload) {
 }
 const terminalStates = new Set(['VERIFIED', 'UNVERIFIED', 'FAILED', 'CANCELLED', 'BLOCKED']);
 let activeTaskId = null;
+function activityState(job, now = Date.now()/1000) {
+  const event = job.latest_event || (job.events || []).at(-1);
+  const age = Math.max(0, Math.floor(now - (event?.at || job.created || now)));
+  if (terminalStates.has(job.status)) return {mode: 'finished', label: 'Görev sonlandı', age};
+  if (job.status === 'QUEUED') return {mode: 'queued', label: 'Sırada bekliyor', age};
+  if (age >= 90) return {mode: 'waiting', label: 'Uzun bekleme · Yeni ilerleme yok; durduğu doğrulanmadı', age};
+  if (age >= 15) return {mode: 'waiting', label: 'Sunucu bağlı · Yeni ilerleme bekleniyor', age};
+  const kind = event?.kind;
+  const label = kind === 'MODEL_PROGRESS' ? 'Model üretiyor' :
+    kind === 'TOOL_START' ? 'Araç çalışıyor' :
+    kind === 'MODEL_START' ? 'Model yanıtı bekleniyor' :
+    kind === 'MODEL_RETRY' ? 'Kontrollü yeniden deneme' : 'Görev işleniyor';
+  return {mode: 'active', label, age};
+}
+
 async function followTask(taskId, box) {
   activeTaskId = taskId;
   let lastSeq = 0;
   let lastMessage = 'Görev sırada bekliyor.';
   let networkErrors = 0;
+  const activity = document.createElement('div');
+  activity.setAttribute('role', 'status');
+  activity.setAttribute('aria-live', 'polite');
   while (true) {
     try {
       const response = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '?after=' + lastSeq,
@@ -158,7 +176,10 @@ async function followTask(taskId, box) {
         lastMessage = job.latest_event.data.message;
         if (job.latest_event.kind === 'MODEL_PROGRESS') lastMessage += ' • ' + job.latest_event.data.characters + ' karakter';
       }
-      box.replaceChildren();
+      const state = activityState(job);
+      activity.className = 'task-activity is-' + state.mode;
+      activity.textContent = state.label + ' • Son kayıt ' + state.age + ' sn önce';
+      box.replaceChildren(activity);
       const message = document.createElement('p');
       message.textContent = lastMessage;
       const identity = document.createElement('p');
@@ -190,7 +211,11 @@ async function followTask(taskId, box) {
       }
     } catch (error) {
       networkErrors += 1;
-      box.textContent = 'Bağlantı bekleniyor; görev tekrar gönderilmiyor. Görev: ' + taskId;
+      activity.className = 'task-activity is-offline';
+      activity.textContent = 'Bağlantı kesildi · Çalışma durumu doğrulanamıyor';
+      const offline = document.createElement('p');
+      offline.textContent = 'Görev tekrar gönderilmiyor. Görev: ' + taskId;
+      box.replaceChildren(activity, offline);
       if (networkErrors >= 15) throw new Error('Bağlantı kesildi. Görev kaydı korundu; sayfayı yenileyerek izlemeye devam et.');
     }
     await new Promise(resolve => setTimeout(resolve, 1000));

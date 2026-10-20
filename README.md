@@ -60,7 +60,7 @@ node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-49 Python ve 9 Node testi geliştirme ortamında geçti. Yeni 20 entegrasyon testi
+49 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 20 entegrasyon testi
 kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
 model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
 CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
@@ -98,3 +98,13 @@ Yeni testler gerçek HTTP akışını kısa bir süre sınırında keser; kısmi
 yürütülmediğini doğrular. Tek onarım, ikinci hatada durma, 700/350 sınırları,
 251 olayın sayfalanması ve eski sonuçların sürüm geçişinde okunması sınanır.
 Canlı Mistral ile aynı stres görevinin tamamlandığı henüz iddia edilmez.
+
+## Canlı çalışma göstergesi
+
+Görev kartındaki dönen halka istemcinin durum sorgulamayı sürdürdüğünü gösterir;
+modelin başarıyla ilerlediği garantisi değildir. Son gerçek olayın yaşı ayrıca
+verilir: yeni MODEL_PROGRESS üretim, MODEL_START model yanıtı bekleme olarak
+ayrılır. 15 saniye yeni olay yoksa sarı bekleme, 90 saniyede uzun bekleme yazılır;
+bu durumda görev durmuş ilan edilmez. Bağlantı hatasında kırmızı durum gösterilir.
+Sonuçta aktif gösterge kaldırılır. Hareket azaltma tercihi animasyonu kapatır.
+Bu arayüz güncellemesi çalışan görev sürecini yeniden başlatmayı gerektirmez.
