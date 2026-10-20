@@ -31,7 +31,7 @@ jobs:
           echo "UTF-8 BOM kontrolü: PASS"
 
       - name: Offline execution-loop regression tests
-        run: python3 -m unittest -v test_execution_loop
+        run: python3 -m unittest -v test_execution_loop test_structured_actions
 
       - name: Browser script syntax
         run: |

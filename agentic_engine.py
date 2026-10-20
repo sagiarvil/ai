@@ -266,25 +266,29 @@ class AutonomousExecutionEngine:
         engine.transition_to(TaskState.PLANNED, "Araç yürütme döngüsü başlatıldı.")
 
         async def call_model(messages, schemas):
+            from structured_actions import build_request, parse_action
+            if verify_task_fn and any(m.get("role") == "tool" for m in messages):
+                try:
+                    acceptance = await verify_task_fn()
+                except Exception as exc:
+                    acceptance = {"success": False, "error": str(exc)}
+                if acceptance.get("success") is True:
+                    return {"role": "assistant", "content": ""}
+                messages = messages + [{
+                    "role": "user",
+                    "content": "Bağımsız kabul kontrolü başarısız; düzelt: " +
+                               json.dumps(acceptance, ensure_ascii=False),
+                }]
             async with httpx.AsyncClient(timeout=180.0) as client:
                 response = await client.post(
-                    os.environ.get("BARIS_MODEL_API_URL", OLLAMA_API_URL),
-                    json={
-                        "model": os.environ.get("BARIS_MODEL", DEFAULT_MODEL),
-                        "messages": messages,
-                        "tools": schemas,
-                        # Require an action until the first tool result exists.
-                        # Afterwards auto lets the model finish the task.
-                        "tool_choice": (
-                            "auto" if any(m.get("role") == "tool" for m in messages)
-                            else "required"
-                        ),
-                        "stream": False,
-                        "temperature": 0.1,
-                    },
+                    os.environ.get("BARIS_OLLAMA_CHAT_URL", "http://127.0.0.1:11434/api/chat"),
+                    json=build_request(
+                        os.environ.get("BARIS_MODEL", DEFAULT_MODEL),
+                        messages, schemas,
+                    ),
                 )
                 response.raise_for_status()
-                return response.json()["choices"][0]["message"]
+                return parse_action(response.json(), messages, schemas)
 
         def save_event(event):
             engine.add_evidence(
