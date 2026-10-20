@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-function setup({build = 'local-ui-v4', reply, delayChat = false, mobile = false} = {}) {
+function setup({build = 'local-ui-v5', reply, delayChat = false, mobile = false} = {}) {
   class Element {
     constructor() { this.children = []; this.style = {}; this.value = ''; this.textContent = ''; }
     appendChild(child) { this.children.push(child); }
@@ -27,6 +27,7 @@ function setup({build = 'local-ui-v4', reply, delayChat = false, mobile = false}
     remove: name => classes.delete(name)
   }};
   const requests = [];
+  const session = new Map();
   let resolveChat;
   const context = vm.createContext({
     document: {
@@ -38,15 +39,24 @@ function setup({build = 'local-ui-v4', reply, delayChat = false, mobile = false}
     AbortSignal: {timeout: () => ({})},
     performance: {now: () => 0},
     crypto: {randomUUID: () => 'unique'},
-    setInterval: () => 1, clearInterval() {},
+    setInterval: () => 1, clearInterval() {}, setTimeout,
+    localStorage: {getItem: key => session.get(key) || null, setItem: (key,value) => session.set(key,value), removeItem: key => session.delete(key)},
     fetch: async (url, options) => {
       requests.push({url, options});
       if (url === '/api/engine_info') return {
         ok: true, json: async () => ({
           build, engine_protocol: 'baris-execution-v2', tool_loop: true})};
-      if (delayChat) await new Promise(resolve => { resolveChat = resolve; });
+      if (url === '/api/tasks') {
+        if (delayChat) await new Promise(resolve => { resolveChat = resolve; });
+        return {ok: true, json: async () => ({task_id: 'job_test'})};
+      }
+      if (url.startsWith('/api/tasks/')) return {ok: true, json: async () => ({
+        id: 'job_test', status: 'UNVERIFIED', created: Date.now()/1000,
+        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v5',
+          status:'UNVERIFIED', verified:false, execution_steps:[], reply:'<script>untrusted</script>'})
+      })};
       return {ok: true, json: async () => reply || ({
-        engine_protocol: 'baris-execution-v2', build: 'local-ui-v4',
+        engine_protocol: 'baris-execution-v2', build: 'local-ui-v5',
         status: 'UNVERIFIED', verified: false, execution_steps: [],
         reply: '<script>untrusted</script>'
       })};
@@ -63,7 +73,7 @@ test('mismatched backend disables submission', async () => {
   assert.equal(app.elements.sendBtn.disabled, true);
   app.elements.promptInput.value = 'Yaz';
   await app.context.sendAction();
-  assert.equal(app.requests.filter(r => r.url === '/api/chat').length, 0);
+  assert.equal(app.requests.filter(r => r.url === '/api/tasks').length, 0);
 });
 
 test('file test sends exact acceptance to same-origin endpoint', async () => {
@@ -71,7 +81,7 @@ test('file test sends exact acceptance to same-origin endpoint', async () => {
   await tick();
   app.context.testFileWrite();
   await tick();
-  const chat = app.requests.find(r => r.url === '/api/chat');
+  const chat = app.requests.find(r => r.url === '/api/tasks');
   const payload = JSON.parse(chat.options.body);
   assert.deepEqual(payload.expected_files, {
     'kabul_deneme/arayuz_unique.txt': 'Merhaba Barış'
@@ -82,7 +92,7 @@ test('file test sends exact acceptance to same-origin endpoint', async () => {
 
 test('model verified flag without independent acceptance is not success', async () => {
   const app = setup({reply: {
-    engine_protocol: 'baris-execution-v2', build: 'local-ui-v4',
+    engine_protocol: 'baris-execution-v2', build: 'local-ui-v5',
     status: 'VERIFIED', verified: true,
     execution_steps: [{tool: 'write', success: true}], acceptance: null
   }});
@@ -100,7 +110,7 @@ test('double submission produces only one request', async () => {
   const first = app.context.sendAction();
   await tick();
   await app.context.sendAction();
-  assert.equal(app.requests.filter(r => r.url === '/api/chat').length, 1);
+  assert.equal(app.requests.filter(r => r.url === '/api/tasks').length, 1);
   app.resolve();
   await first;
 });
@@ -144,3 +154,4 @@ test('new chat does not hide an active task', async () => {
   app.resolve();
   await pending;
 });
+

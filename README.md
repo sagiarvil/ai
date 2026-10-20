@@ -23,32 +23,58 @@ python3 baris_local.py stop
 Kayıtlar .baris_runtime/ altındadır. Oturum açılışında otomatik başlatma kurulmaz.
 Durdurma yalnızca kimliği doğrulanmış yönetilen süreç için geçerlidir.
 
-## Arayüz doğrulaması
+## Kalıcı görev motoru — local-ui-v5
 
-“Dosya yazmayı sına” düğmesi benzersiz dosya yolu ve tam içerik beklentisi
-gönderir; dosya gerçekten okunarak kontrol edilir. Genel görevlerde bağımsız
-kabul kontrolü yoksa sonuç UNVERIFIED gösterilir; başarı uydurulmaz.
-İşlem kanıtları açılır bölümde, dosya okuma sonuçları metin olarak gösterilir.
-Çift gönderim arayüzde ve API'de engellenir. İstemci hatasında otomatik tekrar yoktur.
+Yetkili giriş `durable_api:app` uygulamasıdır; `baris_local.py` ve `server.py` bu motora bağlanır.
+POST `/api/tasks` hemen 202 ve görev kimliği döndürür. GET `/api/tasks/{id}`
+kayıtlı durum ve gerçek olayları verir. POST `/api/tasks/{id}/cancel` iptal ister.
+`Idempotency-Key` aynı isteğin ikinci göreve dönüşmesini engeller; farklı içerikle
+aynı anahtar 409 döndürür. Eski `/api/chat` en fazla beş saniye bekler, sonra aynı
+görevin kimliğini döndürür. 202 yanıtı tamamlanma anlamına gelmez.
 
-## Kanıt ve sınırlar
+SQLite WAL kaydı ve ayrı çalışan süreç sayesinde sayfa yenileme, HTTP kopması ve
+web sunucusu yeniden başlatma işi yeniden yürütmez. Tek model çağrısı, tek görev
+çalışır; sekiz bekleyen/çalışan görev sınırı vardır. İşlem sırasında çöken çalışanın
+yan etkisi belirsizse görev BLOCKED olur; komut körlemesine tekrarlanmaz.
 
-Kullanıcının 7838c946 sürümündeki canlı Mistral testi bir dosyayı tek araç çağrısıyla
-yazmış ve bağımsız içerik kontrolünü geçmiştir. Bu bütün görevlerde başarı garantisi
-değildir. Yeni arayüz/başlatıcı için canlı Mac testi ayrıca yapılmalıdır.
+İlk model çağrısı kısa plan üretir. Kod 3000 karakterlik parçalarla ve hash önkoşullu
+eklemelerle yazılır. Varsayılan toplam bütçe 900 saniye, model çağrısı en fazla
+240 saniye, akış sessizliği 45 saniye, dış komut 90 saniyedir. Bunlar başarısızlığı
+saklayan sonsuz beklemeler değildir. Tekrarlanan sonuçsuz işlemler durdurulur.
+Model akışındaki kesik JSON veya `done_reason=length` çalıştırılmaz.
+
+`expected_files` bağımsız disk kontrolünden geçmedikçe VERIFIED üretilmez.
+Kabul koşulu olmayan genel görevler UNVERIFIED olarak sunulur. Yeni dosya testinde
+birebir içerik, satır sonu ve SHA kaydedilir. İptal/zaman aşımında dış komutun süreç
+grubu önce TERM, gerekirse KILL ile durdurulur. Komut çıktısı sınırlandırılır.
+
+Arayüz görev kimliğini saklar, yenilenince aynı görevi izler, kısa planı ve gerçek
+ilerlemeyi gösterir. Yeni görev yaratmadan belirsiz gönderimi aynı anahtarla uzlaştırır.
+Dock uygulamasının bağlı olduğu kaynak dizin aynı kaldığında kısayol değişmez.
+
+## Doğrulama ve sınırlar
 
 ```bash
-python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks
+python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime
+node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-Python testleri programlanmış model yanıtları kullanır; Node testleri sahte DOM ve
-HTTP yanıtlarıyla arayüz/API sözleşmesini sınar. Canlı tarayıcı veya model testi değildir.
+44 Python ve 8 Node testi geliştirme ortamında geçti. Yeni 15 entegrasyon testi
+kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
+model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
+CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
+çalıştırma kontrollerini içerir. Bu testler canlı Mistral performans ölçümü değildir.
+Mac ve Linux CI matrisi eklenmiştir; yerelde geçen test CI sonucunun yerine geçmez.
 
-Shell yürütücüsü işletim sistemi sandbox'ı değildir. Sunucu yalnızca kişisel yerel
-kullanım içindir. Başka tarayıcı origin'lerinden görev gönderimi reddedilir; bu,
-kimlik doğrulama veya süreç izolasyonu yerine geçmez. Görev zaman aşımı model
-bekleyişini keser; iş parçacığında başlayan dış komutun mutlaka durduğunu garanti etmez.
+Shell yürütücüsü işletim sistemi sandbox'ı değildir. Python programları kullanıcının
+sistem yetkileriyle çalışır. Sunucu loopback üzerinde kişisel kullanım içindir.
+Çapraz origin engeli kimlik doğrulama yerine geçmez. SQLite dosyası yerel diskte
+kalmalıdır. Başka uygulamaların Ollama çağrıları bu motorun kilidine uymaz.
+Her görevde yüzde 100 başarı garantisi veya canlı Mac testi iddia edilmez.
 
-Eski DeepSeek/Qwen masaüstü uygulamasının kaynakları bu repoda bulunmuyor.
-Bu başlatıcı repodaki yerel paneli çalışan motora bağlar; başka uygulamaları değiştirmez.
+Tasarım kaynakları: [Ollama akış API](https://docs.ollama.com/api/chat),
+[yapılandırılmış çıktı](https://docs.ollama.com/capabilities/structured-outputs),
+[bellek ve paralellik](https://docs.ollama.com/faq),
+[SQLite WAL](https://www.sqlite.org/wal.html),
+[Python süreç denetimi](https://docs.python.org/3/library/asyncio-subprocess.html).

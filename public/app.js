@@ -15,7 +15,7 @@ async function engineInfo() {
   if (!response.ok) throw new Error('Yerel sunucuya ulaşılamadı.');
   const info = await response.json();
   if (info.engine_protocol !== 'baris-execution-v2' ||
-      info.build !== 'local-ui-v4' || info.tool_loop !== true) {
+      info.build !== 'local-ui-v5' || info.tool_loop !== true) {
     throw new Error('Arayüz ve motor sürümü uyuşmuyor.');
   }
   return info;
@@ -37,7 +37,7 @@ async function refreshConnection() {
 }
 
 function renderResult(box, data) {
-  if (data.engine_protocol !== 'baris-execution-v2' || data.build !== 'local-ui-v4') {
+  if (data.engine_protocol !== 'baris-execution-v2' || data.build !== 'local-ui-v5') {
     throw new Error('Yanıt beklenen motora ait değil.');
   }
   const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];
@@ -72,6 +72,7 @@ function renderResult(box, data) {
 
 async function sendAction(expectedFiles = null) {
   if (busy || !connected) return;
+  if (localStorage.getItem('barisActiveTask')) { await resumeVisibleTask(); return; }
   const text = input.value.trim();
   if (!text) return;
   busy = true;
@@ -98,18 +99,12 @@ async function sendAction(expectedFiles = null) {
     await engineInfo();
     const payload = {message: text};
     if (expectedFiles) payload.expected_files = expectedFiles;
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(150000)
-    });
-    const data = await response.json();
+    const submitted = await submitPayload(payload);
+    localStorage.setItem('barisActiveTask', submitted.task_id);
+    localStorage.removeItem('barisPendingSubmission');
     clearInterval(timer);
-    if (!response.ok) {
-      throw new Error(typeof data.detail === 'string' ? data.detail : 'Sunucu hatası.');
-    }
-    renderResult(box, data);
+    await followTask(submitted.task_id, box);
+
   } catch (error) {
     clearInterval(timer);
     box.textContent = error.name === 'TimeoutError'
@@ -125,6 +120,98 @@ async function sendAction(expectedFiles = null) {
   }
 }
 
+async function submitPayload(payload) {
+  const previous = localStorage.getItem('barisPendingSubmission');
+  const pending = previous ? JSON.parse(previous) : {key: crypto.randomUUID(), payload};
+  if (previous && JSON.stringify(pending.payload) !== JSON.stringify(payload)) {
+    throw new Error('Önceki gönderimin sonucu belirsiz. Sayfayı yenileyerek aynı işlem anahtarıyla kontrol et.');
+  }
+  localStorage.setItem('barisPendingSubmission', JSON.stringify(pending));
+  const response = await fetch('/api/tasks', {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'Idempotency-Key': pending.key},
+    body: JSON.stringify(pending.payload), signal: AbortSignal.timeout(10000)
+  });
+  const submitted = await response.json();
+  if (!response.ok) throw new Error(typeof submitted.detail === 'string' ? submitted.detail : 'Görev alınamadı.');
+  return submitted;
+}
+const terminalStates = new Set(['VERIFIED', 'UNVERIFIED', 'FAILED', 'CANCELLED', 'BLOCKED']);
+let activeTaskId = null;
+async function followTask(taskId, box) {
+  activeTaskId = taskId;
+  let lastSeq = 0;
+  let lastMessage = 'Görev sırada bekliyor.';
+  let networkErrors = 0;
+  while (true) {
+    try {
+      const response = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '?after=' + lastSeq,
+        {cache: 'no-store', signal: AbortSignal.timeout(5000)});
+      if (!response.ok) throw new Error('Görev durumu alınamadı.');
+      const job = await response.json();
+      networkErrors = 0;
+      for (const event of job.events || []) {
+        lastSeq = Math.max(lastSeq, event.seq);
+        if (event.data.message) lastMessage = event.data.message;
+        if (event.kind === 'MODEL_PROGRESS') lastMessage += ' • ' + event.data.characters + ' karakter';
+      }
+      box.replaceChildren();
+      const message = document.createElement('p');
+      message.textContent = lastMessage;
+      const identity = document.createElement('p');
+      identity.textContent = 'Görev: ' + taskId + ' • ' + Math.floor((Date.now()/1000) - job.created) + ' saniye';
+      const cancel = document.createElement('button');
+      cancel.textContent = 'Görevi durdur';
+      cancel.onclick = async () => {
+        cancel.disabled = true;
+        try {
+          const response = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/cancel', {method: 'POST'});
+          if (!response.ok) throw new Error('Durdurma isteği alınamadı.');
+          cancel.textContent = 'Durdurma istendi';
+        } catch (error) { cancel.disabled = false; cancel.textContent = error.message; }
+      };
+      box.append(message, identity, cancel);
+      if (job.plan && job.plan.length) {
+        const plan = document.createElement('details');
+        const label = document.createElement('summary'); label.textContent = 'İş planı';
+        const list = document.createElement('ol');
+        for (const text of job.plan) { const item = document.createElement('li'); item.textContent = text; list.appendChild(item); }
+        plan.append(label, list); box.appendChild(plan);
+      }
+      if (terminalStates.has(job.status)) {
+        if (job.result) renderResult(box, job.result);
+        else message.textContent = 'Görev sonlandı: ' + job.status;
+        localStorage.removeItem('barisActiveTask');
+        activeTaskId = null;
+        return;
+      }
+    } catch (error) {
+      networkErrors += 1;
+      box.textContent = 'Bağlantı bekleniyor; görev tekrar gönderilmiyor. Görev: ' + taskId;
+      if (networkErrors >= 15) throw new Error('Bağlantı kesildi. Görev kaydı korundu; sayfayı yenileyerek izlemeye devam et.');
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+async function resumeVisibleTask() {
+  let taskId = localStorage.getItem('barisActiveTask');
+  if (busy) return;
+  const pending = localStorage.getItem('barisPendingSubmission');
+  if (!taskId && !pending) return;
+  busy = true; sendBtn.disabled = true; input.disabled = true;
+  document.getElementById('welcomeMsg')?.remove();
+  const box = document.createElement('div'); box.className = 'msg-ai'; feed.appendChild(box);
+  try {
+    if (!taskId && pending) {
+      const submitted = await submitPayload(JSON.parse(pending).payload);
+      taskId = submitted.task_id;
+      localStorage.setItem('barisActiveTask', taskId);
+      localStorage.removeItem('barisPendingSubmission');
+    }
+    await followTask(taskId, box);
+  }
+  catch (error) { box.textContent = error.message; }
+  finally { busy = false; input.disabled = false; await refreshConnection(); }
+}
 function testFileWrite() {
   if (busy || !connected) return;
   const path = 'kabul_deneme/arayuz_' + crypto.randomUUID() + '.txt';
@@ -200,3 +287,4 @@ document.addEventListener('click', event => {
     closeToolsMenu();
   }
 });
+

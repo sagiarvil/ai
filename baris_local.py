@@ -15,7 +15,7 @@ import uuid
 import webbrowser
 
 SOURCE = Path(__file__).resolve().parent
-BUILD = "local-ui-v4"
+BUILD = "local-ui-v5"
 
 
 def read_info(port):
@@ -59,7 +59,7 @@ def main():
             pid = state["pid"]
             command = subprocess.check_output(
                 ["ps", "-p", str(pid), "-o", "command="], text=True)
-            if "uvicorn omni_chat_panel:app" not in command:
+            if "uvicorn durable_api:app" not in command:
                 raise SystemExit("Süreç kimliği doğrulanamadı.")
             os.kill(pid, 15)
             for _ in range(50):
@@ -72,23 +72,45 @@ def main():
                     return
             raise SystemExit("Sunucu henüz kapanmadı; durum kaydı korundu.")
 
+        current_release = subprocess.check_output(
+            ['git','-C',str(SOURCE),'rev-parse','HEAD'], text=True).strip()
         try:
             info = read_info(args.port)
         except (OSError, ValueError):
             info = None
         if info is not None:
-            if not own_info(info):
-                raise SystemExit("Port başka bir uygulamaya ait; süreçlere dokunulmadı.")
-            if info.get("busy"):
-                raise SystemExit("Bu sunucuda görev çalışıyor; yeniden başlatılmadı.")
-        else:
+            if not own_info(info) or info.get("release") != current_release:
+                managed_old = (
+                    info.get('source_root') == str(SOURCE)
+                    and info.get('engine_protocol') == 'baris-execution-v2'
+                    and info.get('build') in {'local-ui-v4','local-ui-v5'}
+                    and state.get('instance') == info.get('instance')
+                    and state.get('pid') and not info.get('busy')
+                )
+                if not managed_old:
+                    raise SystemExit('Port başka veya meşgul bir uygulamaya ait; süreçlere dokunulmadı.')
+                command = subprocess.check_output(
+                    ['ps','-p',str(state['pid']),'-o','command='], text=True)
+                if not any(name in command for name in ('uvicorn omni_chat_panel:app','uvicorn durable_api:app')):
+                    raise SystemExit('Eski sunucu süreci doğrulanamadı.')
+                os.kill(state['pid'], 15)
+                for _ in range(100):
+                    time.sleep(0.1)
+                    try:
+                        read_info(args.port)
+                    except OSError:
+                        info = None
+                        break
+                if info is not None:
+                    raise SystemExit('Eski sunucu kapanmadı; yeni süreç başlatılmadı.')
+        if info is None:
             with socket.socket() as probe:
                 if probe.connect_ex(("127.0.0.1", args.port)) == 0:
                     raise SystemExit("Port dolu; hiçbir süreç durdurulmadı.")
-            print("29 çevrimdışı test çalıştırılıyor...", flush=True)
+            print("Çevrimdışı motor ve entegrasyon testleri çalıştırılıyor...", flush=True)
             subprocess.run(
                 [sys.executable, "-m", "unittest", "-v", "test_execution_loop",
-                 "test_structured_actions", "test_acceptance_checks"],
+                 "test_structured_actions", "test_acceptance_checks", "test_durable_runtime"],
                 cwd=SOURCE, check=True)
             instance = uuid.uuid4().hex
             release = subprocess.check_output(
@@ -98,7 +120,7 @@ def main():
             log_path = runtime / f"server-{args.port}.log"
             with log_path.open("ab") as log:
                 process = subprocess.Popen(
-                    [sys.executable, "-m", "uvicorn", "omni_chat_panel:app",
+                    [sys.executable, "-m", "uvicorn", "durable_api:app",
                      "--host", "127.0.0.1", "--port", str(args.port)],
                     cwd=SOURCE, env=env, stdin=subprocess.DEVNULL,
                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -146,3 +168,4 @@ if __name__ == "__main__":
         main()
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit("Başlatma hatası: " + str(exc))
+
