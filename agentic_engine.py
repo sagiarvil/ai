@@ -27,6 +27,7 @@ from typing import Dict, Any, List, Optional
 import httpx
 
 from sandbox_executor import secure_sandbox_run
+from memory_store import memory_store
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
@@ -294,6 +295,21 @@ class AutonomousExecutionEngine:
                     messages.append({"role": role, "content": content})
 
         messages.append({"role": "user", "content": prompt})
+
+        # Sürekli Vektörel & Semantik Hafıza Entegrasyonu
+        try:
+            past_memories = memory_store.search_memory(prompt, limit=4)
+            if past_memories:
+                mem_lines = []
+                for m in past_memories:
+                    mem_lines.append(f"[{m['role'].upper()}]: {m['content'][:250]}")
+                memory_context = "\n".join(mem_lines)
+                messages.append({
+                    "role": "system",
+                    "content": f"[GEÇMİŞ VEKTÖREL/SEMANTİK HAFIZA (Önceki Bilgiler)]:\n{memory_context}\n\nBu geçmiş bilgileri kullanıcının bağlamı ve tercihleri olarak dikkate al."
+                })
+        except Exception:
+            pass
 
         # ----------------------------------------------------------------------
         # ÇOKLU REPO / TOPLU KURULUM DOĞRUDAN İCRA MOTORU (DETERMINISTIC BATCH RUNNER)
@@ -625,6 +641,13 @@ class AutonomousExecutionEngine:
                 f"### 💻 2. Mühendislik & İcra Çözümü:\n\n"
                 f"{final_reply}"
             )
+
+        # Sürekli semantik hafızaya kaydet
+        if final_reply:
+            try:
+                memory_store.record_turn(prompt, final_reply, chosen_model)
+            except Exception:
+                pass
 
         # DOĞRUDAN SOHBET / JARVIS MODU VEYA FİZİKSEL ARAÇ İCRA DOĞRULAMASI
         if not has_executed_tools:

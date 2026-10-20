@@ -102,6 +102,31 @@ class PersistentMemoryStore:
                 updated_at REAL NOT NULL
             );
             """)
+
+            # 6. Sürekli Diyalog ve Semantik Hafıza Tablosu (Episodic Memory)
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                model_used TEXT,
+                created_at REAL NOT NULL
+            );
+            """)
+            conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS conversation_fts USING fts5(
+                content,
+                role,
+                content='conversation_memory',
+                content_rowid='id'
+            );
+            """)
+            conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_conversation_ai AFTER INSERT ON conversation_memory BEGIN
+                INSERT INTO conversation_fts(rowid, content, role) VALUES (new.id, new.content, new.role);
+            END;
+            """)
             conn.commit()
 
     # --------------------------------------------------------------------------
@@ -235,6 +260,54 @@ class PersistentMemoryStore:
                 WHERE goal LIKE ? OR solution_summary LIKE ?
                 LIMIT ?;
                 """, (f"%{clean_q}%", f"%{clean_q}%", limit))
+                return [dict(r) for r in cur.fetchall()]
+
+    # --------------------------------------------------------------------------
+    # Sürekli Semantik ve Bölümsel Diyalog Hafızası (Episodic & Semantic Memory)
+    # --------------------------------------------------------------------------
+    def record_turn(self, user_msg: str, assistant_msg: str, model_used: str = "", session_id: str = "default"):
+        now = time.time()
+        with self._get_connection() as conn:
+            conn.execute("""
+            INSERT INTO conversation_memory (session_id, role, content, model_used, created_at)
+            VALUES (?, 'user', ?, ?, ?);
+            """, (session_id, user_msg, model_used, now))
+            conn.execute("""
+            INSERT INTO conversation_memory (session_id, role, content, model_used, created_at)
+            VALUES (?, 'assistant', ?, ?, ?);
+            """, (session_id, assistant_msg, model_used, now))
+            conn.commit()
+
+    def search_memory(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """FTS5 ve tam metin aramasıyla geçmiş diyalog ve çözüm hafızasını çeker."""
+        clean_q = "".join(c for c in query if c.isalnum() or c.isspace()).strip()
+        if not clean_q or len(clean_q) < 3:
+            return []
+        tokens = [t for t in clean_q.split() if len(t) >= 3]
+        if not tokens:
+            return []
+        match_expr = " OR ".join(f'"{t}"*' for t in tokens[:6])
+
+        with self._get_connection() as conn:
+            try:
+                cur = conn.execute("""
+                SELECT session_id, role, content, model_used, created_at
+                FROM conversation_memory
+                WHERE id IN (
+                    SELECT rowid FROM conversation_fts WHERE conversation_fts MATCH ?
+                )
+                ORDER BY created_at DESC
+                LIMIT ?;
+                """, (match_expr, limit))
+                return [dict(r) for r in cur.fetchall()]
+            except Exception:
+                cur = conn.execute("""
+                SELECT session_id, role, content, model_used, created_at
+                FROM conversation_memory
+                WHERE content LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?;
+                """, (f"%{clean_q[:30]}%", limit))
                 return [dict(r) for r in cur.fetchall()]
 
 # Küresel tekil örnek

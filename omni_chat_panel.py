@@ -12,6 +12,8 @@ import re
 import secrets
 import subprocess
 import tempfile
+import time
+import uuid
 import io
 from pathlib import Path
 from typing import List, Optional
@@ -289,6 +291,66 @@ def tool_run_slither(solidity_code: str) -> str:
     except Exception as e:
         return f"[Slither Hata]: {e}"
 
+def tool_capture_and_analyze_screen(prompt: str = "") -> str:
+    """Masaüstü ekranını sessizce yakalar, aktif pencereyi tespit eder ve OCR ile metinleri ayıklar."""
+    try:
+        import base64
+        from PIL import Image
+        import pytesseract
+
+        # Aktif pencere / ön plandaki uygulamayı macOS AppleScript ile bul
+        frontmost_app = "Bilinmiyor"
+        try:
+            res_app = subprocess.run(
+                ["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
+                capture_output=True, text=True, timeout=5
+            )
+            if res_app.returncode == 0 and res_app.stdout.strip():
+                frontmost_app = res_app.stdout.strip()
+        except Exception:
+            pass
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+
+        try:
+            # -x: sessiz ekran yakalama (dekuplaj ve ses çıkartmaz)
+            capture_res = subprocess.run(["/usr/sbin/screencapture", "-x", tmp_path], capture_output=True, timeout=10)
+            if capture_res.returncode != 0 or not os.path.exists(tmp_path):
+                return f"[Ekran Yakalama Hatası]: screencapture başarısız oldu (çıkış kodu: {capture_res.returncode})."
+
+            img = Image.open(tmp_path)
+            w, h = img.size
+
+            # OCR metin ayıklama
+            ocr_text = ""
+            try:
+                ocr_text = pytesseract.image_to_string(img, lang="tur+eng", timeout=15)
+            except Exception:
+                try:
+                    ocr_text = pytesseract.image_to_string(img, timeout=10)
+                except Exception as ocr_err:
+                    ocr_text = f"[OCR okuma uyarısı]: {ocr_err}"
+
+            ocr_summary = ocr_text.strip()[:3500] if ocr_text else "Ekranda okunabilir metin saptanamadı."
+
+            return (
+                f"### 🖥️ [MASAÜSTÜ EKRAN GÖRSEL ANALİZİ]\n"
+                f"- **Ön Plandaki Aktif Uygulama:** `{frontmost_app}`\n"
+                f"- **Ekran Çözünürlüğü:** {w}x{h} piksel\n"
+                f"- **Kullanıcı İnceleme Talebi:** {prompt if prompt else 'Genel Ekran Durumu'}\n\n"
+                f"**📝 Ekranda Tespit Edilen Metinler ve İçerik (OCR):**\n"
+                f"```text\n{ocr_summary}\n```\n"
+            )
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+    except Exception as e:
+        return f"[Masaüstü Görsel Zeka Hatası]: {str(e)}"
+
 # ==============================================================================
 # MODEL TOOLS ŞEMASI
 # ==============================================================================
@@ -394,6 +456,20 @@ tools = [
                 "required": ["solidity_code"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_capture_and_analyze_screen",
+            "description": "Kullanıcının masaüstü ekranını sessizce yakalar, aktif ön pencereyi tespit eder ve OCR görsel zeka ile ekrandaki kodları ve metinleri okuyup analiz eder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Kullanıcının ekranda özel olarak incelenmesini istediği alan veya soru"}
+                },
+                "required": []
+            }
+        }
     }
 ]
 
@@ -494,6 +570,8 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
         return await tool_crawl_website(fargs.get("url", ""))
     elif fname == "tool_run_slither":
         return tool_run_slither(fargs.get("solidity_code", ""))
+    elif fname == "tool_capture_and_analyze_screen":
+        return tool_capture_and_analyze_screen(fargs.get("prompt", ""))
     return f"[Bilinmeyen Araç]: {fname}"
 
 
@@ -805,6 +883,134 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
 
 class VoiceSpeakRequest(BaseModel):
     text: str
+
+class RunCodeRequest(BaseModel):
+    code: str
+    language: str = "python"  # python, bash, node, sh
+
+@app.post("/api/code/run")
+async def api_run_code(req: RunCodeRequest):
+    """
+    Web arayüzündeki gömülü IDE/Terminal için izole, güvenli kod çalıştırıcı.
+    Kullanıcının chatteki kod bloklarını anında çalıştırmasını ve konsol çıktısı almasını sağlar.
+    """
+    from sandbox_executor import secure_sandbox_run
+
+    raw_code = req.code.strip()
+    lang = req.language.lower()
+
+    if not raw_code:
+        return {"success": False, "stdout": "", "stderr": "Çalıştırılacak kod boş olamaz.", "elapsed": 0}
+
+    # İlgili dil için geçici güvenli dosya veya komut hazırla
+    with tempfile.NamedTemporaryFile(suffix=f".{lang if lang != 'bash' else 'sh'}", mode="w", encoding="utf-8", delete=False) as f:
+        f.write(raw_code)
+        tmp_script = f.name
+
+    try:
+        if lang in ["python", "py", "python3"]:
+            cmd = f"python3 {tmp_script}"
+        elif lang in ["bash", "sh", "shell", "zsh"]:
+            cmd = f"bash {tmp_script}"
+        elif lang in ["javascript", "js", "node"]:
+            cmd = f"node {tmp_script}"
+        else:
+            # Fallback olarak python dene
+            cmd = f"python3 {tmp_script}"
+
+        # Sandbox executor ile güvenli şekilde çalıştır (ana sisteme izinsiz yazma engellenir)
+        run_res = secure_sandbox_run(cmd, timeout=30, allow_network=True)
+        return {
+            "success": run_res.get("success", False),
+            "exit_code": run_res.get("exit_code", -1),
+            "stdout": run_res.get("stdout", ""),
+            "stderr": run_res.get("stderr", ""),
+            "elapsed": run_res.get("elapsed", 0),
+            "language": lang
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": f"Kod yürütme hatası: {str(e)}",
+            "elapsed": 0,
+            "language": lang
+        }
+    finally:
+        if os.path.exists(tmp_script):
+            try:
+                os.remove(tmp_script)
+            except Exception:
+                pass
+
+@app.post("/api/screen/capture")
+async def api_screen_capture():
+    """
+    Kullanıcının web panelinden tek tıkla masaüstü ekranını yakalayıp önizleme ve OCR metnini döner.
+    """
+    try:
+        import base64
+        from PIL import Image
+        import pytesseract
+
+        frontmost_app = "Bilinmiyor"
+        try:
+            res_app = subprocess.run(
+                ["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
+                capture_output=True, text=True, timeout=5
+            )
+            if res_app.returncode == 0 and res_app.stdout.strip():
+                frontmost_app = res_app.stdout.strip()
+        except Exception:
+            pass
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+
+        try:
+            capture_res = subprocess.run(["/usr/sbin/screencapture", "-x", tmp_path], capture_output=True, timeout=10)
+            if capture_res.returncode != 0 or not os.path.exists(tmp_path):
+                return {"success": False, "error": "Ekran yakalanamadı."}
+
+            img = Image.open(tmp_path)
+            w, h = img.size
+
+            # Küçük thumbnail oluştur (chatte hızlı önizleme için)
+            thumb = img.copy()
+            thumb.thumbnail((800, 500))
+            buffered = io.BytesIO()
+            thumb.save(buffered, format="JPEG", quality=75)
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+            # OCR yap
+            ocr_text = ""
+            try:
+                ocr_text = pytesseract.image_to_string(img, lang="tur+eng", timeout=15)
+            except Exception:
+                try:
+                    ocr_text = pytesseract.image_to_string(img, timeout=10)
+                except Exception as oe:
+                    ocr_text = f"[OCR okuma uyarısı]: {oe}"
+
+            clean_ocr = ocr_text.strip() if ocr_text else "Metin bulunamadı."
+
+            return {
+                "success": True,
+                "frontmost_app": frontmost_app,
+                "resolution": f"{w}x{h}",
+                "image_data": f"data:image/jpeg;base64,{img_b64}",
+                "ocr_summary": clean_ocr[:2000],
+                "ocr_full": clean_ocr
+            }
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/api/voice/stop")
 async def voice_stop():

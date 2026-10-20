@@ -359,6 +359,64 @@
       text-align: center;
       padding-top: 6px;
     }
+    /* GÖMÜLÜ TERMINAL / IDE ÇEKMECESİ VE KOD ÇALIŞTIRICI */
+    .code-action-bar {
+      display: flex;
+      justify-content: flex-end;
+      background: #1e1e1e;
+      padding: 4px 10px;
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+      border-bottom: 1px solid #333;
+    }
+    .run-code-btn {
+      background: #0ea5e9;
+      color: #ffffff;
+      border: none;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s;
+    }
+    .run-code-btn:hover {
+      background: #0284c7;
+    }
+    .terminal-drawer {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-bottom-left-radius: 6px;
+      border-bottom-right-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 10px;
+      color: #58a6ff;
+      margin-top: -6px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      max-height: 240px;
+    }
+    .terminal-header {
+      display: flex;
+      justify-content: space-between;
+      color: #8b949e;
+      font-size: 10.5px;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+    }
+    .terminal-stdout {
+      color: #7ee787;
+      white-space: pre-wrap;
+    }
+    .terminal-stderr {
+      color: #f85149;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -401,6 +459,7 @@
         <div class="pill-bottom-left">
           <input type="file" id="fileUploadInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.py,.js,.json,.png,.jpg,.jpeg,.webp,.csv" style="display:none;" onchange="handleFileUpload(event)">
           <button type="button" class="pill-btn plus-btn" onclick="document.getElementById('fileUploadInput').click()" title="Dosya veya Görsel Ekle">+</button>
+          <button type="button" class="pill-btn" onclick="captureDesktopScreen()" id="screenVisionBtn" title="📸 Masaüstü Ekranını Gör ve İncele" style="font-size:12px; font-weight:500; color:var(--text-secondary); display:inline-flex; align-items:center; gap:4px; padding:0 8px; border-radius:14px; background:#f0f4f9;">📸 Ekranı Gör</button>
         </div>
         <div class="pill-bottom-right">
           <button class="pill-btn mic-btn" id="micBtn" onclick="toggleMic()" title="Sesle konuş">🎙️</button>
@@ -558,6 +617,53 @@
     function removeAttachment(index) {
       pendingAttachments.splice(index, 1);
       renderAttachmentTray();
+    }
+
+    // --- MASAÜSTÜ EKRAN GÖRSEL ZEKA (DESKTOP VISION CAPTURE) ---
+    async function captureDesktopScreen() {
+      const btn = document.getElementById('screenVisionBtn');
+      if (btn) {
+        btn.textContent = '📸 Ekran Alınıyor...';
+        btn.disabled = true;
+      }
+      const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') ? '' : 'http://127.0.0.1:5050';
+      const apiKey = (window.OMNI_KEY || localStorage.getItem('omni_key') || '').trim();
+
+      try {
+        const res = await fetch(API_BASE + '/api/screen/capture', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Omni-Key': apiKey
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            pendingAttachments.push({
+              filename: `Masaüstü (${data.frontmost_app})`,
+              file_type: 'Ekran Görüntüsü & OCR',
+              extracted_text: `[Ön Plandaki Uygulama: ${data.frontmost_app} | Çözünürlük: ${data.resolution}]\nEkranda Tespit Edilen OCR Metinleri:\n${data.ocr_full}`
+            });
+            renderAttachmentTray();
+            if (!input.value.trim()) {
+              input.value = `Ekranımdaki (${data.frontmost_app}) içeriğini incele ve yardımcı ol: `;
+              autoResizePill();
+            }
+          } else {
+            alert('Ekran yakalanamadı: ' + (data.error || 'Bilinmeyen hata'));
+          }
+        } else {
+          alert('Ekran yakalama servisi hata verdi: ' + res.status);
+        }
+      } catch(e) {
+        alert('Ekran servisi bağlantı hatası: ' + e.message);
+      } finally {
+        if (btn) {
+          btn.textContent = '📸 Ekranı Gör';
+          btn.disabled = false;
+        }
+      }
     }
 
     // --- SESLİ YANIT (TTS) YÖNETİMİ ---
