@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve()
 SANDBOX_DIR = WORKSPACE_ROOT / 'sandbox_workspace'
 SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -77,7 +77,7 @@ def secure_sandbox_run(
     if cwd:
         work_dir = Path(cwd).resolve()
         # Proje sınırları içinde mi kontrolü
-        if not str(work_dir).startswith(str(WORKSPACE_ROOT)):
+        if not work_dir.is_relative_to(WORKSPACE_ROOT):
             work_dir = SANDBOX_DIR
     else:
         work_dir = SANDBOX_DIR if isolated_workspace else WORKSPACE_ROOT

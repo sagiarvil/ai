@@ -2,7 +2,7 @@ name: OmniCore Integrity & Verification Gates
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/verified-execution-loop ]
   pull_request:
     branches: [ main ]
 
@@ -29,6 +29,9 @@ jobs:
             fi
           done
           echo "UTF-8 BOM kontrolü: PASS"
+
+      - name: Offline execution-loop regression tests
+        run: python3 -m unittest -v test_execution_loop
 
       - name: Syntax Compilation Check
         run: |

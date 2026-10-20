@@ -30,7 +30,7 @@ from deterministic_engine import DeterministicEngine
 from sandbox_executor import secure_sandbox_run
 from model_manager import ModelManager
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve()
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
 INDEX_HTML = PUBLIC_DIR / 'index.html'
 
@@ -76,7 +76,7 @@ async def verify_api_key(x_omni_key: Optional[str] = Security(api_key_header)):
 # ==============================================================================
 # FİZİKSEL YÜRÜTÜCÜ ARAÇLAR (PHYSICAL TOOLS)
 # ==============================================================================
-def tool_search_and_install_github_repo(query_or_url: str) -> str:
+def tool_search_and_install_github_repo(query_or_url: str, test_command: Optional[str] = None) -> dict:
     """Çok kriterli repo araştırması yapar, en uygununu seçer, sandbox içinde kurar ve test eder."""
     engine = AutonomousExecutionEngine()
     target_input = query_or_url.strip()
@@ -90,17 +90,8 @@ def tool_search_and_install_github_repo(query_or_url: str) -> str:
         best_repo = repos[0]
         best_url = best_repo["url"]
 
-    res = engine.install_and_verify_repo(best_url)
-    if res["success"]:
-        return (
-            f"✅ [MOTOR OTONOM VE DOĞRULANMIŞ OLARAK KURULDU]\n"
-            f"- **Depo:** `{best_url}`\n"
-            f"- **Konum:** `{res['dir']}`\n"
-            f"- **Durum:** {res['state']} (100% PASS)\n"
-            f"- **Kanıt:** Bağımlılıklar kuruldu ve runtime çalışma probe testi tamamlandı."
-        )
-    else:
-        return f"[Kurulum Başarısız - Rollback Yapıldı]: {res.get('error')}"
+    res = engine.install_and_verify_repo(best_url, test_command=test_command)
+    return res
 
 def tool_run_shell(command: str) -> str:
     res = ExecutionSandbox.run_isolated(command)
@@ -215,7 +206,8 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query_or_url": {"type": "string", "description": "GitHub repo URL'si veya arama terimi"}
+                    "query_or_url": {"type": "string", "description": "GitHub repo URL'si veya arama terimi"},
+                    "test_command": {"type": "string", "description": "Depoya uygun gerçek test komutu; yoksa aktivasyon yapılmaz."}
                 },
                 "required": ["query_or_url"]
             }
@@ -311,9 +303,43 @@ tools = [
     }
 ]
 
-async def dispatch_tool_call(fname: str, fargs: dict) -> str:
+def checked_file_tool(name: str, args: dict) -> dict:
+    target = (WORKSPACE_ROOT / args["filepath"]).resolve()
+    if not target.is_relative_to(WORKSPACE_ROOT):
+        raise ValueError("Proje dışındaki dosyaya erişim reddedildi.")
+    if name == "tool_read_file":
+        if target.stat().st_size > 100_000:
+            raise ValueError("Dosya okuma sınırı 100 KB.")
+        return {"success": True, "path": str(target),
+                "content": target.read_text(encoding="utf-8")}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = args["content"]
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        os.replace(temporary, target)
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
+    return {"success": target.read_text(encoding="utf-8") == content,
+            "path": str(target), "readback": True}
+
+
+async def dispatch_tool_call(fname: str, fargs: dict):
+    if fname == "tool_run_shell":
+        return await asyncio.to_thread(
+            ExecutionSandbox.run_isolated, fargs["command"])
+    if fname in {"tool_write_file", "tool_read_file"}:
+        return await asyncio.to_thread(checked_file_tool, fname, fargs)
+
     if fname == "tool_search_and_install_github_repo":
-        return tool_search_and_install_github_repo(fargs.get("query_or_url", ""))
+        return await asyncio.to_thread(
+            tool_search_and_install_github_repo,
+            fargs.get("query_or_url", ""), fargs.get("test_command"))
     elif fname == "tool_browser_navigate":
         return await tool_browser_navigate(
             url=fargs.get("url", ""),
@@ -322,7 +348,7 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
             use_i2p=fargs.get("use_i2p", False)
         )
     elif fname == "tool_list_browser_sessions":
-        return tool_list_browser_sessions()
+        return await asyncio.to_thread(tool_list_browser_sessions)
     elif fname == "tool_run_shell":
         return tool_run_shell(fargs.get("command", ""))
     elif fname == "tool_write_file":
@@ -332,13 +358,14 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
     elif fname == "tool_crawl_website":
         return await tool_crawl_website(fargs.get("url", ""))
     elif fname == "tool_run_slither":
-        return tool_run_slither(fargs.get("solidity_code", ""))
+        return await asyncio.to_thread(tool_run_slither, fargs.get("solidity_code", ""))
     return f"[Bilinmeyen Araç]: {fname}"
 
 class ChatRequest(BaseModel):
     message: str
     mode: str = "auto"
     history: List[dict] = []
+    expected_files: Optional[Dict[str, str]] = None
 
 @app.get("/")
 async def root():
@@ -388,10 +415,22 @@ async def system_status():
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_key)):
     query = req.message.strip()
+    async def verify_expected_files():
+        if not req.expected_files or len(req.expected_files) > 100:
+            return {"success": False, "error": "Geçerli kabul koşulu yok."}
+        def check():
+            results = {}
+            for path, expected in req.expected_files.items():
+                actual = checked_file_tool("tool_read_file", {"filepath": path})
+                results[path] = actual["content"] == expected
+            return {"success": all(results.values()), "files": results}
+        return await asyncio.to_thread(check)
+
     res = await AutonomousExecutionEngine.execute_verified_task(
         prompt=query,
         tools_schema=tools,
-        call_tool_fn=dispatch_tool_call
+        call_tool_fn=dispatch_tool_call,
+        verify_task_fn=verify_expected_files if req.expected_files else None,
     )
     return res
 

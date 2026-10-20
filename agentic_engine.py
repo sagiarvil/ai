@@ -29,7 +29,7 @@ import httpx
 from sandbox_executor import secure_sandbox_run, SANDBOX_DIR
 from model_manager import ModelManager
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve()
 TASKS_DIR = WORKSPACE_ROOT / "tasks"
 TASKS_DIR.mkdir(parents=True, exist_ok=True)
 TOOLS_DIR = WORKSPACE_ROOT / "tools"
@@ -188,19 +188,12 @@ class AutonomousExecutionEngine:
         # Gerçek Runtime Çalışma Testi (TESTING) - ASLA SAHTE DEĞİL
         self.transition_to(TaskState.TESTING, "Motorun fiziksel çalışma probe testi icra ediliyor.")
         
-        # Eğer özel test komutu verilmediyse, repo içindeki modülü import etmeyi veya CLI'yı çağırır
-        if not test_command:
-            # Python repoları için setup.py veya modül probe
-            py_files = list(target_dir.glob("*.py"))
-            if py_files:
-                main_candidate = target_dir / "main.py"
-                cli_candidate = target_dir / "cli.py"
-                run_target = main_candidate if main_candidate.exists() else (cli_candidate if cli_candidate.exists() else py_files[0])
-                t_cmd = f"python3 '{run_target}' --help || python3 -c 'import sys; sys.exit(0)'"
-            else:
-                t_cmd = "ls -la"
-        else:
-            t_cmd = test_command
+        if not test_command or not test_command.strip():
+            self.add_evidence("RUNTIME_TEST", "Bağımsız çalışma testi belirtilmedi.", False)
+            self.transition_to(TaskState.UNVERIFIED, "Dosyalar kuruldu; çalışma doğrulanmadı.")
+            return {"success": False, "state": self.state.value,
+                    "error": "Depoya uygun gerçek test komutu gerekli; aktivasyon yapılmadı."}
+        t_cmd = test_command
 
         t_res = ExecutionSandbox.run_isolated(t_cmd, cwd=target_dir, timeout=30)
         if not t_res["success"]:
@@ -266,130 +259,38 @@ class AutonomousExecutionEngine:
     # 3. RUNTIME DOĞRULAMALI GÖREV İCRA PROTOKOLÜ (AGENTIC LOOP)
     # --------------------------------------------------------------------------
     @classmethod
-    async def execute_verified_task(cls, prompt: str, tools_schema: list, call_tool_fn) -> Dict[str, Any]:
+    async def execute_verified_task(cls, prompt: str, tools_schema: list,
+                                    call_tool_fn, verify_task_fn=None) -> Dict[str, Any]:
+        from execution_loop import run_loop
         engine = cls()
-        engine.transition_to(TaskState.RECEIVED, "Kullanıcı görevi teslim alındı.")
-        engine.transition_to(TaskState.PLANNED, f"Hedef analiz edildi: {prompt[:80]}")
-        
-        system_instruction = (
-            "Sen OpenHands mimarisiyle çalışan, DETERMINISTIK bir Otonom Yazılım Mühendisisin. "
-            "KESİN KURAL: Asla akıl verme, ders anlatma, 'Şunu yapmanız gerekir' deme! "
-            "Kullanıcı bir şey istediğinde DOĞRUDAN araç çağrılarıyla görevi icra et. "
-            "Araç çağrısı yapmadan metin üretirsen görevin NOT_EXECUTED olarak iptal edilecektir!"
+        engine.transition_to(TaskState.PLANNED, "Araç yürütme döngüsü başlatıldı.")
+
+        async def call_model(messages, schemas):
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    os.environ.get("BARIS_MODEL_API_URL", OLLAMA_API_URL),
+                    json={
+                        "model": os.environ.get("BARIS_MODEL", DEFAULT_MODEL),
+                        "messages": messages,
+                        "tools": schemas,
+                        "tool_choice": "auto",
+                        "stream": False,
+                        "temperature": 0.1,
+                    },
+                )
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]
+
+        def save_event(event):
+            engine.add_evidence(
+                event.get("tool", "LOOP"),
+                "Araç veya yürütme sonucu",
+                event.get("success", False), event,
+            )
+
+        result = await run_loop(
+            prompt, tools_schema, call_model, call_tool_fn,
+            verify_task=verify_task_fn, on_event=save_event,
         )
-
-        messages = [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt}
-        ]
-
-        execution_steps = []
-        final_reply = ""
-        has_executed_tools = False
-
-        # Maksimum 10 tur ReAct döngüsü
-        for step_idx in range(1, 11):
-            try:
-                start_req = time.perf_counter()
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    resp = await client.post(
-                        OLLAMA_API_URL,
-                        json={
-                            "model": DEFAULT_MODEL,
-                            "messages": messages,
-                            "tools": tools_schema,
-                            "tool_choice": "auto",
-                            "temperature": 0.1,
-                            "options": {
-                                "num_thread": 8,
-                                "temperature": 0.1,
-                                "num_ctx": 8192,
-                                "top_k": 20,
-                                "top_p": 0.9
-                            }
-                        }
-                    )
-                    elapsed_req = round(time.perf_counter() - start_req, 3)
-                    if resp.status_code != 200:
-                        engine.transition_to(TaskState.FAILED, f"Model API yanıt vermedi: HTTP {resp.status_code}")
-                        break
-                    
-                    data = resp.json()
-                    msg = data["choices"][0]["message"]
-            except Exception as e:
-                engine.transition_to(TaskState.FAILED, f"Model çağrım hatası: {str(e)}")
-                break
-
-            tool_calls = msg.get("tool_calls")
-            if tool_calls:
-                has_executed_tools = True
-                messages.append(msg)
-
-                for tc in tool_calls:
-                    fname = tc["function"]["name"]
-                    raw_args = tc["function"].get("arguments", "{}")
-                    try:
-                        fargs = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    except Exception:
-                        fargs = {}
-
-                    # İlgili aracı çalıştır
-                    out = await call_tool_fn(fname, fargs)
-                    
-                    # Doğrulama: Kelime eşleşmesi değil, gerçek sonuç başarısı
-                    # out metni hata bildiren bir sistem dönüşü mü?
-                    is_tool_success = not out.startswith("[Hata") and not out.startswith("[Kurulum Başarısız") and not out.startswith("[GÜVENLİK ENGELİ")
-                    
-                    engine.add_evidence(f"TOOL_{fname}", f"Parametreler: {fargs}", is_tool_success, out[:500])
-
-                    execution_steps.append({
-                        "step": step_idx,
-                        "tool": fname,
-                        "args": fargs,
-                        "output": out,
-                        "success": is_tool_success
-                    })
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": out
-                    })
-            else:
-                final_reply = (msg.get("content") or "").strip()
-                break
-
-        # SIFIR SAHTE BAŞARI KAPISI (ZERO-FAKE VERIFICATION)
-        if not has_executed_tools:
-            engine.transition_to(TaskState.NOT_EXECUTED, "Model hiçbir araç çalıştırmadan sadece metin üretti.")
-            return {
-                "task_id": engine.task_id,
-                "status": TaskState.NOT_EXECUTED.value,
-                "reply": final_reply or "İşlem icra edilmedi; model yalnızca metin üretti.",
-                "execution_steps": [],
-                "evidences": engine.evidences,
-                "verified": False
-            }
-
-        # Tüm adımlar fiziksel başarıyla bitti mi?
-        all_passed = all(ev.get("success", False) for ev in engine.evidences)
-        if all_passed and execution_steps:
-            engine.transition_to(TaskState.VERIFIED, "Tüm adımlar fiziksel kanıtlarla doğrulandı.")
-            return {
-                "task_id": engine.task_id,
-                "status": TaskState.VERIFIED.value,
-                "reply": final_reply or "Görev tüm adımlarıyla başarıyla icra edildi ve doğrulandı.",
-                "execution_steps": execution_steps,
-                "evidences": engine.evidences,
-                "verified": True
-            }
-        else:
-            engine.transition_to(TaskState.PARTIAL, "Bazı adımlar hata verdi veya kısmen tamamlandı.")
-            return {
-                "task_id": engine.task_id,
-                "status": TaskState.PARTIAL.value,
-                "reply": final_reply or "Görev kısmen icra edildi; bazı araçlar hata üretti.",
-                "execution_steps": execution_steps,
-                "evidences": engine.evidences,
-                "verified": False
-            }
+        engine.transition_to(TaskState(result["status"]), result["reply"])
+        return dict(result, task_id=engine.task_id, evidences=engine.evidences)
