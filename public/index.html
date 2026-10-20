@@ -173,8 +173,8 @@
 
   <div id="feed">
     <div class="msg-ai" id="welcomeMsg">
-      <strong>[SİSTEM HAZIR]:</strong> Apple M4 GPU hızlandırmalı Mistral-24B (Abliterated) yerel çekirdeği aktif.<br>
-      Sıfır gecikme modu • İcra: Chrome, I2P, Tor, Slither, Crawl4AI, GitHub Sandboxed.<br>
+      <strong>[SİSTEM HAZIR]:</strong> Sunucu bağlantısı görev gönderilirken doğrulanacaktır.<br>
+      İşlem başarısı model metninden değil, araç ve kabul kontrolünden belirlenir.<br>
       Aşağıdan doğrudan komut girin.
     </div>
   </div>
@@ -230,13 +230,22 @@
       // AI bekleme kutusu
       const aDiv = document.createElement('div');
       aDiv.className = 'msg-ai';
-      aDiv.innerHTML = '<em>⚡ Yerel M4 GPU üzerinde fiziksel araçlar icra ediliyor...</em>';
+      aDiv.textContent = 'Yürütme motorunun sürümü kontrol ediliyor...';
       feed.appendChild(aDiv);
       feed.scrollTop = feed.scrollHeight;
 
       const t0 = performance.now();
 
       try {
+        const infoResponse = await fetch('/api/engine_info', {cache: 'no-store'});
+        if (!infoResponse.ok) {
+          throw new Error('Yeni yürütme motoruna ulaşılamıyor. Çalışan sunucunun güncellenmesi gerekiyor.');
+        }
+        const info = await infoResponse.json();
+        if (info.engine_protocol !== 'baris-execution-v2' || info.tool_loop !== true) {
+          throw new Error('Sunucu sürümü uyuşmuyor; görev gönderilmedi.');
+        }
+        aDiv.textContent = 'Görev yürütme motoruna gönderiliyor...';
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -247,25 +256,40 @@
           const data = await res.json();
           const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
           
-          let outHtml = '';
-          if (data.execution_steps && data.execution_steps.length > 0) {
-            outHtml += `<div class="steps">`;
-            data.execution_steps.forEach(st => {
-              outHtml += `▸ <strong>${st.tool}</strong> (${st.output ? st.output.substring(0, 100).replace(/\n/g, ' ') + '...' : 'Tamamlandı'})<br>`;
-            });
-            outHtml += `</div>`;
+          if (data.engine_protocol !== 'baris-execution-v2') {
+            throw new Error('Yanıt doğrulanmış yürütme protokolüne ait değil.');
           }
-
-          outHtml += marked.parse(data.reply || '');
-          outHtml += `<div style="font-size:10px; color:var(--muted); margin-top:8px;">⏱ Süre: ${elapsed}s • Durum: ${data.status}</div>`;
-          aDiv.innerHTML = outHtml;
+          const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];
+          const isVerified = data.status === 'VERIFIED' &&
+            data.verified === true && steps.length > 0 &&
+            data.acceptance && data.acceptance.success === true;
+          aDiv.replaceChildren();
+          const title = document.createElement('strong');
+          title.textContent = isVerified ? 'GÖREV DOĞRULANDI' :
+            (steps.length ? 'İŞLEM KAYDI VAR — GÖREV DOĞRULANMADI' : 'İŞLEM KANITI YOK');
+          aDiv.appendChild(title);
+          const details = document.createElement('pre');
+          details.textContent = JSON.stringify({
+            status: data.status,
+            verified: isVerified,
+            task_id: data.task_id,
+            execution_steps: steps,
+            acceptance: data.acceptance || null
+          }, null, 2);
+          aDiv.appendChild(details);
+          const summary = document.createElement('p');
+          summary.textContent = data.reply || 'Sunucu açıklama döndürmedi.';
+          aDiv.appendChild(summary);
+          const timing = document.createElement('p');
+          timing.textContent = 'Süre: ' + elapsed + ' saniye';
+          aDiv.appendChild(timing);
 
           history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
         } else {
           aDiv.innerHTML = `<span style="color:#f85149">Hata: Sunucu ${res.status} yanıtı döndü.</span>`;
         }
       } catch(e) {
-        aDiv.innerHTML = `<span style="color:#f85149">Bağlantı Hatası: ${e.message}</span>`;
+        aDiv.textContent = 'İşlem doğrulanamadı: ' + e.message;
       } finally {
         sendBtn.disabled = false;
         input.focus();
