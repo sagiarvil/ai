@@ -1,5 +1,6 @@
 """One durable task in its own process; no HTTP request owns its lifetime."""
 import asyncio
+import copy
 import hashlib
 import json
 import os
@@ -13,16 +14,16 @@ import httpx
 from acceptance_checks import AcceptanceGuard, inspect_expected_files
 from job_store import JobStore
 from structured_actions import build_request, parse_action
-from task_tools import TaskTools, TOOLS
+from task_tools import TaskTools, TOOLS, CHUNK_LIMIT
 
 
-async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
+async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diagnostic=None):
     text = ""
     final = None
     last_report = 0.0
     started = time.monotonic()
     store.event(job_id, "MODEL_START", {"message": "Model sıradaki kısa işlemi üretiyor."})
-    timeout = httpx.Timeout(connect=10, read=45, write=20, pool=10)
+    timeout = httpx.Timeout(connect=10, read=90, write=20, pool=10)
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         async with asyncio.timeout(seconds):
             async with client.stream(
@@ -39,6 +40,7 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
                     text += chunk.get("message", {}).get("content", "")
                     if len(text) > 100_000:
                         raise ValueError("Model yanıtı boyut sınırını aştı.")
+                    diagnostic.update(characters=len(text), elapsed_seconds=round(time.monotonic()-started, 2))
                     now = time.monotonic()
                     if now - last_report >= 1:
                         if heartbeat:
@@ -56,6 +58,32 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
         "eval_count": final.get("eval_count"), "prompt_eval_count": final.get("prompt_eval_count")})
     final["message"] = {"content": text}
     return final
+
+
+class ModelCallError(ValueError):
+    def __init__(self, detail):
+        self.detail = detail
+        super().__init__(detail["message"])
+
+
+async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
+    started = time.monotonic()
+    diagnostic = {"characters": 0, "elapsed_seconds": 0, "limit_seconds": round(seconds, 2)}
+    try:
+        return await _stream_generate(payload, store, job_id, seconds, heartbeat, diagnostic)
+    except (TimeoutError, httpx.HTTPError, ValueError) as exc:
+        diagnostic.update(error_type=type(exc).__name__,
+                          elapsed_seconds=round(time.monotonic()-started, 2))
+        if isinstance(exc, TimeoutError):
+            reason = "Model çağrısı süre sınırına ulaştı"
+        elif isinstance(exc, httpx.ReadTimeout):
+            reason = "Model bağlantısı 90 saniye veri göndermedi"
+        else:
+            reason = str(exc) or type(exc).__name__
+        diagnostic["message"] = (f"{reason}; {diagnostic['elapsed_seconds']} saniye, "
+                                 f"{diagnostic['characters']} karakter. Kısmi işlem çalıştırılmadı.")
+        store.event(job_id, "MODEL_INTERRUPTED", diagnostic)
+        raise ModelCallError(diagnostic) from exc
 
 
 async def generate(payload, store, job_id, seconds, heartbeat=None):
@@ -102,7 +130,7 @@ def run_job(store, job_id):
     messages = checkpoint.get("messages", [
         {"role": "system", "content": (
             "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
-            "Sonra her çağrıda tek küçük işlemi tamamla. Büyük programları 3000 karakterden "
+            "Sonra her çağrıda tek küçük işlemi tamamla. Büyük programları 700 karakterden "
             "küçük parçalarla yaz ve hash kontrollü append ile birleştir. İlk yanıtta bütün "
             "programı üretme. Kodun tamamını tek shell satırına gömme. Hataları araç çıktısıyla "
             "düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
@@ -119,6 +147,7 @@ def run_job(store, job_id):
     base_used = job["used"]
     start = time.monotonic()
     model_failures = 0
+    chunk_limit = checkpoint.get("chunk_limit", CHUNK_LIMIT)
     repeats = {}
     progress_keys = set(checkpoint.get("progress_keys", []))
     acceptance = None
@@ -139,7 +168,7 @@ def run_job(store, job_id):
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status in {"VERIFIED", "UNVERIFIED"},
                   "reply": reply, "execution_steps": steps, "acceptance": acceptance,
-                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v5"}
+                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v6"}
         store.finish(job_id, status, result)
 
     try:
@@ -158,14 +187,19 @@ def run_job(store, job_id):
                     return
                 guard.observe(acceptance)
                 messages.append({"role": "user", "content": "Kabul kontrolü başarısız: " + json.dumps(acceptance, ensure_ascii=False)})
-            selected = [TOOLS[0]] if plan is None else TOOLS[1:]
+            selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
+            for tool in selected:
+                content_schema = tool["function"]["parameters"].get("properties", {}).get("content")
+                if content_schema is not None:
+                    content_schema["maxLength"] = chunk_limit
+            tools.chunk_limit = chunk_limit
             request = build_request(os.environ.get("BARIS_MODEL", "mistral-small-24b-abliterated:latest"),
                                     compact(messages), selected)
             request["stream"] = True
             request["keep_alive"] = "10m"
-            request["options"]["num_predict"] = 256 if plan is None else 1536
+            request["options"]["num_predict"] = 256 if plan is None else 1024
             request["messages"][0]["content"] += (
-                " Tek küçük işlem üret. content en fazla 3000 karakter olsun. "
+                f" Tek küçük işlem üret. content en fazla {chunk_limit} karakter olsun. "
                 "Kalan büyük kodu sonraki çağrılarda append ile tamamla.")
             try:
                 raw = asyncio.run(generate(
@@ -173,12 +207,15 @@ def run_job(store, job_id):
                     heartbeat=lambda: store.update(job_id, used=used())))
                 message = parse_action(raw, messages, selected)
                 model_failures = 0
-            except (ValueError, httpx.HTTPError) as exc:
+            except (ValueError, httpx.HTTPError, TimeoutError) as exc:
                 model_failures += 1
-                store.event(job_id, "MODEL_ERROR", {"message": str(exc)})
+                detail = getattr(exc, "detail", {"message": str(exc) or type(exc).__name__, "error_type": type(exc).__name__})
+                store.event(job_id, "MODEL_ERROR", detail)
                 if model_failures > 1:
                     raise
-                messages.append({"role": "user", "content": str(exc) + " Tek kısa işlem üret; kod parçası 1000 karakteri aşmasın."})
+                chunk_limit = 350
+                store.event(job_id, "MODEL_RETRY", {"message": "Kısmi çıktı atıldı; tek kontrollü deneme 350 karakter sınırıyla yapılacak.", "chunk_limit": chunk_limit})
+                messages.append({"role": "user", "content": (str(exc) or type(exc).__name__) + " Tek kısa işlem üret; content en fazla 350 karakter olsun. Büyük dosyanın yalnızca ilk/devam parçasını yaz."})
                 continue
             calls = message.get("tool_calls") or []
             if not calls:
@@ -220,7 +257,7 @@ def run_job(store, job_id):
             # Atomically clear the uncertain action with its post-action checkpoint.
             store.update(job_id, pending=None, used=used(), checkpoint={
                 "messages": messages, "steps": steps, "plan": plan, "stage": index + 1,
-                "progress_keys": sorted(progress_keys)})
+                "progress_keys": sorted(progress_keys), "chunk_limit": chunk_limit})
             store.event(job_id, "TOOL_DONE", event)
         raise TimeoutError("40 işlem sınırı doldu; sonuç doğrulanamadı.")
     except KeyboardInterrupt:

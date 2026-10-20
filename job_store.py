@@ -87,6 +87,12 @@ class JobStore:
         job = self.get(job_id, after)
         result = {k: job[k] for k in ("id", "status", "created", "updated", "used", "result", "events")}
         result['plan'] = (job.get('checkpoint') or {}).get('plan') or []
+        with self.connection() as db:
+            latest = db.execute("SELECT * FROM events WHERE job_id=? ORDER BY seq DESC LIMIT 1", (job_id,)).fetchone()
+        result['latest_event'] = (dict(seq=latest['seq'], at=latest['at'], kind=latest['kind'],
+                                      data=json.loads(latest['data'])) if latest else None)
+        result['next_after'] = job['events'][-1]['seq'] if job['events'] else max(0, after)
+        result['has_more'] = bool(latest and latest['seq'] > result['next_after'])
         return result
 
     def claim(self):
@@ -113,7 +119,7 @@ class JobStore:
         if status not in TERMINAL:
             raise ValueError("Geçersiz bitiş durumu.")
         result = dict(result, task_id=job_id, status=status,
-                      engine_protocol='baris-execution-v2', build='local-ui-v5')
+                      engine_protocol='baris-execution-v2', build='local-ui-v6')
         result.setdefault('execution_steps', [])
         result.setdefault('acceptance', None)
         result.setdefault('execution_completed', False)

@@ -89,6 +89,98 @@ class DurableTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202, response.text)
         return response.json()["task_id"]
 
+    def test_chunk_limit_enforced_before_disk_change(self):
+        from structured_actions import parse_action
+        from task_tools import TOOLS
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory) / "jobs.db")
+            task = store.submit({}, "limits")
+            tools = TaskTools(directory, store, task)
+            tools.execute("tool_write_file", {"filepath": "x", "content": "ğ" * 700})
+            before = (Path(directory) / "x").read_bytes()
+            oversized = {"filepath": "x", "content": "ğ" * 701}
+            with self.assertRaises(ValueError):
+                tools.execute("tool_write_file", oversized)
+            with self.assertRaises(ValueError):
+                parse_action({"message": {"content": json.dumps({"name": "tool_write_file", "arguments": oversized})}}, [], TOOLS)
+            self.assertEqual((Path(directory) / "x").read_bytes(), before)
+            tools.chunk_limit = 350
+            with self.assertRaises(ValueError):
+                tools.execute("tool_write_file", {"filepath": "x", "content": "x" * 351})
+            self.assertEqual((Path(directory) / "x").read_bytes(), before)
+
+    def test_stream_deadline_reports_partial_progress_without_execution(self):
+        from task_worker import _generate_unlocked, ModelCallError
+        with tempfile.TemporaryDirectory() as directory, fake_ollama([write()], delay=1) as (url, _):
+            store = JobStore(Path(directory) / "jobs.db")
+            task = store.submit({}, "deadline")
+            with patch.dict(os.environ, {"BARIS_OLLAMA_CHAT_URL": url}):
+                with self.assertRaises(ModelCallError) as raised:
+                    asyncio.run(_generate_unlocked({"messages": []}, store, task, 0.3))
+            detail = raised.exception.detail
+            self.assertEqual(detail['error_type'], 'TimeoutError')
+            self.assertGreater(detail['characters'], 0)
+            self.assertGreaterEqual(detail['elapsed_seconds'], 0.25)
+            self.assertIn('Kısmi işlem çalıştırılmadı', detail['message'])
+            self.assertFalse((Path(directory) / 'out.txt').exists())
+
+    def exercise_retry(self, errors):
+        import signal
+        from task_worker import run_job, ModelCallError
+        from task_tools import TOOLS
+        requests = []
+        scripted = [PLAN] + [ModelCallError({'message':'Model süre sınırı; kısmi çıktı atıldı.', 'error_type':'TimeoutError'})] * errors + [write()]
+        async def generation(request, *args, **kwargs):
+            requests.append(request)
+            action = scripted.pop(0)
+            if isinstance(action, Exception):
+                raise action
+            return {'message': {'content': json.dumps(action)}}
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory) / 'jobs.db')
+            job_id = store.submit({'workspace': directory, 'message': 'Dosyayı oluştur',
+                'budget_seconds': 30, 'expected_files': {'out.txt':'Merhaba Barış'}}, 'retry')
+            store.claim()
+            previous = signal.getsignal(signal.SIGTERM)
+            try:
+                with patch('task_worker.generate', generation):
+                    run_job(store, job_id)
+            finally:
+                signal.signal(signal.SIGTERM, previous)
+            job = store.get(job_id)
+            self.assertEqual(job['status'], 'VERIFIED' if errors == 1 else 'FAILED')
+            self.assertEqual(len(requests), 3)
+            retry_schema = requests[-1]['format']['anyOf']
+            content_limits = [v['properties']['arguments']['properties']['content']['maxLength']
+                for v in retry_schema if 'content' in v['properties']['arguments']['properties']]
+            self.assertEqual(content_limits, [350, 350])
+            self.assertEqual(sum(e['kind']=='MODEL_RETRY' for e in job['events']), 1)
+            self.assertEqual((Path(directory)/'out.txt').exists(), errors == 1)
+            # A retry must not mutate the shared schema for later jobs.
+            self.assertEqual(TOOLS[3]['function']['parameters']['properties']['content']['maxLength'], 700)
+
+    def test_deadline_retries_once_with_smaller_schema_and_recovers(self):
+        self.exercise_retry(1)
+
+    def test_second_model_failure_stops_without_side_effect(self):
+        self.exercise_retry(2)
+
+    def test_latest_event_is_independent_of_page_cursor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory) / 'jobs.db')
+            task = store.submit({}, 'pagination')
+            for index in range(249):
+                store.event(task, 'MODEL_PROGRESS', {'message': str(index)})
+            store.finish(task, 'FAILED', {'reply': 'Son hata'})
+            first = store.public(task)
+            self.assertEqual(len(first['events']), 100)
+            self.assertEqual(first['latest_event']['kind'], 'FAILED')
+            self.assertTrue(first['has_more'])
+            second = store.public(task, first['next_after'])
+            third = store.public(task, second['next_after'])
+            self.assertEqual(third['events'][-1], third['latest_event'])
+            self.assertFalse(third['has_more'])
+
     def test_worker_launch_failure_is_recorded(self):
         from task_service import TaskService
         async def exercise(directory):
@@ -205,11 +297,16 @@ class DurableTests(unittest.TestCase):
         program = "import csv,json,sys,os,tempfile\nfrom pathlib import Path\nfrom decimal import Decimal,InvalidOperation\nfrom datetime import date\n\ndef main():\n source,target=map(Path,sys.argv[1:3])\n if source.resolve()==target.resolve():raise ValueError('Girdi ve çıktı aynı olamaz')\n totals={k:Decimal('0') for k in ('satis','iade','gider')}\n r=dict(toplam_veri_satiri=0,gecerli_onayli_satir=0,iptal_satir=0,gecersiz_satir=0,yinelenen_satir=0)\n seen=set();errors=[]\n with source.open(encoding='utf-8',newline='') as f:\n  reader=csv.DictReader(f,delimiter=';')\n  if reader.fieldnames!=['id','tarih','tur','tutar','durum']:raise ValueError('CSV başlığı geçersiz')\n  for line,row in enumerate(reader,2):\n   r['toplam_veri_satiri']+=1\n   if row['id'] in seen:\n    r['yinelenen_satir']+=1;errors.append([line,'yinelenen']);continue\n   seen.add(row['id'])\n   try:\n    if date.fromisoformat(row['tarih']).isoformat()!=row['tarih']:raise ValueError()\n    kind=row['tur'];status=row['durum'];amount=Decimal(row['tutar'].strip())\n    if kind not in totals or status not in ('onay','iptal'):raise ValueError()\n    if not amount.is_finite() or amount.as_tuple().exponent < -2:raise ValueError()\n    if (kind=='iade' and amount>=0) or (kind!='iade' and amount<0):raise ValueError()\n   except (ValueError,InvalidOperation):\n    r['gecersiz_satir']+=1;errors.append([line,'geçersiz']);continue\n   if status=='iptal':r['iptal_satir']+=1;continue\n   r['gecerli_onayli_satir']+=1;totals[kind]+=amount\n for k,v in totals.items():r[k+'_toplami']=format(v,'.2f')\n r['net_tutar']=format(totals['satis']+totals['iade']-totals['gider'],'.2f')\n with tempfile.NamedTemporaryFile('w',dir=target.parent,delete=False,encoding='utf-8') as f:\n  json.dump(r,f,ensure_ascii=False,sort_keys=True);tmp=f.name\n os.replace(tmp,target)\n print(json.dumps(errors,ensure_ascii=False))\ntry:main()\nexcept Exception as e:print('İşlem hatası:',e,file=sys.stderr);sys.exit(1)\n"
         harness = "import subprocess,sys,json,hashlib\nfrom decimal import Decimal\nfrom pathlib import Path\nreport=[]\ndef run(src,out,success):\n p=subprocess.run([sys.executable,'analiz.py',src,out],capture_output=True,text=True)\n assert (p.returncode==0)==success,(src,p.stderr)\n report.append(dict(command=p.args,exit_code=p.returncode,stderr=p.stderr))\ndef digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()\nrun('islemler.csv','sonuc.json',True)\nfirst=digest('sonuc.json')\nrun('islemler.csv','sonuc.json',True)\nassert first==digest('sonuc.json')\nrun('yok.csv','sonuc.json',False)\nassert first==digest('sonuc.json')\nPath('bozuk.csv').write_text('yanlis;baslik\\n',encoding='utf-8')\nrun('bozuk.csv','sonuc.json',False)\nassert first==digest('sonuc.json')\nPath('bos.csv').write_text('id;tarih;tur;tutar;durum\\n',encoding='utf-8')\nrun('bos.csv','bos.json',True)\nempty=json.loads(Path('bos.json').read_text())\nassert all(Decimal(str(v))==0 for v in empty.values())\nbefore=digest('islemler.csv')\nrun('islemler.csv','islemler.csv',False)\nassert before==digest('islemler.csv')\nrun('islemler.csv','sonuc.json',True)\nassert first==digest('sonuc.json')\nPath('test_raporu.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')\n"
         expected = {'toplam_veri_satiri': 20, 'gecerli_onayli_satir': 8, 'iptal_satir': 1, 'gecersiz_satir': 10, 'yinelenen_satir': 1, 'satis_toplami': '3550.50', 'iade_toplami': '-200.25', 'gider_toplami': '300.10', 'net_tutar': '3050.15'}
-        def file_action(path, content):
-            self.assertLessEqual(len(content), 3000)
-            return {"name": "tool_write_file", "arguments": {"filepath": path, "content": content}}
-        actions = [PLAN, file_action('islemler.csv',data), file_action('analiz.py',program),
-                   file_action('kontrol.py',harness),
+        def file_actions(path, content):
+            actions = []
+            for start in range(0, len(content), 700):
+                arguments = {"filepath": path, "content": content[start:start+700]}
+                if start:
+                    arguments['expected_sha256'] = hashlib.sha256(content[:start].encode()).hexdigest()
+                actions.append({"name": "tool_append_file" if start else "tool_write_file", "arguments": arguments})
+            return actions
+        actions = [PLAN, *file_actions('islemler.csv',data), *file_actions('analiz.py',program),
+                   *file_actions('kontrol.py',harness),
                    {"name":"tool_run_shell","arguments":{"command":"python3 kontrol.py"}}]
         with tempfile.TemporaryDirectory() as directory, fake_ollama(actions) as (url, _):
             with self.client(directory,url) as client:
@@ -268,7 +365,7 @@ class DurableTests(unittest.TestCase):
                 store.finish(ids[0], 'VERIFIED', {'reply':'model says done'})
             store.request_cancel(ids[0])
             result = store.get(ids[0])['result']
-            self.assertEqual(result['build'],'local-ui-v5')
+            self.assertEqual(result['build'],'local-ui-v6')
             self.assertFalse(result['verified'])
 
     def test_hash_append_rejects_replay(self):

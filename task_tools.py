@@ -15,16 +15,18 @@ def schema(name, description, properties):
         "parameters": {"type": "object", "properties": properties,
                        "required": list(properties), "additionalProperties": False}}}
 
+CHUNK_LIMIT = 700
+
 TEXT = {"type": "string"}
 TOOLS = [
     schema("tool_plan_steps", "Görevi 3–12 kısa aşamaya ayır; kod üretme.", {
         "steps": {"type": "array", "items": TEXT, "minItems": 1, "maxItems": 12}}),
     schema("tool_make_directory", "Çalışma alanında dizin oluştur.", {"filepath": TEXT}),
     schema("tool_list_files", "Çalışma alanında dosyaları listele.", {"filepath": TEXT}),
-    schema("tool_write_file", "UTF-8 dosya yaz; büyük kodu en fazla 3000 karakterlik parçalara böl.", {
-        "filepath": TEXT, "content": {"type": "string", "maxLength": 3000}}),
+    schema("tool_write_file", "UTF-8 dosya yaz; büyük kodu en fazla 700 karakterlik parçalara böl.", {
+        "filepath": TEXT, "content": {"type": "string", "maxLength": 700}}),
     schema("tool_append_file", "Son okuma/yazmanın sha256 değeriyle dosyaya parça ekle.", {
-        "filepath": TEXT, "content": {"type": "string", "maxLength": 3000}, "expected_sha256": TEXT}),
+        "filepath": TEXT, "content": {"type": "string", "maxLength": 700}, "expected_sha256": TEXT}),
     schema("tool_read_file", "Dosyayı oku; sonraki değişiklik için sha256 al.", {"filepath": TEXT}),
     schema("tool_run_shell", "Komutu argv olarak çalıştır; shell operatörleri yerine Python dosyası yazıp çalıştır.", {
         "command": TEXT}),
@@ -32,9 +34,10 @@ TOOLS = [
 
 
 class TaskTools:
-    def __init__(self, root, store, job_id, tool_seconds=90):
+    def __init__(self, root, store, job_id, tool_seconds=90, chunk_limit=CHUNK_LIMIT):
         self.root = Path(root).resolve()
         self.store, self.job_id, self.tool_seconds = store, job_id, tool_seconds
+        self.chunk_limit = chunk_limit
         self.child = None
 
     def path(self, value):
@@ -78,8 +81,8 @@ class TaskTools:
         if name not in {"tool_write_file", "tool_append_file"}:
             raise ValueError("Bilinmeyen araç.")
         data = args["content"].encode("utf-8")
-        if len(args["content"]) > 3000:
-            raise ValueError("Parça 3000 karakteri aşıyor; küçük parçalara böl.")
+        if len(args["content"]) > self.chunk_limit:
+            raise ValueError(f"Parça {self.chunk_limit} karakteri aşıyor; küçük parçalara böl.")
         if name == "tool_append_file":
             previous = path.read_bytes()
             if hashlib.sha256(previous).hexdigest() != args["expected_sha256"]:

@@ -12,6 +12,10 @@ def validate(value, schema):
         raise ValueError("Araç parametresi türü geçersiz: " + kind)
     if "enum" in schema and value not in schema["enum"]:
         raise ValueError("İzin verilmeyen değer.")
+    if kind == "string" and len(value) > schema.get("maxLength", float("inf")):
+        raise ValueError("Araç metni uzunluk sınırını aşıyor.")
+    if kind == "array" and not schema.get("minItems", 0) <= len(value) <= schema.get("maxItems", float("inf")):
+        raise ValueError("Araç dizisi öğe sınırını aşıyor.")
     if kind == "object":
         properties = schema.get("properties", {})
         if set(schema.get("required", [])) - set(value):
@@ -100,3 +104,4 @@ def parse_action(data, messages, tools):
                          "arguments": json.dumps(arguments, ensure_ascii=False)},
         }],
     }
+

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-function setup({build = 'local-ui-v5', reply, delayChat = false, mobile = false} = {}) {
+function setup({build = 'local-ui-v6', reply, delayChat = false, mobile = false} = {}) {
   class Element {
     constructor() { this.children = []; this.style = {}; this.value = ''; this.textContent = ''; }
     appendChild(child) { this.children.push(child); }
@@ -52,11 +52,11 @@ function setup({build = 'local-ui-v5', reply, delayChat = false, mobile = false}
       }
       if (url.startsWith('/api/tasks/')) return {ok: true, json: async () => ({
         id: 'job_test', status: 'UNVERIFIED', created: Date.now()/1000,
-        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v5',
+        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v6',
           status:'UNVERIFIED', verified:false, execution_steps:[], reply:'<script>untrusted</script>'})
       })};
       return {ok: true, json: async () => reply || ({
-        engine_protocol: 'baris-execution-v2', build: 'local-ui-v5',
+        engine_protocol: 'baris-execution-v2', build: 'local-ui-v6',
         status: 'UNVERIFIED', verified: false, execution_steps: [],
         reply: '<script>untrusted</script>'
       })};
@@ -92,7 +92,7 @@ test('file test sends exact acceptance to same-origin endpoint', async () => {
 
 test('model verified flag without independent acceptance is not success', async () => {
   const app = setup({reply: {
-    engine_protocol: 'baris-execution-v2', build: 'local-ui-v5',
+    engine_protocol: 'baris-execution-v2', build: 'local-ui-v6',
     status: 'VERIFIED', verified: true,
     execution_steps: [{tool: 'write', success: true}], acceptance: null
   }});
@@ -155,3 +155,18 @@ test('new chat does not hide an active task', async () => {
   await pending;
 });
 
+
+
+test('previous-build terminal result is readable after upgrade', async () => {
+  const app = setup({reply: {
+    engine_protocol: 'baris-execution-v2', build: 'local-ui-v5',
+    status: 'FAILED', verified: false, execution_steps: [], reply: 'Eski görev zaman aşımına uğradı.'
+  }});
+  await tick();
+  app.elements.promptInput.value = 'Görev';
+  await app.context.sendAction();
+  const box = app.elements.feed.children.at(-1);
+  assert.equal(box.children[0].textContent, 'İŞLEM TAMAMLANMADI');
+  assert.equal(box.children[1].textContent, 'Eski görev zaman aşımına uğradı.');
+  assert.equal(app.requests.filter(r => r.url.startsWith('/api/tasks/')).length, 1);
+});
