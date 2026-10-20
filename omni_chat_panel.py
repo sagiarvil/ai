@@ -373,6 +373,13 @@ async def root():
         return FileResponse(str(INDEX_HTML))
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
 
+@app.get("/api/engine_info")
+async def engine_info():
+    return {"engine_protocol": "baris-execution-v2",
+            "task_verification": "independent",
+            "tool_loop": True}
+
+
 @app.get("/api/system_status")
 @app.get("/api/status")
 async def system_status():
@@ -432,6 +439,7 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
         call_tool_fn=dispatch_tool_call,
         verify_task_fn=verify_expected_files if req.expected_files else None,
     )
+    res["engine_protocol"] = "baris-execution-v2"
     return res
 
 if __name__ == "__main__":
