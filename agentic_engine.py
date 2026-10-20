@@ -44,17 +44,26 @@ MODEL_REASONER = "deepseek-r1-14b-abliterated:latest"
 DEFAULT_MODEL = MODEL_GENERAL
 
 
-def select_hybrid_model(prompt: str, is_tool_intent: bool) -> tuple[str, str, str]:
-    """3'lü Hibrit ve İşbirlikli Model Yönlendirici (Triad Cooperative Router):
-    Dönen değerler: (pipeline_mode, chosen_model, model_role)
-    - pipeline_mode:
-        - 'TRIAD_COOPERATIVE': DeepSeek-R1 (Mimari Plan) + Qwen2.5-Coder (Kodlama & İcra) + Mistral-24B (Doğrulama & Jarvis)
-        - 'DEEP_REASONING': DeepSeek-R1 (Derin Muhakeme) + Mistral-24B (Doğal Türkçe Sentezi)
-        - 'DIRECT_FAST': Mistral-Small-24B (Hızlı İcra & Jarvis)
+class TriadExecutionMode(enum.Enum):
+    COLLABORATIVE_CODING = "COLLABORATIVE_CODING"       # DeepSeek-R1 (Mimar) -> Qwen-Coder (Mühendis)
+    COLLABORATIVE_REASONING = "COLLABORATIVE_REASONING" # DeepSeek-R1 (Akıl Yürütme) -> Mistral-24B (Jarvis Sentezi)
+    DIRECT_CODER = "DIRECT_CODER"                       # Qwen-Coder Doğrudan İcra
+    DIRECT_REASONER = "DIRECT_REASONER"                 # DeepSeek-R1 Doğrudan İcra
+    DIRECT_GENERAL = "DIRECT_GENERAL"                   # Mistral-Small-24B Hızlı İcra
+
+
+def determine_triad_mode(prompt: str, is_tool_intent: bool) -> tuple[TriadExecutionMode, str]:
+    """3'lü Yekpare Konsensüs ve İletişim Yönlendiricisi:
+    Modellerin izole kalmasını önler; mimari, kodlama ve denetim arasında yekpare el sıkışma (handoff) sağlar.
     """
     p_lower = prompt.lower()
 
-    # 1. Kodlama & Mühendislik Tespiti
+    # Ortak çalışma ve yekpare icra anahtarları
+    wants_collaboration = any(k in p_lower for k in [
+        "birlikte", "ortak", "yekpare", "tam mimari", "360", "üçünüz", "ucunuz",
+        "iletişim", "kusursuz", "adım adım", "tasarla ve kodla", "analiz et ve yaz", "tam çözüm"
+    ])
+
     coding_triggers = [
         "kod", "fonksiyon", "class ", "def ", "script", "hata ayıkla", "bug", "syntax",
         "c++", "cpp", "python", "javascript", "typescript", "solidity", "rust", "golang",
@@ -64,7 +73,6 @@ def select_hybrid_model(prompt: str, is_tool_intent: bool) -> tuple[str, str, st
     ]
     is_coding = any(k in p_lower for k in coding_triggers)
 
-    # 2. Derin Akıl Yürütme & Strateji Tespiti
     reasoning_triggers = [
         "neden", "analiz et", "karşılaştır", "mantık", "strateji", "planla", "mimari",
         "kuantum", "teori", "ispatla", "düşün", "derin", "tersine mühendislik", "reverse engineering",
@@ -73,12 +81,16 @@ def select_hybrid_model(prompt: str, is_tool_intent: bool) -> tuple[str, str, st
     ]
     is_reasoning = any(k in p_lower for k in reasoning_triggers)
 
-    if is_coding:
-        return "TRIAD_COOPERATIVE", MODEL_CODER, "Triad Konsensüs (DeepSeek-R1 ➔ Qwen-Coder ➔ Mistral-24B)"
-    elif is_reasoning:
-        return "DEEP_REASONING", MODEL_REASONER, "Hibrit Muhakeme (DeepSeek-R1 ➔ Mistral-24B)"
-    else:
-        return "DIRECT_FAST", MODEL_GENERAL, "Mistral-Small-24B (Hızlı İcra & Jarvis)"
+    # 1. Kodlama / Yazılım Görevlerinde: Mimar (DeepSeek-R1) -> Mühendis (Qwen-Coder) Yekpare İletişimi
+    if is_coding or (wants_collaboration and (is_coding or is_reasoning)):
+        return TriadExecutionMode.COLLABORATIVE_CODING, "🧠 DeepSeek-R1 ➔ 💻 Qwen-Coder (Yekpare İşbirliği)"
+
+    # 2. Derin Analiz Görevlerinde: Mimar (DeepSeek-R1) -> Denetçi/Jarvis (Mistral-24B) Sentezi
+    if is_reasoning:
+        return TriadExecutionMode.COLLABORATIVE_REASONING, "🧠 DeepSeek-R1 ➔ ⚡️ Mistral-24B (Stratejik Sentez)"
+
+    # 3. Genel Sohbet ve Hızlı İcra: Mistral-24B
+    return TriadExecutionMode.DIRECT_GENERAL, "Mistral-Small-24B (Genel İcra & Jarvis)"
 
 class TaskState(str, enum.Enum):
     RECEIVED = "RECEIVED"
@@ -380,49 +392,67 @@ class AutonomousExecutionEngine:
                     "verified": True
                 }
 
-        pipeline_mode, chosen_model, model_role = select_hybrid_model(prompt, is_tool_intent)
+        triad_mode, model_role = determine_triad_mode(prompt, is_tool_intent)
+        architect_blueprint = ""
 
-        # ADIM 1: TRIAD_COOPERATIVE Modu - DeepSeek-R1 ile Mimari İstişare
-        deepseek_blueprint = ""
-        if pipeline_mode == "TRIAD_COOPERATIVE":
+        # ======================================================================
+        # 1. AŞAMA: DEEPSEEK-R1 MİMARİ VE MANTIK ŞARTNAMESİ (COLLABORATIVE EL SIKIŞMA)
+        # ======================================================================
+        if triad_mode in (TriadExecutionMode.COLLABORATIVE_CODING, TriadExecutionMode.COLLABORATIVE_REASONING):
+            engine.transition_to(TaskState.RESEARCHING, "1. Aşama: DeepSeek-R1 mimari analiz ve strateji şartnamesi üretiyor...")
+            architect_task = (
+                f"Hedef: {prompt}\n\n"
+                "Sen Barış AI'ın Baş Sistem Mimarı ve Kuantum Stratejistisin (DeepSeek-R1).\n"
+                "Bu hedef için:\n"
+                "1. Algoritma yapısı ve mimari veri akışını,\n"
+                "2. Olası zafiyetleri ve edge-case gereksinimlerini,\n"
+                "3. Uygulayıcı mühendise (Qwen-Coder / Jarvis) yönelik cerrahi teknik şartnameyi maddeler halinde çıkar.\n"
+                "Kod yazma; yalnızca mantık, mimari şartname ve stratejik direktifleri üret."
+            )
+            r1_payload = {
+                "model": MODEL_REASONER,
+                "messages": [
+                    {"role": "system", "content": "Sen Barış AI'ın Baş Sistem Mimarı ve Stratejistisin (DeepSeek-R1). Cerrahi, net, analitik ve kusursuz mimari şartname üretirsin."},
+                    {"role": "user", "content": architect_task}
+                ],
+                "temperature": 0.6,
+                "options": {"num_thread": 8, "temperature": 0.6, "num_predict": 350, "top_p": 0.95}
+            }
             try:
-                ds_payload = {
-                    "model": MODEL_REASONER,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Sen kıdemli bir yazılım ve sistem mimarısın. Görevi analiz et; mimari planı, "
-                                "kullanılacak fonksiyonları, veri yapılarını, kritik edge case'leri ve test stratejisini "
-                                "3-4 maddede çok net ve öz olarak belirle. Asla lafı uzatma, sadece mimari şartnameyi yaz."
-                            )
-                        },
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.6,
-                    "options": {
-                        "num_thread": 8,
-                        "temperature": 0.6,
-                        "num_predict": 250,
-                        "top_p": 0.95
-                    }
-                }
-                async with httpx.AsyncClient(timeout=45.0) as ds_client:
-                    ds_resp = await ds_client.post(OLLAMA_API_URL, json=ds_payload)
-                    if ds_resp.status_code == 200:
-                        ds_data = ds_resp.json()
-                        ds_msg = ds_data["choices"][0]["message"]
-                        deepseek_blueprint = ds_msg.get("content") or ds_msg.get("reasoning") or ""
-                        if deepseek_blueprint:
-                            messages.append({
-                                "role": "system",
-                                "content": (
-                                    f"[MİMARİ ŞARTNAME VE PLAN - DeepSeek-R1]:\n{deepseek_blueprint}\n\n"
-                                    "Bu mimari şartnameye ve kenar durumlara harfiyen uyarak eksiksiz, üretim kalitesinde kodu ve araç çağrılarını icra et."
-                                )
-                            })
+                async with httpx.AsyncClient(timeout=180.0) as client:
+                    r1_resp = await client.post(OLLAMA_API_URL, json=r1_payload)
+                    if r1_resp.status_code == 200:
+                        r1_data = r1_resp.json()
+                        r1_msg = r1_data["choices"][0]["message"]
+                        architect_blueprint = (r1_msg.get("content") or r1_msg.get("reasoning") or "").strip()
             except Exception:
-                pass
+                architect_blueprint = ""
+
+        # ======================================================================
+        # 2. AŞAMA: İCRA VE RE-ACT DÖNGÜSÜ MODEL SEÇİMİ (HANDOFF)
+        # ======================================================================
+        if triad_mode == TriadExecutionMode.COLLABORATIVE_CODING:
+            chosen_model = MODEL_CODER
+            engine.transition_to(TaskState.VALIDATING, "2. Aşama: Qwen-Coder mimari şartnameyi alarak kod ve araçları işletiyor...")
+            if architect_blueprint:
+                messages.append({
+                    "role": "user",
+                    "content": f"[BAŞ MİMAR (DeepSeek-R1) ŞARTNAMESİ]:\n{architect_blueprint}\n\nLütfen bu mimari şartnameye %100 sadık kalarak eksiksiz, üretim kalitesinde kodu yaz ve görevi icra et."
+                })
+        elif triad_mode == TriadExecutionMode.COLLABORATIVE_REASONING:
+            chosen_model = MODEL_GENERAL
+            engine.transition_to(TaskState.VALIDATING, "2. Aşama: Mistral-24B stratejik analizi sentezliyor ve insan diline döküyor...")
+            if architect_blueprint:
+                messages.append({
+                    "role": "user",
+                    "content": f"[BAŞ MİMAR (DeepSeek-R1) MANTIKSAL ANALİZİ]:\n{architect_blueprint}\n\nLütfen bu derin analizi Türk insanı üslubunda, akıcı, derli toplu ve net bir Jarvis özeti olarak sentezle."
+                })
+        elif triad_mode == TriadExecutionMode.DIRECT_CODER:
+            chosen_model = MODEL_CODER
+        elif triad_mode == TriadExecutionMode.DIRECT_REASONER:
+            chosen_model = MODEL_REASONER
+        else:
+            chosen_model = MODEL_GENERAL
 
         execution_steps = []
         final_reply = ""
@@ -586,8 +616,15 @@ class AutonomousExecutionEngine:
                 summary_parts.append(f"\n---\n**{t_name} Çıktısı:**\n{t_out}")
             final_reply = "\n".join(summary_parts)
 
-        if deepseek_blueprint and final_reply and "<details>" not in final_reply:
-            final_reply = f"<details><summary>🧠 <i>DeepSeek-R1 Mimari Planı & Strateji</i></summary>\n\n{deepseek_blueprint}\n\n</details>\n\n{final_reply}"
+        # DeepSeek-R1 mimari şartnamesi varsa nihai yanıta yekpare entegre et
+        if architect_blueprint and not final_reply.startswith("<details"):
+            final_reply = (
+                f"<details open><summary>🧠 <b>1. Mimari Tasarım & Strateji Şartnamesi (DeepSeek-R1)</b></summary>\n\n"
+                f"{architect_blueprint}\n\n"
+                f"</details>\n\n"
+                f"### 💻 2. Mühendislik & İcra Çözümü:\n\n"
+                f"{final_reply}"
+            )
 
         # DOĞRUDAN SOHBET / JARVIS MODU VEYA FİZİKSEL ARAÇ İCRA DOĞRULAMASI
         if not has_executed_tools:
