@@ -17,8 +17,8 @@ class AcceptanceTests(unittest.TestCase):
             target.write_bytes("Merhaba Barış.\n".encode())
             result = inspect_expected_files(directory, {"x": "Merhaba Barış"})
             self.assertFalse(result["success"])
-            self.assertEqual(result["files"]["x"]["first_difference"], 12)
-            self.assertEqual(result["files"]["x"]["actual_length"], 14)
+            self.assertEqual(result["files"]["x"]["first_difference"], len("Merhaba Barış"))
+            self.assertEqual(result["files"]["x"]["actual_length"], len("Merhaba Barış.\n"))
             self.assertIn("\\n", result["files"]["x"]["actual_json"])
             self.assertEqual(target.read_bytes(), "Merhaba Barış.\n".encode())
 
