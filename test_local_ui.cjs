@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-function setup({build = 'local-ui-v4', reply, delayChat = false} = {}) {
+function setup({build = 'local-ui-v4', reply, delayChat = false, mobile = false} = {}) {
   class Element {
     constructor() { this.children = []; this.style = {}; this.value = ''; this.textContent = ''; }
     appendChild(child) { this.children.push(child); }
@@ -13,14 +13,27 @@ function setup({build = 'local-ui-v4', reply, delayChat = false} = {}) {
     addEventListener() {}
     focus() {}
     remove() {}
+    setAttribute(name, value) { this[name] = value; }
+    contains(target) { return this === target || this.children.includes(target); }
+    insertAdjacentHTML(position, html) { this.restoredHTML = html; }
   }
   const elements = Object.fromEntries(
-    ['feed', 'promptInput', 'sendBtn', 'sysStatus', 'welcomeMsg']
+    ['feed', 'promptInput', 'sendBtn', 'sysStatus', 'welcomeMsg', 'toolsMenu', 'toolsMenuButton']
       .map(id => [id, new Element()]));
+  const classes = new Set();
+  const body = {classList: {
+    toggle: name => classes.has(name) ? classes.delete(name) : classes.add(name),
+    contains: name => classes.has(name),
+    remove: name => classes.delete(name)
+  }};
   const requests = [];
   let resolveChat;
   const context = vm.createContext({
-    document: {getElementById: id => elements[id], createElement: () => new Element()},
+    document: {
+      getElementById: id => elements[id], createElement: () => new Element(),
+      body, querySelectorAll: () => [], addEventListener() {}
+    },
+    matchMedia: () => ({matches: mobile}),
     location: {host: '127.0.0.1:5053'},
     AbortSignal: {timeout: () => ({})},
     performance: {now: () => 0},
@@ -40,7 +53,7 @@ function setup({build = 'local-ui-v4', reply, delayChat = false} = {}) {
     }
   });
   vm.runInContext(fs.readFileSync('public/app.js', 'utf8'), context);
-  return {context, elements, requests, resolve: () => resolveChat()};
+  return {context, elements, requests, classes, resolve: () => resolveChat()};
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -90,4 +103,44 @@ test('double submission produces only one request', async () => {
   assert.equal(app.requests.filter(r => r.url === '/api/chat').length, 1);
   app.resolve();
   await first;
+});
+
+
+test('desktop sidebar collapses and expands', async () => {
+  const app = setup();
+  await tick();
+  app.context.toggleSidebar();
+  assert.equal(app.classes.has('sidebar-collapsed'), true);
+  app.context.toggleSidebar();
+  assert.equal(app.classes.has('sidebar-collapsed'), false);
+});
+
+test('mobile sidebar overlays instead of shrinking workspace', async () => {
+  const app = setup({mobile: true});
+  await tick();
+  app.context.toggleSidebar();
+  assert.equal(app.classes.has('mobile-sidebar-open'), true);
+  assert.equal(app.classes.has('sidebar-collapsed'), false);
+});
+
+test('new chat clears finished messages without network request', async () => {
+  const app = setup();
+  await tick();
+  app.elements.feed.children.push({});
+  const before = app.requests.length;
+  app.context.newConversation();
+  assert.equal(app.elements.feed.children.length, 0);
+  assert.equal(app.requests.length, before);
+});
+
+test('new chat does not hide an active task', async () => {
+  const app = setup({delayChat: true});
+  await tick();
+  app.elements.promptInput.value = 'Yaz';
+  const pending = app.context.sendAction();
+  await tick();
+  app.context.newConversation();
+  assert.equal(app.elements.feed.children.length, 2);
+  app.resolve();
+  await pending;
 });

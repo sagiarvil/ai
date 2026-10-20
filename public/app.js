@@ -85,6 +85,7 @@ async function sendAction(expectedFiles = null) {
   box.className = 'msg-ai';
   feed.append(user, box);
   input.value = '';
+  input.style.height = 'auto';
   const started = performance.now();
   const update = () => {
     box.textContent = 'Görev çalışıyor • ' +
@@ -138,3 +139,64 @@ input.addEventListener('keydown', event => {
   }
 });
 refreshConnection();
+
+
+// Layout controls do not alter the execution protocol.
+const welcomeTemplate = document.getElementById('welcomeMsg')?.outerHTML || '';
+function toggleSidebar() {
+  const mobile = matchMedia('(max-width: 900px)').matches;
+  document.body.classList.toggle(mobile ? 'mobile-sidebar-open' : 'sidebar-collapsed');
+  const expanded = mobile ? document.body.classList.contains('mobile-sidebar-open') :
+    !document.body.classList.contains('sidebar-collapsed');
+  document.querySelectorAll('[data-menu-toggle]').forEach(button =>
+    button.setAttribute('aria-expanded', String(expanded)));
+}
+function selectSuggestion(text) {
+  quickFill(text);
+  document.body.classList.remove('mobile-sidebar-open');
+}
+function newConversation() {
+  if (busy) {
+    statusLabel.textContent = 'Çalışan görev bitmeden sohbet temizlenmez.';
+    return;
+  }
+  feed.replaceChildren();
+  if (welcomeTemplate) feed.insertAdjacentHTML('beforeend', welcomeTemplate);
+  input.value = '';
+  input.style.height = '';
+  document.body.classList.remove('mobile-sidebar-open');
+  closeToolsMenu();
+  input.focus();
+}
+function closeToolsMenu() {
+  const menu = document.getElementById('toolsMenu');
+  const button = document.getElementById('toolsMenuButton');
+  if (menu) menu.hidden = true;
+  if (button) button.setAttribute('aria-expanded', 'false');
+}
+function toggleToolsMenu() {
+  const menu = document.getElementById('toolsMenu');
+  menu.hidden = !menu.hidden;
+  document.getElementById('toolsMenuButton').setAttribute('aria-expanded', String(!menu.hidden));
+}
+function runUiFileTest() {
+  document.body.classList.remove('mobile-sidebar-open');
+  testFileWrite();
+}
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    closeToolsMenu();
+    document.body.classList.remove('mobile-sidebar-open');
+  }
+});
+document.addEventListener('click', event => {
+  const menu = document.getElementById('toolsMenu');
+  const button = document.getElementById('toolsMenuButton');
+  if (menu && button && !menu.contains(event.target) && !button.contains(event.target)) {
+    closeToolsMenu();
+  }
+});
