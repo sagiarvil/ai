@@ -33,6 +33,11 @@ jobs:
       - name: Offline execution-loop regression tests
         run: python3 -m unittest -v test_execution_loop
 
+      - name: Browser script syntax
+        run: |
+          python3 -c "import re, pathlib; h=pathlib.Path('public/index.html').read_text(); pathlib.Path('/tmp/baris-ui.js').write_text('\n'.join(re.findall(r'<script>(.*?)</script>', h, re.S)))"
+          node --check /tmp/baris-ui.js
+
       - name: Syntax Compilation Check
         run: |
           python3 -m py_compile *.py
