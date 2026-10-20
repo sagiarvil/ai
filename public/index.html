@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Barış AI // Ultra-Fast Engineering Console</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       --bg: #0a0c10;
@@ -167,13 +166,13 @@
     <div>⚡ BARIŞ AI // FAST EXECUTION CORE</div>
     <div class="status-pill">
       <span class="status-dot"></span>
-      <span id="sysStatus">Apple M4 Metal • 127.0.0.1:5050</span>
+      <span id="sysStatus">Bağlantı kontrol ediliyor</span>
     </div>
   </header>
 
   <div id="feed">
     <div class="msg-ai" id="welcomeMsg">
-      <strong>[SİSTEM HAZIR]:</strong> Sunucu bağlantısı görev gönderilirken doğrulanacaktır.<br>
+      <strong>[YEREL ÇALIŞMA PANELİ]:</strong> Sunucu bağlantısı görev gönderilirken doğrulanacaktır.<br>
       İşlem başarısı model metninden değil, araç ve kabul kontrolünden belirlenir.<br>
       Aşağıdan doğrudan komut girin.
     </div>
@@ -182,9 +181,10 @@
   <footer>
     <div class="input-box">
       <textarea id="promptInput" placeholder="Doğrudan icra emri verin... (Enter ile gönder)" autofocus></textarea>
-      <button class="send" id="sendBtn" onclick="sendAction()">İCRA ET</button>
+      <button class="send" id="sendBtn" disabled onclick="sendAction()">İCRA ET</button>
     </div>
     <div class="quick-bar">
+      <span class="quick-chip" onclick="testFileWrite()">Dosya yazmayı sına</span>
       <span class="quick-chip" onclick="quickFill('Chrome ile https://checkip.amazonaws.com adresine bağlan ve kaydet')">🌐 Chrome Ziyaret</span>
       <span class="quick-chip" onclick="quickFill('I2P ağ sürümünü i2pd --version ile kontrol et')">🔒 I2P Kontrol</span>
       <span class="quick-chip" onclick="quickFill('pragma solidity ^0.8.20; contract Test { function withdraw() public {} } kodunu Slither ile incele')">🛡️ Slither Denetim</span>
@@ -192,110 +192,6 @@
     </div>
   </footer>
 
-  <script>
-    const feed = document.getElementById('feed');
-    const input = document.getElementById('promptInput');
-    const sendBtn = document.getElementById('sendBtn');
-    let history = [];
-
-    function quickFill(txt) {
-      input.value = txt;
-      input.focus();
-    }
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendAction();
-      }
-    });
-
-    async function sendAction() {
-      const q = input.value.trim();
-      if (!q) return;
-
-      const welcome = document.getElementById('welcomeMsg');
-      if (welcome) welcome.remove();
-
-      input.value = '';
-      sendBtn.disabled = true;
-
-      // Kullanıcı mesajı
-      const uDiv = document.createElement('div');
-      uDiv.className = 'msg-user';
-      uDiv.textContent = q;
-      feed.appendChild(uDiv);
-      feed.scrollTop = feed.scrollHeight;
-
-      // AI bekleme kutusu
-      const aDiv = document.createElement('div');
-      aDiv.className = 'msg-ai';
-      aDiv.textContent = 'Yürütme motorunun sürümü kontrol ediliyor...';
-      feed.appendChild(aDiv);
-      feed.scrollTop = feed.scrollHeight;
-
-      const t0 = performance.now();
-
-      try {
-        const infoResponse = await fetch('/api/engine_info', {cache: 'no-store'});
-        if (!infoResponse.ok) {
-          throw new Error('Yeni yürütme motoruna ulaşılamıyor. Çalışan sunucunun güncellenmesi gerekiyor.');
-        }
-        const info = await infoResponse.json();
-        if (info.engine_protocol !== 'baris-execution-v2' || info.tool_loop !== true) {
-          throw new Error('Sunucu sürümü uyuşmuyor; görev gönderilmedi.');
-        }
-        aDiv.textContent = 'Görev yürütme motoruna gönderiliyor...';
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ message: q, history: history })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-          
-          if (data.engine_protocol !== 'baris-execution-v2') {
-            throw new Error('Yanıt doğrulanmış yürütme protokolüne ait değil.');
-          }
-          const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];
-          const isVerified = data.status === 'VERIFIED' &&
-            data.verified === true && steps.length > 0 &&
-            data.acceptance && data.acceptance.success === true;
-          aDiv.replaceChildren();
-          const title = document.createElement('strong');
-          title.textContent = isVerified ? 'GÖREV DOĞRULANDI' :
-            (steps.length ? 'İŞLEM KAYDI VAR — GÖREV DOĞRULANMADI' : 'İŞLEM KANITI YOK');
-          aDiv.appendChild(title);
-          const details = document.createElement('pre');
-          details.textContent = JSON.stringify({
-            status: data.status,
-            verified: isVerified,
-            task_id: data.task_id,
-            execution_steps: steps,
-            acceptance: data.acceptance || null
-          }, null, 2);
-          aDiv.appendChild(details);
-          const summary = document.createElement('p');
-          summary.textContent = data.reply || 'Sunucu açıklama döndürmedi.';
-          aDiv.appendChild(summary);
-          const timing = document.createElement('p');
-          timing.textContent = 'Süre: ' + elapsed + ' saniye';
-          aDiv.appendChild(timing);
-
-          history.push({ role: 'user', content: q }, { role: 'assistant', content: data.reply });
-        } else {
-          aDiv.innerHTML = `<span style="color:#f85149">Hata: Sunucu ${res.status} yanıtı döndü.</span>`;
-        }
-      } catch(e) {
-        aDiv.textContent = 'İşlem doğrulanamadı: ' + e.message;
-      } finally {
-        sendBtn.disabled = false;
-        input.focus();
-        feed.scrollTop = feed.scrollHeight;
-      }
-    }
-  </script>
+  <script src="/app.js" defer></script>
 </body>
 </html>

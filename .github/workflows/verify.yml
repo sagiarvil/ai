@@ -33,10 +33,10 @@ jobs:
       - name: Offline execution-loop regression tests
         run: python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks
 
-      - name: Browser script syntax
+      - name: Browser script syntax and integration tests
         run: |
-          python3 -c "import re, pathlib; h=pathlib.Path('public/index.html').read_text(); pathlib.Path('/tmp/baris-ui.js').write_text('\n'.join(re.findall(r'<script>(.*?)</script>', h, re.S)))"
-          node --check /tmp/baris-ui.js
+          node --check public/app.js
+          node --test test_local_ui.cjs
 
       - name: Syntax Compilation Check
         run: |

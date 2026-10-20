@@ -34,3 +34,6 @@ firebase-debug.log*
 .env
 .env.*
 *.env
+
+# Local launcher runtime
+.baris_runtime/

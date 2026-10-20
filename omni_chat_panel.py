@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Security, Depends
+from fastapi import FastAPI, Header, HTTPException, Security, Depends, Request
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -31,7 +31,10 @@ from sandbox_executor import secure_sandbox_run
 from model_manager import ModelManager
 
 WORKSPACE_ROOT = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve()
-PUBLIC_DIR = WORKSPACE_ROOT / 'public'
+SOURCE_ROOT = Path(__file__).resolve().parent
+PUBLIC_DIR = SOURCE_ROOT / 'public'
+ENGINE_BUILD = 'local-ui-v4'
+CHAT_LOCK = asyncio.Lock()
 INDEX_HTML = PUBLIC_DIR / 'index.html'
 
 TOOLS_DIR = WORKSPACE_ROOT / 'tools'
@@ -67,10 +70,11 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Omni-Key"],
 )
 
-async def verify_api_key(x_omni_key: Optional[str] = Security(api_key_header)):
-    # Yerel çağrılar veya geçerli API anahtarı kabul edilir
-    if x_omni_key and x_omni_key == OMNI_API_KEY:
-        return True
+async def verify_api_key(request: Request, x_omni_key: Optional[str] = Security(api_key_header)):
+    # This service is local. Browser requests must originate from its own UI.
+    origin = request.headers.get("origin")
+    if origin and origin != str(request.base_url).rstrip("/"):
+        raise HTTPException(status_code=403, detail="Başka kaynaktan işlem isteği reddedildi.")
     return True
 
 # ==============================================================================
@@ -370,15 +374,27 @@ class ChatRequest(BaseModel):
 @app.get("/")
 async def root():
     if INDEX_HTML.exists():
-        return FileResponse(str(INDEX_HTML))
+        return FileResponse(str(INDEX_HTML), headers={"Cache-Control": "no-store"})
     return {"service": "OmniCore Local Mistral-24B Engine", "status": "ONLINE"}
+
+@app.get("/app.js")
+async def app_script():
+    return FileResponse(str(PUBLIC_DIR / "app.js"),
+                        media_type="application/javascript",
+                        headers={"Cache-Control": "no-store"})
+
 
 @app.get("/api/engine_info")
 async def engine_info():
     return {"engine_protocol": "baris-execution-v2",
             "task_verification": "independent",
             "tool_loop": True,
-            "build": "acceptance-feedback-v3"}
+            "build": ENGINE_BUILD,
+            "instance": os.environ.get("BARIS_INSTANCE", ""),
+            "release": os.environ.get("BARIS_RELEASE", ""),
+            "source_root": str(SOURCE_ROOT),
+            "workspace": str(WORKSPACE_ROOT),
+            "busy": CHAT_LOCK.locked()}
 
 
 @app.get("/api/system_status")
@@ -435,13 +451,19 @@ async def chat_endpoint(req: ChatRequest, authorized: bool = Depends(verify_api_
         return await asyncio.to_thread(
             inspect_expected_files, WORKSPACE_ROOT, req.expected_files)
 
-    res = await AutonomousExecutionEngine.execute_verified_task(
-        prompt=query,
-        tools_schema=tools,
-        call_tool_fn=dispatch_tool_call,
-        verify_task_fn=verify_expected_files if req.expected_files else None,
-    )
+    if not query:
+        raise HTTPException(status_code=422, detail="Görev boş olamaz.")
+    if CHAT_LOCK.locked():
+        raise HTTPException(status_code=409, detail="Başka görev çalışıyor; tamamlanmasını bekleyin.")
+    async with CHAT_LOCK:
+        res = await AutonomousExecutionEngine.execute_verified_task(
+            prompt=query,
+            tools_schema=tools,
+            call_tool_fn=dispatch_tool_call,
+            verify_task_fn=verify_expected_files if req.expected_files else None,
+        )
     res["engine_protocol"] = "baris-execution-v2"
+    res["build"] = ENGINE_BUILD
     return res
 
 if __name__ == "__main__":
