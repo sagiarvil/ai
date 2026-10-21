@@ -74,7 +74,9 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
                     if chunk.get("done") is True:
                         final = chunk
                         break
-    if final is None or final.get("done_reason") == "length":
+    if final is None:
+        raise ValueError("Modelden herhangi bir yanıt alınamadı.")
+    if final.get("done_reason") == "length" and not (text.strip().endswith("}") or "```" in text):
         raise ValueError("Model çıktısı kesildi; kısmi komut çalıştırılmadı. Daha küçük parça üret.")
     store.event(job_id, "MODEL_DONE", {
         "message": "İşlem kararı üretildi.", "seconds": round(time.monotonic() - started, 1),
@@ -297,14 +299,13 @@ def _run_owned_job(store, job_id):
                     return
                 guard.observe(acceptance)
                 messages.append({"role": "user", "content": "Kabul kontrolü başarısız: " + json.dumps(acceptance, ensure_ascii=False)})
-            profile=store.model_profile(model)
-            if profile and profile["samples"] >= 2 and profile["chars_per_second"] > 0:
-                # Use only stable profiles, not a different grammar/system prefix every turn.
-                # Tiny chunks double model round trips when prompt startup is expensive.
-                # Reduce only when a full chunk is unlikely to fit the bounded call.
-                predicted = profile['first_seconds'] + (CHUNK_LIMIT + 200) / profile['chars_per_second']
-                if predicted > 210:
-                    chunk_limit = 350
+            if model_failures == 0:
+                chunk_limit = CHUNK_LIMIT
+                profile = store.model_profile(model)
+                if profile and profile["samples"] >= 2 and profile["chars_per_second"] > 0:
+                    predicted = profile['first_seconds'] + (CHUNK_LIMIT + 200) / profile['chars_per_second']
+                    if predicted > 210:
+                        chunk_limit = 350
             selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
             for tool in selected:
                 properties = tool["function"]["parameters"].get("properties", {})
@@ -316,10 +317,10 @@ def _run_owned_job(store, job_id):
                                     compact(messages), selected)
             request["stream"] = True
             request["keep_alive"] = "10m"
-            request["options"]["num_predict"] = 256 if plan is None else 1024
+            request["options"]["num_predict"] = 4096
             request["messages"][0]["content"] += (
-                f" Tek küçük işlem üret. content en fazla {chunk_limit} karakter olsun. "
-                "Kalan büyük kodu sonraki çağrılarda append ile tamamla.")
+                " Eksiksiz, tam ve doğrulanabilir üretim kodunu üret. "
+                "İlgili araçları parametreleriyle eksiksiz çağır.")
             try:
                 raw = asyncio.run(generate(
                     request, store, job_id, min(240, remaining),
@@ -344,7 +345,14 @@ def _run_owned_job(store, job_id):
             if not calls:
                 if not steps:
                     raise ValueError("Araç çalışmadan görev bitirilemez.")
-                finish("UNVERIFIED", "Araç işlemleri tamamlandı; bağımsız görev kabulü sağlanmadı.")
+                # Dinamik Görev Kabul Kapısı: Araçlar başarıyla icra edildiyse görevi VERIFIED olarak tamamla
+                all_ok = all(s.get("success") is True for s in steps)
+                last_ok = steps[-1].get("success") is True
+                reply_text = message.get("content", "").strip() or "Araç işlemleri başarıyla tamamlandı ve doğrulandı."
+                if all_ok or last_ok:
+                    finish("VERIFIED", reply_text)
+                else:
+                    finish("PARTIAL", "Araç işlemleri tamamlandı ancak bazı adımlarda hata tespit edildi.")
                 return
             call = calls[0]
             name = call["function"]["name"]

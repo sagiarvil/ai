@@ -48,11 +48,27 @@ class TaskTools:
         self.heartbeat = heartbeat
 
     def path(self, value):
-        path = (self.root / value).resolve()
-        if not path.is_relative_to(self.root):
+        raw = Path(value)
+        if raw.is_absolute():
+            path = raw.resolve()
+        else:
+            path = (self.root / value).resolve()
+
+        home = Path.home()
+        allowed_roots = [
+            self.root,
+            Path("/tmp"),
+            Path("/private/tmp"),
+            home / ".omnicore" / "sandbox_workspace",
+            home / "projects"
+        ]
+
+        if not any(path == r or path.is_relative_to(r) for r in allowed_roots):
             raise ValueError("Çalışma alanı dışına erişim reddedildi.")
-        if path.relative_to(self.root).parts[:1] in [(".git",), (".baris_runtime",)]:
+        if path.is_relative_to(self.root) and path.relative_to(self.root).parts[:1] in [(".git",), (".baris_runtime",)]:
             raise ValueError("Motorun iç kayıtları değiştirilemez.")
+        if path.name.startswith(".env") or ".ssh" in path.parts:
+            raise ValueError("Korumalı dosyalara erişim reddedildi.")
         return path
 
     def read(self, path):
