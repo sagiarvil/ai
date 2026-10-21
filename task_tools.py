@@ -193,6 +193,8 @@ class TaskTools:
         if not argv or Path(argv[0]).name not in {
             "python", "python3", "git", "node", "npm", "ls", "pwd", "which", "uname"}:
             raise ValueError("Bu komut doğrudan desteklenmiyor; Python dosyası üzerinden çalıştır.")
+        if "|" in argv or ">" in argv or "<" in argv:
+            raise ValueError("Shell operatörleri (| > <) desteklenmez. Dosyayı doğrudan tool_read_file ile okuyun veya görevi bitirmek için __finish__ çağırın.")
         if Path(argv[0]).name in {"python", "python3"}:
             import sys
             argv[0] = sys.executable
