@@ -2,6 +2,9 @@
 import asyncio
 from contextlib import asynccontextmanager
 import os
+import shutil
+import json
+import sqlite3
 from pathlib import Path
 import uuid
 
@@ -13,7 +16,7 @@ from task_service import TaskService
 
 SOURCE_ROOT = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("BARIS_WORKSPACE", SOURCE_ROOT)).resolve()
-BUILD = "local-ui-v7"
+BUILD = "local-ui-v8"
 
 
 @asynccontextmanager
@@ -51,6 +54,17 @@ def enqueue(req, request, engine):
         or sum(len(v) for v in req.expected_files.values()) > 30000
     ):
         raise HTTPException(422, "Dosya kabul koşulları boyut sınırını aşıyor.")
+    if engine.loop_task is None or engine.loop_task.done():
+        raise HTTPException(503, "Görev zamanlayıcısı çalışmıyor; yeni görev kabul edilmedi.")
+    try:
+        if shutil.disk_usage(WORKSPACE).free < 64*1024*1024:
+            raise HTTPException(507,"Diskte 64 MiB çalışma payı kalmadı; yeni görev kabul edilmedi.")
+    except OSError as exc:
+        raise HTTPException(503,"Çalışma diski denetlenemedi: " + str(exc))
+    for name in (req.expected_files or {}):
+        target = (WORKSPACE / name).resolve()
+        if not target.is_relative_to(WORKSPACE) or target.relative_to(WORKSPACE).parts[:1] in [(".git",),(".baris_runtime",)]:
+            raise HTTPException(422,"Kabul dosyası çalışma alanı veya izin verilen kapsam dışında.")
     payload = req.model_dump()
     payload["workspace"] = str(WORKSPACE)
     key = request.headers.get("idempotency-key") or uuid.uuid4().hex
@@ -60,6 +74,8 @@ def enqueue(req, request, engine):
         task_id = engine.store.submit(payload, key)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
+    except sqlite3.Error as exc:
+        raise HTTPException(503,"Görev kaydedilemedi; başarı veya yürütme bildirilmedi: " + str(exc))
     except OverflowError as exc:
         raise HTTPException(429, str(exc))
     return task_id
@@ -80,8 +96,12 @@ async def script():
 async def info(engine=Depends(service)):
     with engine.store.connection() as db:
         busy = db.execute("SELECT 1 FROM jobs WHERE status='RUNNING'").fetchone() is not None
+        blocked = db.execute("SELECT pending,child_pid FROM jobs WHERE status='BLOCKED'").fetchall()
     return {"engine_protocol": "baris-execution-v2", "build": BUILD, "tool_loop": True,
-            "durable_tasks": True, "busy": busy, "source_root": str(SOURCE_ROOT),
+            "durable_tasks": True, "busy": busy,
+            "scheduler_alive": engine.loop_task is not None and not engine.loop_task.done(),
+            "queue_blocked": any(j["child_pid"] or (j["pending"] and json.loads(j["pending"]).get('name')=='tool_run_shell')
+                for j in blocked), "source_root": str(SOURCE_ROOT),
             "workspace": str(WORKSPACE), "instance": os.environ.get("BARIS_INSTANCE", ""),
             "release": os.environ.get("BARIS_RELEASE", "")}
 

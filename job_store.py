@@ -27,6 +27,11 @@ class JobStore:
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL,
                     at REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS job_events ON events(job_id,seq);
+                CREATE TABLE IF NOT EXISTS model_profiles(
+                    model TEXT NOT NULL, context INTEGER NOT NULL, samples INTEGER NOT NULL,
+                    first_seconds REAL NOT NULL, chars_per_second REAL NOT NULL,
+                    prompt_tokens INTEGER NOT NULL, updated REAL NOT NULL,
+                    PRIMARY KEY(model,context));
             ''')
 
     @contextlib.contextmanager
@@ -95,12 +100,32 @@ class JobStore:
         result['has_more'] = bool(latest and latest['seq'] > result['next_after'])
         return result
 
+    def record_model_sample(self, model, context, first_seconds, rate, prompt_tokens):
+        import math
+        if not model or not all(math.isfinite(x) and x >= 0 for x in (first_seconds,rate)):
+            return
+        with self.connection() as db:
+            db.execute("""INSERT INTO model_profiles VALUES(?,?,1,?,?,?,?)
+                ON CONFLICT(model,context) DO UPDATE SET samples=samples+1,
+                first_seconds=0.8*first_seconds+0.2*excluded.first_seconds,
+                chars_per_second=0.8*chars_per_second+0.2*excluded.chars_per_second,
+                prompt_tokens=excluded.prompt_tokens,updated=excluded.updated""",
+                (model,context,first_seconds,rate,prompt_tokens,time.time()))
+
+    def model_profile(self, model, context=8192):
+        with self.connection() as db:
+            row=db.execute("SELECT * FROM model_profiles WHERE model=? AND context=?",(model,context)).fetchone()
+            return dict(row) if row else None
+
     def claim(self):
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT 1 FROM jobs WHERE status='RUNNING'").fetchone():
                 return None
-            row = db.execute("SELECT id FROM jobs WHERE status='QUEUED' ORDER BY created LIMIT 1").fetchone()
+            blocked = db.execute("SELECT pending,child_pid FROM jobs WHERE status='BLOCKED'").fetchall()
+            if any(r["child_pid"] or (r["pending"] and json.loads(r["pending"]).get("name")=="tool_run_shell") for r in blocked):
+                return None
+            row = db.execute("SELECT id FROM jobs WHERE status='QUEUED' AND cancel=0 ORDER BY created LIMIT 1").fetchone()
             if row:
                 db.execute("UPDATE jobs SET status='RUNNING', attempts=attempts+1 WHERE id=?", (row[0],))
                 return row[0]
@@ -119,7 +144,7 @@ class JobStore:
         if status not in TERMINAL:
             raise ValueError("Geçersiz bitiş durumu.")
         result = dict(result, task_id=job_id, status=status,
-                      engine_protocol='baris-execution-v2', build='local-ui-v7')
+                      engine_protocol='baris-execution-v2', build='local-ui-v8')
         result.setdefault('execution_steps', [])
         result.setdefault('acceptance', None)
         result.setdefault('execution_completed', False)
@@ -129,16 +154,39 @@ class JobStore:
                                       result['execution_steps']):
             raise ValueError('Doğrulama kanıtı olmadan VERIFIED kaydedilemez.')
         with self.connection() as db:
-            db.execute("UPDATE jobs SET status=?,result=?,worker_pid=NULL,child_pid=NULL,updated=? WHERE id=?",
-                       (status, json.dumps(result, ensure_ascii=False), time.time(), job_id))
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status,cancel FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["status"] in TERMINAL:
+                return
+            if row["cancel"] and status != "BLOCKED":
+                status = "CANCELLED"
+                result.update(status=status,verified=False,execution_completed=False,
+                              reply="İptal istendi; tamamlanan işlemler kayıtta korundu.")
+            db.execute("UPDATE jobs SET status=?,result=?,worker_pid=NULL,updated=?,child_pid=CASE WHEN ?='BLOCKED' THEN child_pid ELSE NULL END WHERE id=?",
+                       (status, json.dumps(result, ensure_ascii=False), time.time(),status,job_id))
             self._event(db, job_id, status, {"message": result.get("reply", "Görev sonlandı.")})
 
     def request_cancel(self, job_id):
-        job = self.get(job_id)
-        if job["status"] == "QUEUED":
-            self.finish(job_id, "CANCELLED", {"verified": False, "reply": "Kuyruktaki görev iptal edildi."})
-        elif job["status"] == "RUNNING":
-            self.update(job_id, cancel=1)
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["status"] in TERMINAL:
+                return
+            if row["status"] == "QUEUED":
+                result = {"task_id":job_id,"status":"CANCELLED","verified":False,
+                          "execution_completed":False,"execution_steps":[],"acceptance":None,
+                          "reply":"Kuyruktaki görev iptal edildi.",
+                          "engine_protocol":"baris-execution-v2","build":"local-ui-v8"}
+                db.execute("UPDATE jobs SET status='CANCELLED',cancel=1,result=?,updated=? WHERE id=?",
+                           (json.dumps(result,ensure_ascii=False),time.time(),job_id))
+                self._event(db,job_id,"CANCELLED",{"message":result["reply"]})
+            else:
+                db.execute("UPDATE jobs SET cancel=1,updated=? WHERE id=?",(time.time(),job_id))
+                self._event(db,job_id,"CANCEL_REQUESTED",{"message":"İptal isteği kaydedildi; çalışan adım durduruluyor."})
 
     def recover(self, alive):
         with self.connection() as db:
@@ -146,10 +194,13 @@ class JobStore:
         for row in rows:
             if row["worker_pid"] and alive(row["worker_pid"]):
                 continue
-            if row["pending"] or row["attempts"] >= 2:
+            if row["cancel"] and not row["pending"] and not row["child_pid"]:
+                self.finish(row["id"],"CANCELLED",{"reply":"Kesilen görev için iptal isteği korundu."})
+            elif row["pending"] or row["child_pid"] or row["attempts"] >= 2:
                 self.finish(row["id"], "BLOCKED", {
                     "verified": False, "reply": "Kesinti sonrası işlem sonucu belirsiz; otomatik tekrar engellendi."})
             else:
                 with self.connection() as db:
-                    db.execute("UPDATE jobs SET status='QUEUED',worker_pid=NULL WHERE id=?", (row["id"],))
-                    self._event(db, row["id"], "RECOVERED", {"message": "Güvenli kontrol noktasından devam edilecek."})
+                    changed = db.execute("UPDATE jobs SET status='QUEUED',worker_pid=NULL WHERE id=? AND status='RUNNING' AND cancel=0", (row["id"],))
+                    if changed.rowcount:
+                        self._event(db, row["id"], "RECOVERED", {"message": "Güvenli kontrol noktasından devam edilecek."})

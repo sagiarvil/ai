@@ -451,7 +451,7 @@ class DurableTests(unittest.TestCase):
                 store.finish(ids[0], 'VERIFIED', {'reply':'model says done'})
             store.request_cancel(ids[0])
             result = store.get(ids[0])['result']
-            self.assertEqual(result['build'],'local-ui-v7')
+            self.assertEqual(result['build'],'local-ui-v8')
             self.assertFalse(result['verified'])
 
     def test_hash_append_rejects_replay(self):

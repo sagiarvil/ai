@@ -10,7 +10,7 @@ python3 baris_local.py start --shortcut
 ```
 
 Başlatıcı mevcut Python ortamını kullanır; paket veya model indirmez.
-56 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
+72 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
 başlatır, motor kimliğini doğrular ve tarayıcıyı açar. Varsayılan port 5053'tür.
 Masaüstüne Baris-AI.command kısayolu eklenir; sonraki açılışlarda aynı sunucu kullanılır.
 Port başka uygulamadaysa süreç öldürülmez, açık hata verilir.
@@ -23,7 +23,7 @@ python3 baris_local.py stop
 Kayıtlar .baris_runtime/ altındadır. Oturum açılışında otomatik başlatma kurulmaz.
 Durdurma yalnızca kimliği doğrulanmış yönetilen süreç için geçerlidir.
 
-## Kalıcı görev motoru — local-ui-v7
+## Kalıcı görev motoru — local-ui-v8
 
 Yetkili giriş `durable_api:app` uygulamasıdır; `baris_local.py` ve `server.py` bu motora bağlanır.
 POST `/api/tasks` hemen 202 ve görev kimliği döndürür. GET `/api/tasks/{id}`
@@ -55,12 +55,12 @@ Dock uygulamasının bağlı olduğu kaynak dizin aynı kaldığında kısayol d
 ## Doğrulama ve sınırlar
 
 ```bash
-python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime
+python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime test_reliability
 node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-56 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
+72 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
 kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
 model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
 CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
@@ -131,3 +131,27 @@ eski hash/çoklu hedef yamasını reddetme, dizin çakışmasını reddetme, mod
 hatalı write çağrısından append ile toparlanması, geciken ilk yanıtta kalp atışı
 ve başlamış akışta sessizlik sınırı. Canlı Mac/Mistral sonucu ayrıca ölçülmelidir.
 Eski başarısız görevin kaybolmuş dosya içeriğinin geri getirildiği iddia edilmez.
+
+## v8: Öngörülü güvenilirlik denetimi
+
+İptal/kuyruktan alma aynı SQLite yazma işlemiyle sıralanır; terminal durumlar
+sonradan gelen çalışanla değiştirilemez. Model yanıtından sonra iptal tekrar
+kontrol edilir. Çöken çalışanın belirsiz dış komutu varsa yeni işler bekletilir;
+PID kaydı silinip komut körlemesine tekrarlanmaz. PID tek başına kimlik kanıtı
+sayılmadığından böyle bir kayıt elle incelenmeden rastgele süreç öldürülmez.
+
+Disk 64 MiB altındaysa veya zamanlayıcı durmuşsa API yeni işi reddeder.
+SQLite kayıt hatasında görev kabul edilmiş gibi yanıt verilmez. Çok hızlı biten
+komutun son çıktı boyutu da sınanır. Yazma/fsync hatalarında geçici dosya temizlenir;
+append/patch sırasında fark edilen dış düzenleme korunur. Dizin fsync uygulanır;
+bu, donanım/işletim sistemi güç kesintisi garantisi olarak sunulmaz.
+
+Ollama yükleme, prompt işleme, üretim ve ilk içerik süreleri ayrı kaydedilir.
+Model/context bazında yerel hareketli hız profili tutulur. En az iki örnekten sonra
+yavaş profilde yeni parçalar 350–700 karakter aralığında küçültülür. Bu model
+ eğitimi veya gelecekteki görev süresi garantisi değildir. Toplam bütçe değişmez.
+
+`python3 baris_local.py doctor` Python/platform, boş disk, Ollama sürümü, yüklü
+modeller, seçilen model ve salt okunur DB bütünlük/engellenmiş iş/hız profili
+raporunu verir. Otomatik ayar değiştirmez veya bozuk veritabanını onarmaz.
+Tam hata matrisi ve açık kabul koşulları RELIABILITY_REVIEW.md dosyasındadır.

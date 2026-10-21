@@ -29,7 +29,8 @@ def inspect_expected_files(root, expected_files):
                 "actual_sha256": hashlib.sha256(actual.encode("utf-8")).hexdigest(),
                 "first_difference": None if matched else offset,
                 "repair": None if matched else (
-                    "Dosyayı expected_json içindeki metinle birebir yeniden yaz. "
+                    "Dosya varsa güncel SHA ile append veya tek eşleşmeli patch kullan; write ile üzerine yazma. "
+                    "Dosya yoksa oluştur. Hedef expected_json içindeki metinle birebir aynı olmalı. "
                     "JSON tırnakları içeriğe dahil değil. Nokta, boşluk veya satır sonu ekleme."
                 ),
             }
@@ -54,3 +55,4 @@ class AcceptanceGuard:
         if self.counts[fingerprint] >= self.limit:
             raise RuntimeError(
                 "Aynı kabul hatası 3 kez tekrarlandı; ilerleme olmadığı için durduruldu.")
+

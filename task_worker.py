@@ -26,6 +26,7 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
     final = None
     last_report = 0.0
     last_characters = 0
+    first_content_seconds = None
     started = time.monotonic()
     store.event(job_id, "MODEL_START", {"message": "Modelin ilk yanıtı bekleniyor; henüz üretim kanıtı yok.", "limit_seconds": round(seconds, 2)})
     timeout = httpx.Timeout(connect=10, read=None, write=20, pool=10)
@@ -52,6 +53,8 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
                     if chunk.get("error"):
                         raise RuntimeError(chunk["error"])
                     text += chunk.get("message", {}).get("content", "")
+                    if text and first_content_seconds is None:
+                        first_content_seconds = round(time.monotonic()-started,3)
                     if len(text) > 100_000:
                         raise ValueError("Model yanıtı boyut sınırını aştı.")
                     diagnostic.update(characters=len(text), elapsed_seconds=round(time.monotonic()-started, 2))
@@ -71,7 +74,18 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
         raise ValueError("Model çıktısı kesildi; kısmi komut çalıştırılmadı. Daha küçük parça üret.")
     store.event(job_id, "MODEL_DONE", {
         "message": "İşlem kararı üretildi.", "seconds": round(time.monotonic() - started, 1),
-        "eval_count": final.get("eval_count"), "prompt_eval_count": final.get("prompt_eval_count")})
+        "eval_count": final.get("eval_count"), "prompt_eval_count": final.get("prompt_eval_count"),
+        "first_content_seconds": first_content_seconds,
+        "load_seconds": final.get("load_duration",0)/1e9,
+        "prompt_eval_seconds": final.get("prompt_eval_duration",0)/1e9,
+        "generation_seconds": final.get("eval_duration",0)/1e9,
+        "characters": len(text),
+        "tokens_per_second": (round(final["eval_count"]*1e9/final["eval_duration"],2)
+                              if final.get("eval_count") and final.get("eval_duration",0)>0 else None)})
+    if payload.get("model") and first_content_seconds is not None:
+        store.record_model_sample(payload["model"],payload.get("options",{}).get("num_ctx",8192),
+            first_content_seconds,len(text)/max(0.001,time.monotonic()-started-first_content_seconds),
+            final.get("prompt_eval_count",0))
     final["message"] = {"content": text}
     return final
 
@@ -159,6 +173,8 @@ def compact(messages):
 
 def run_job(store, job_id):
     job = store.get(job_id)
+    if job["status"] != "RUNNING":
+        return
     payload = job["payload"]
     checkpoint = job["checkpoint"] or {}
     messages = checkpoint.get("messages", [
@@ -186,6 +202,7 @@ def run_job(store, job_id):
     repeats = {}
     progress_keys = set(checkpoint.get("progress_keys", []))
     acceptance = None
+    model = os.environ.get("BARIS_MODEL", "mistral-small-24b-abliterated:latest")
     store.update(job_id, worker_pid=os.getpid())
 
     def stop(signum, frame):
@@ -203,7 +220,7 @@ def run_job(store, job_id):
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status in {"VERIFIED", "UNVERIFIED"},
                   "reply": reply, "execution_steps": steps, "acceptance": acceptance,
-                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v7"}
+                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v8"}
         store.finish(job_id, status, result)
 
     try:
@@ -222,6 +239,9 @@ def run_job(store, job_id):
                     return
                 guard.observe(acceptance)
                 messages.append({"role": "user", "content": "Kabul kontrolü başarısız: " + json.dumps(acceptance, ensure_ascii=False)})
+            profile=store.model_profile(model)
+            if profile and profile["samples"] >= 2 and profile["chars_per_second"] > 0:
+                chunk_limit=min(chunk_limit,max(350,min(CHUNK_LIMIT,int(profile["chars_per_second"]*30))))
             selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
             for tool in selected:
                 properties = tool["function"]["parameters"].get("properties", {})
@@ -229,7 +249,7 @@ def run_job(store, job_id):
                     if field in properties:
                         properties[field]["maxLength"] = chunk_limit
             tools.chunk_limit = chunk_limit
-            request = build_request(os.environ.get("BARIS_MODEL", "mistral-small-24b-abliterated:latest"),
+            request = build_request(model,
                                     compact(messages), selected)
             request["stream"] = True
             request["keep_alive"] = "10m"
@@ -266,6 +286,11 @@ def run_job(store, job_id):
             repeats[fingerprint] = repeats.get(fingerprint, 0) + 1
             if repeats[fingerprint] > 3:
                 raise ValueError("Aynı işlem 3 kez tekrarlandı; ilerlemesiz döngü kesildi.")
+            if store.get(job_id)["cancel"]:
+                finish("CANCELLED", "İşlem başlamadan iptal edildi.")
+                return
+            if used() >= payload["budget_seconds"]:
+                raise TimeoutError("Görev bütçesi doldu; yeni araç başlatılmadı.")
             store.update(job_id, pending={"name": name, "args": args}, used=used())
             store.event(job_id, "TOOL_START", {"message": "Araç çalışıyor: " + name, "tool": name})
             try:

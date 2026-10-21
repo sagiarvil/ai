@@ -37,7 +37,7 @@ jobs:
         run: python3 -m pip install "httpx>=0.27,<0.29" "fastapi>=0.115,<0.157"
 
       - name: Offline execution-loop regression tests
-        run: python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime
+        run: python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime test_reliability
 
       - name: Browser script syntax and integration tests
         run: |

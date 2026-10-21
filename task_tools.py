@@ -106,19 +106,28 @@ class TaskTools:
                     raise ValueError("Dosya değişmiş; tekrar okuyup doğru hash ile devam et.")
                 data = previous + data
         path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
-            temporary = Path(output.name)
-            output.write(data)
-            output.flush()
-            os.fsync(output.fileno())
+        temporary = None
         try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
+                temporary = Path(output.name)
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
             if name == "tool_write_file":
-                # Atomic create-if-absent; even a concurrent creator cannot be overwritten.
+                # Atomic create-if-absent; a concurrent creator cannot be overwritten.
                 os.link(temporary, path)
             else:
+                if path.read_bytes() != previous:
+                    raise ValueError("Dosya işlem sırasında değişti; değişiklik uygulanmadı.")
                 os.replace(temporary, path)
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         finally:
-            temporary.unlink(missing_ok=True)
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return {"success": path.read_bytes() == data, "path": str(path),
                 "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "readback": True}
 
@@ -155,6 +164,7 @@ class TaskTools:
             finally:
                 self.stop_child()
                 self.store.update(self.job_id, child_pid=None)
+            overflow = overflow or (os.fstat(stdout.fileno()).st_size + os.fstat(stderr.fileno()).st_size > 4_000_000)
             result = {"success": self.child.returncode == 0 and not timed_out and not overflow,
                       "exit_code": 124 if timed_out else self.child.returncode,
                       "argv": argv, "timed_out": timed_out, "output_limit": overflow}

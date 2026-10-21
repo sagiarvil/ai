@@ -15,7 +15,7 @@ async function engineInfo() {
   if (!response.ok) throw new Error('Yerel sunucuya ulaşılamadı.');
   const info = await response.json();
   if (info.engine_protocol !== 'baris-execution-v2' ||
-      info.build !== 'local-ui-v7' || info.tool_loop !== true) {
+      info.build !== 'local-ui-v8' || info.tool_loop !== true) {
     throw new Error('Arayüz ve motor sürümü uyuşmuyor.');
   }
   return info;
@@ -24,6 +24,8 @@ async function engineInfo() {
 async function refreshConnection() {
   try {
     const info = await engineInfo();
+    if (info.scheduler_alive === false) throw new Error('Görev zamanlayıcısı durmuş; yeni görev gönderimi kapalı.');
+    if (info.queue_blocked === true) throw new Error('Belirsiz dış komut kaydı var; kuyruk inceleme bekliyor.');
     connected = true;
     statusLabel.textContent = 'Motor bağlı • ' + location.host +
       (info.busy ? ' • Görev çalışıyor' : '');
@@ -37,7 +39,7 @@ async function refreshConnection() {
 }
 
 function renderResult(box, data) {
-  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6', 'local-ui-v7'].includes(data.build)) {
+  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6', 'local-ui-v7', 'local-ui-v8'].includes(data.build)) {
     throw new Error('Yanıt beklenen motora ait değil.');
   }
   const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];
@@ -46,6 +48,9 @@ function renderResult(box, data) {
   box.replaceChildren();
   const heading = document.createElement('strong');
   heading.textContent = verified ? 'GÖREV DOĞRULANDI' :
+    data.status === 'FAILED' ? 'GÖREV BAŞARISIZ' :
+    data.status === 'CANCELLED' ? 'GÖREV İPTAL EDİLDİ' :
+    data.status === 'BLOCKED' ? 'İNCELEME GEREKİYOR' :
     (steps.length ? 'İŞLEM VAR; SONUÇ DOĞRULANMADI' : 'İŞLEM TAMAMLANMADI');
   box.appendChild(heading);
   const message = document.createElement('p');

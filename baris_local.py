@@ -15,7 +15,7 @@ import uuid
 import webbrowser
 
 SOURCE = Path(__file__).resolve().parent
-BUILD = "local-ui-v7"
+BUILD = "local-ui-v8"
 
 
 def read_info(port):
@@ -33,7 +33,7 @@ def own_info(info):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["start", "status", "stop"], nargs="?",
+    parser.add_argument("action", choices=["start", "status", "stop", "doctor"], nargs="?",
                         default="start")
     parser.add_argument("--port", type=int, default=5053)
     parser.add_argument("--shortcut", action="store_true")
@@ -41,6 +41,11 @@ def main():
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("Port 1024–65535 arasında olmalı.")
+    if args.action == "doctor":
+        from runtime_doctor import inspect_runtime
+        report=inspect_runtime(SOURCE)
+        print(json.dumps(report,ensure_ascii=False,indent=2))
+        raise SystemExit(0 if report["all_checks_passed"] else 1)
     runtime = SOURCE / ".baris_runtime"
     runtime.mkdir(exist_ok=True)
     with (runtime / "manager.lock").open("a") as lock:
@@ -83,7 +88,7 @@ def main():
                 managed_old = (
                     info.get('source_root') == str(SOURCE)
                     and info.get('engine_protocol') == 'baris-execution-v2'
-                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6','local-ui-v7'}
+                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6','local-ui-v7','local-ui-v8'}
                     and state.get('instance') == info.get('instance')
                     and state.get('pid') and not info.get('busy')
                 )
@@ -110,7 +115,7 @@ def main():
             print("Çevrimdışı motor ve entegrasyon testleri çalıştırılıyor...", flush=True)
             subprocess.run(
                 [sys.executable, "-m", "unittest", "-v", "test_execution_loop",
-                 "test_structured_actions", "test_acceptance_checks", "test_durable_runtime"],
+                 "test_structured_actions", "test_acceptance_checks", "test_durable_runtime", "test_reliability"],
                 cwd=SOURCE, check=True)
             instance = uuid.uuid4().hex
             release = subprocess.check_output(
