@@ -23,13 +23,16 @@ TOOLS = [
         "steps": {"type": "array", "items": TEXT, "minItems": 1, "maxItems": 12}}),
     schema("tool_make_directory", "Çalışma alanında dizin oluştur.", {"filepath": TEXT}),
     schema("tool_list_files", "Çalışma alanında dosyaları listele.", {"filepath": TEXT}),
-    schema("tool_write_file", "UTF-8 dosya yaz; büyük kodu en fazla 700 karakterlik parçalara böl.", {
+    schema("tool_write_file", "Yalnızca YENİ UTF-8 dosya oluştur. Mevcut dosya reddedilir. Devamı için append, düzeltme için patch kullan.", {
         "filepath": TEXT, "content": {"type": "string", "maxLength": 700}}),
     schema("tool_append_file", "Son okuma/yazmanın sha256 değeriyle dosyaya parça ekle.", {
         "filepath": TEXT, "content": {"type": "string", "maxLength": 700}, "expected_sha256": TEXT}),
     schema("tool_read_file", "Dosyayı oku; sonraki değişiklik için sha256 al.", {"filepath": TEXT}),
     schema("tool_run_shell", "Komutu argv olarak çalıştır; shell operatörleri yerine Python dosyası yazıp çalıştır.", {
         "command": TEXT}),
+    schema("tool_patch_file", "Mevcut dosyada tek eşleşen metni hash kontrolüyle düzelt; diğer içeriği koru.", {
+        "filepath": TEXT, "old_text": {"type": "string", "maxLength": 700},
+        "new_text": {"type": "string", "maxLength": 700}, "expected_sha256": TEXT}),
 ]
 
 
@@ -68,7 +71,7 @@ class TaskTools:
             return self.run_command(args["command"])
         path = self.path(args["filepath"])
         if name == "tool_make_directory":
-            path.mkdir(parents=True, exist_ok=True)
+            path.mkdir(parents=True, exist_ok=False)
             return {"success": True, "path": str(path)}
         if name == "tool_list_files":
             return {"success": True, "files": sorted(p.name for p in path.iterdir())[:200]}
@@ -78,16 +81,30 @@ class TaskTools:
                 raise ValueError("Dosya 100 KB okuma sınırını aşıyor.")
             return {"success": True, "sha256": hashlib.sha256(raw).hexdigest(),
                     "content": raw.decode()}
-        if name not in {"tool_write_file", "tool_append_file"}:
+        if name not in {"tool_write_file", "tool_append_file", "tool_patch_file"}:
             raise ValueError("Bilinmeyen araç.")
-        data = args["content"].encode("utf-8")
-        if len(args["content"]) > self.chunk_limit:
-            raise ValueError(f"Parça {self.chunk_limit} karakteri aşıyor; küçük parçalara böl.")
-        if name == "tool_append_file":
+        if name == "tool_write_file" and path.exists():
+            raise ValueError("Dosya zaten var; üzerine yazma engellendi. Devam için tool_append_file, düzeltme için tool_patch_file kullan.")
+        if name == "tool_patch_file":
+            old, new = args["old_text"], args["new_text"]
+            if not old or max(len(old), len(new)) > self.chunk_limit:
+                raise ValueError(f"Yama hedefi boş olamaz; hedef ve yeni metin en fazla {self.chunk_limit} karakter olmalı.")
             previous = path.read_bytes()
             if hashlib.sha256(previous).hexdigest() != args["expected_sha256"]:
                 raise ValueError("Dosya değişmiş; tekrar okuyup doğru hash ile devam et.")
-            data = previous + data
+            original = previous.decode("utf-8")
+            if original.count(old) != 1:
+                raise ValueError("Yama hedefi tam bir kez eşleşmeli; dosya değiştirilmedi.")
+            data = original.replace(old, new, 1).encode("utf-8")
+        else:
+            if len(args["content"]) > self.chunk_limit:
+                raise ValueError(f"Parça {self.chunk_limit} karakteri aşıyor; küçük parçalara böl.")
+            data = args["content"].encode("utf-8")
+            if name == "tool_append_file":
+                previous = path.read_bytes()
+                if hashlib.sha256(previous).hexdigest() != args["expected_sha256"]:
+                    raise ValueError("Dosya değişmiş; tekrar okuyup doğru hash ile devam et.")
+                data = previous + data
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
             temporary = Path(output.name)
@@ -95,7 +112,11 @@ class TaskTools:
             output.flush()
             os.fsync(output.fileno())
         try:
-            os.replace(temporary, path)
+            if name == "tool_write_file":
+                # Atomic create-if-absent; even a concurrent creator cannot be overwritten.
+                os.link(temporary, path)
+            else:
+                os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
         return {"success": path.read_bytes() == data, "path": str(path),

@@ -15,7 +15,7 @@ import uuid
 import webbrowser
 
 SOURCE = Path(__file__).resolve().parent
-BUILD = "local-ui-v6"
+BUILD = "local-ui-v7"
 
 
 def read_info(port):
@@ -83,7 +83,7 @@ def main():
                 managed_old = (
                     info.get('source_root') == str(SOURCE)
                     and info.get('engine_protocol') == 'baris-execution-v2'
-                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6'}
+                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6','local-ui-v7'}
                     and state.get('instance') == info.get('instance')
                     and state.get('pid') and not info.get('busy')
                 )

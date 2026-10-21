@@ -17,13 +17,18 @@ from structured_actions import build_request, parse_action
 from task_tools import TaskTools, TOOLS, CHUNK_LIMIT
 
 
+STREAM_IDLE_SECONDS = 90
+HEARTBEAT_SECONDS = 2
+
+
 async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diagnostic=None):
     text = ""
     final = None
     last_report = 0.0
+    last_characters = 0
     started = time.monotonic()
-    store.event(job_id, "MODEL_START", {"message": "Model sıradaki kısa işlemi üretiyor."})
-    timeout = httpx.Timeout(connect=10, read=90, write=20, pool=10)
+    store.event(job_id, "MODEL_START", {"message": "Modelin ilk yanıtı bekleniyor; henüz üretim kanıtı yok.", "limit_seconds": round(seconds, 2)})
+    timeout = httpx.Timeout(connect=10, read=None, write=20, pool=10)
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         async with asyncio.timeout(seconds):
             async with client.stream(
@@ -31,7 +36,16 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
+                lines = response.aiter_lines().__aiter__()
+                received = False
+                while True:
+                    try:
+                        line = await asyncio.wait_for(anext(lines), timeout=STREAM_IDLE_SECONDS if received else seconds)
+                    except StopAsyncIteration:
+                        break
+                    except TimeoutError as exc:
+                        raise ModelIdleTimeout("Model akışı başladıktan sonra 90 saniye veri gelmedi.") from exc
+                    received = True
                     if not line:
                         continue
                     chunk = json.loads(line)
@@ -42,15 +56,17 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
                         raise ValueError("Model yanıtı boyut sınırını aştı.")
                     diagnostic.update(characters=len(text), elapsed_seconds=round(time.monotonic()-started, 2))
                     now = time.monotonic()
-                    if now - last_report >= 1:
+                    if len(text) > last_characters and now - last_report >= 1:
                         if heartbeat:
                             heartbeat()
                         store.event(job_id, "MODEL_PROGRESS", {
                             "message": "İşlem kararı üretiliyor.", "characters": len(text),
                             "seconds": round(now - started, 1)})
                         last_report = now
+                        last_characters = len(text)
                     if chunk.get("done") is True:
                         final = chunk
+                        break
     if final is None or final.get("done_reason") == "length":
         raise ValueError("Model çıktısı kesildi; kısmi komut çalıştırılmadı. Daha küçük parça üret.")
     store.event(job_id, "MODEL_DONE", {
@@ -58,6 +74,10 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
         "eval_count": final.get("eval_count"), "prompt_eval_count": final.get("prompt_eval_count")})
     final["message"] = {"content": text}
     return final
+
+
+class ModelIdleTimeout(TimeoutError):
+    pass
 
 
 class ModelCallError(ValueError):
@@ -69,12 +89,20 @@ class ModelCallError(ValueError):
 async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
     started = time.monotonic()
     diagnostic = {"characters": 0, "elapsed_seconds": 0, "limit_seconds": round(seconds, 2)}
+    async def pulse():
+        while True:
+            await asyncio.sleep(HEARTBEAT_SECONDS)
+            if heartbeat:
+                heartbeat()
+    monitor = asyncio.create_task(pulse())
     try:
         return await _stream_generate(payload, store, job_id, seconds, heartbeat, diagnostic)
     except (TimeoutError, httpx.HTTPError, ValueError) as exc:
         diagnostic.update(error_type=type(exc).__name__,
                           elapsed_seconds=round(time.monotonic()-started, 2))
-        if isinstance(exc, TimeoutError):
+        if isinstance(exc, ModelIdleTimeout):
+            reason = str(exc)
+        elif isinstance(exc, TimeoutError):
             reason = "Model çağrısı süre sınırına ulaştı"
         elif isinstance(exc, httpx.ReadTimeout):
             reason = "Model bağlantısı 90 saniye veri göndermedi"
@@ -84,6 +112,12 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
                                  f"{diagnostic['characters']} karakter. Kısmi işlem çalıştırılmadı.")
         store.event(job_id, "MODEL_INTERRUPTED", diagnostic)
         raise ModelCallError(diagnostic) from exc
+    finally:
+        monitor.cancel()
+        try:
+            await monitor
+        except asyncio.CancelledError:
+            pass
 
 
 async def generate(payload, store, job_id, seconds, heartbeat=None):
@@ -131,7 +165,8 @@ def run_job(store, job_id):
         {"role": "system", "content": (
             "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
             "Sonra her çağrıda tek küçük işlemi tamamla. Büyük programları 700 karakterden "
-            "küçük parçalarla yaz ve hash kontrollü append ile birleştir. İlk yanıtta bütün "
+            "küçük parçalarla yaz ve hash kontrollü append ile birleştir. Mevcut dosyayı write ile baştan yazma; "
+            "düzeltme için hash kontrollü tek eşleşmeli patch kullan. İlk yanıtta bütün "
             "programı üretme. Kodun tamamını tek shell satırına gömme. Hataları araç çıktısıyla "
             "düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
             "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"])},
@@ -168,7 +203,7 @@ def run_job(store, job_id):
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status in {"VERIFIED", "UNVERIFIED"},
                   "reply": reply, "execution_steps": steps, "acceptance": acceptance,
-                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v6"}
+                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v7"}
         store.finish(job_id, status, result)
 
     try:
@@ -189,9 +224,10 @@ def run_job(store, job_id):
                 messages.append({"role": "user", "content": "Kabul kontrolü başarısız: " + json.dumps(acceptance, ensure_ascii=False)})
             selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
             for tool in selected:
-                content_schema = tool["function"]["parameters"].get("properties", {}).get("content")
-                if content_schema is not None:
-                    content_schema["maxLength"] = chunk_limit
+                properties = tool["function"]["parameters"].get("properties", {})
+                for field in ("content", "old_text", "new_text"):
+                    if field in properties:
+                        properties[field]["maxLength"] = chunk_limit
             tools.chunk_limit = chunk_limit
             request = build_request(os.environ.get("BARIS_MODEL", "mistral-small-24b-abliterated:latest"),
                                     compact(messages), selected)
@@ -245,7 +281,7 @@ def run_job(store, job_id):
             else:
                 steps.append(event)
             progress_key = None
-            if result.get('success') and name in {'tool_write_file', 'tool_append_file'}:
+            if result.get('success') and name in {'tool_write_file', 'tool_append_file', 'tool_patch_file'}:
                 progress_key = result.get('path', '') + ':' + result.get('sha256', '')
             elif result.get('success') and name == 'tool_run_shell':
                 progress_key = fingerprint

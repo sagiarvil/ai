@@ -15,7 +15,7 @@ async function engineInfo() {
   if (!response.ok) throw new Error('Yerel sunucuya ulaşılamadı.');
   const info = await response.json();
   if (info.engine_protocol !== 'baris-execution-v2' ||
-      info.build !== 'local-ui-v6' || info.tool_loop !== true) {
+      info.build !== 'local-ui-v7' || info.tool_loop !== true) {
     throw new Error('Arayüz ve motor sürümü uyuşmuyor.');
   }
   return info;
@@ -37,7 +37,7 @@ async function refreshConnection() {
 }
 
 function renderResult(box, data) {
-  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6'].includes(data.build)) {
+  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6', 'local-ui-v7'].includes(data.build)) {
     throw new Error('Yanıt beklenen motora ait değil.');
   }
   const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];

@@ -10,7 +10,7 @@ python3 baris_local.py start --shortcut
 ```
 
 Başlatıcı mevcut Python ortamını kullanır; paket veya model indirmez.
-49 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
+56 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
 başlatır, motor kimliğini doğrular ve tarayıcıyı açar. Varsayılan port 5053'tür.
 Masaüstüne Baris-AI.command kısayolu eklenir; sonraki açılışlarda aynı sunucu kullanılır.
 Port başka uygulamadaysa süreç öldürülmez, açık hata verilir.
@@ -23,7 +23,7 @@ python3 baris_local.py stop
 Kayıtlar .baris_runtime/ altındadır. Oturum açılışında otomatik başlatma kurulmaz.
 Durdurma yalnızca kimliği doğrulanmış yönetilen süreç için geçerlidir.
 
-## Kalıcı görev motoru — local-ui-v6
+## Kalıcı görev motoru — local-ui-v7
 
 Yetkili giriş `durable_api:app` uygulamasıdır; `baris_local.py` ve `server.py` bu motora bağlanır.
 POST `/api/tasks` hemen 202 ve görev kimliği döndürür. GET `/api/tasks/{id}`
@@ -39,7 +39,7 @@ yan etkisi belirsizse görev BLOCKED olur; komut körlemesine tekrarlanmaz.
 
 İlk model çağrısı kısa plan üretir. Kod en fazla 700 karakterlik parçalarla ve hash önkoşullu
 eklemelerle yazılır. Varsayılan toplam bütçe 900 saniye, model çağrısı en fazla
-240 saniye, akış sessizliği 90 saniye, dış komut 90 saniyedir. Bunlar başarısızlığı
+240 saniye, ilk yanıttan sonraki akış sessizliği 90 saniye, dış komut 90 saniyedir. Bunlar başarısızlığı
 saklayan sonsuz beklemeler değildir. Tekrarlanan sonuçsuz işlemler durdurulur.
 Model akışındaki kesik JSON veya `done_reason=length` çalıştırılmaz.
 
@@ -60,7 +60,7 @@ node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-49 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 20 entegrasyon testi
+56 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
 kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
 model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
 CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
@@ -108,3 +108,26 @@ ayrılır. 15 saniye yeni olay yoksa sarı bekleme, 90 saniyede uzun bekleme yaz
 bu durumda görev durmuş ilan edilmez. Bağlantı hatasında kırmızı durum gösterilir.
 Sonuçta aktif gösterge kaldırılır. Hareket azaltma tercihi animasyonu kapatır.
 Bu arayüz güncellemesi çalışan görev sürecini yeniden başlatmayı gerektirmez.
+
+## v7: Birikmiş kodun korunması ve ilk yanıt bekleyişi
+
+Canlı v6 kaydında analiz.py 2093 bayttan 700 bayta düşürüldü: model append yerine
+write seçti. Yeni write yalnızca yeni dosya oluşturur; atomik link ile aynı anda
+başka bir yazıcı dosyayı oluştursa dahi üzerine yazılmaz. Mevcut dosya ancak güncel
+SHA-256 ile append veya tek eşleşmeli old_text/new_text yamasıyla düzenlenir.
+Yama hedefi boş, belirsiz veya hash eskiyse dosya değişmez. 700/350 karakter
+sınırı yama alanlarına da uygulanır. Var olan dizin yeni dizin gibi kabul edilmez.
+Bu korumalar dosya araçlarına aittir; genel Python/shell işletim sistemi sandbox'ı
+olmadığından tüm yazma yollarını denetledikleri iddia edilmez.
+
+İlk yanıt bekleyişi 90 saniyelik akış sessizliği sayılmaz: çağrının toplam
+240 saniyelik sınırına tabidir. İlk satırdan sonra 90 saniye sessizlik sınırı
+uygulanır. İlk yanıttan önce de kullanılan süre iki saniyede bir kaydedilir;
+bu kalp atışı modelin üretim yaptığına dair kanıt olarak gösterilmez. done alınca
+akış okuması hemen biter. Sıfır karakterli parçalar üretim ilerlemesi sayılmaz.
+
+Ek testler: birikmiş dosyaya yazmayı engelleme, eşzamanlı oluşturucu yarışı,
+eski hash/çoklu hedef yamasını reddetme, dizin çakışmasını reddetme, modelin
+hatalı write çağrısından append ile toparlanması, geciken ilk yanıtta kalp atışı
+ve başlamış akışta sessizlik sınırı. Canlı Mac/Mistral sonucu ayrıca ölçülmelidir.
+Eski başarısız görevin kaybolmuş dosya içeriğinin geri getirildiği iddia edilmez.

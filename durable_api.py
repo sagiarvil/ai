@@ -13,7 +13,7 @@ from task_service import TaskService
 
 SOURCE_ROOT = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("BARIS_WORKSPACE", SOURCE_ROOT)).resolve()
-BUILD = "local-ui-v6"
+BUILD = "local-ui-v7"
 
 
 @asynccontextmanager

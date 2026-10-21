@@ -119,7 +119,7 @@ class JobStore:
         if status not in TERMINAL:
             raise ValueError("Geçersiz bitiş durumu.")
         result = dict(result, task_id=job_id, status=status,
-                      engine_protocol='baris-execution-v2', build='local-ui-v6')
+                      engine_protocol='baris-execution-v2', build='local-ui-v7')
         result.setdefault('execution_steps', [])
         result.setdefault('acceptance', None)
         result.setdefault('execution_completed', False)

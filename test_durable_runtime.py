@@ -21,7 +21,7 @@ from task_tools import TaskTools
 
 
 @contextmanager
-def fake_ollama(actions, delay=0.02, reason="stop"):
+def fake_ollama(actions, delay=0.02, reason="stop", initial_delay=0):
     requests = []
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -31,6 +31,7 @@ def fake_ollama(actions, delay=0.02, reason="stop"):
             index = len(requests)
             requests.append(request)
             action = actions[min(index, len(actions) - 1)]
+            time.sleep(initial_delay)
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson")
             self.end_headers()
@@ -88,6 +89,91 @@ class DurableTests(unittest.TestCase):
             headers={"Idempotency-Key": key})
         self.assertEqual(response.status_code, 202, response.text)
         return response.json()["task_id"]
+
+    def test_create_cannot_reset_accumulated_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory)/'jobs.db')
+            task = store.submit({}, 'create-only')
+            tools = TaskTools(directory, store, task)
+            first = tools.execute('tool_write_file', {'filepath':'analiz.py','content':'a'*700})
+            tools.execute('tool_append_file', {'filepath':'analiz.py','content':'b'*700,'expected_sha256':first['sha256']})
+            before = (Path(directory)/'analiz.py').read_bytes()
+            with self.assertRaises(ValueError):
+                tools.execute('tool_write_file', {'filepath':'analiz.py','content':'reset'})
+            self.assertEqual((Path(directory)/'analiz.py').read_bytes(),before)
+            self.assertEqual(len(before),1400)
+
+    def test_concurrent_creator_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store=JobStore(Path(directory)/'jobs.db');task=store.submit({},'race')
+            tools=TaskTools(directory,store,task)
+            original_link=os.link
+            def competing_create(source, target):
+                Path(target).write_text('başka yazıcının verisi',encoding='utf-8')
+                original_link(source,target)
+            with patch('task_tools.os.link',competing_create):
+                with self.assertRaises(FileExistsError):
+                    tools.execute('tool_write_file',{'filepath':'x','content':'silinmemeli'})
+            self.assertEqual((Path(directory)/'x').read_text(),'başka yazıcının verisi')
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir() if p.name.startswith('tmp')),[])
+
+    def test_patch_requires_current_hash_and_unique_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory)/'jobs.db')
+            task = store.submit({}, 'patch')
+            tools = TaskTools(directory, store, task)
+            initial = tools.execute('tool_write_file', {'filepath':'x','content':'start|bad|end end'})
+            args = {'filepath':'x','old_text':'bad','new_text':'good','expected_sha256':initial['sha256']}
+            updated = tools.execute('tool_patch_file',args)
+            self.assertEqual((Path(directory)/'x').read_text(),'start|good|end end')
+            for old, digest in [('good',initial['sha256']),('end',updated['sha256']),('',updated['sha256'])]:
+                with self.assertRaises(ValueError):
+                    tools.execute('tool_patch_file',dict(args,old_text=old,expected_sha256=digest))
+            self.assertEqual((Path(directory)/'x').read_text(),'start|good|end end')
+
+    def test_existing_directory_is_rejected_without_reuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = JobStore(Path(directory)/'jobs.db');task = store.submit({}, 'directory')
+            tools = TaskTools(directory,store,task)
+            tools.execute('tool_make_directory',{'filepath':'old'})
+            (Path(directory)/'old'/'sentinel').write_text('koru')
+            with self.assertRaises(FileExistsError):
+                tools.execute('tool_make_directory',{'filepath':'old'})
+            self.assertEqual((Path(directory)/'old'/'sentinel').read_text(),'koru')
+
+    def test_model_overwrite_is_rejected_then_append_recovers(self):
+        def append(content, before):
+            return {'name':'tool_append_file','arguments':{'filepath':'out.txt','content':content,
+                'expected_sha256':hashlib.sha256(before.encode()).hexdigest()}}
+        actions = [PLAN,write('a'),append('b','a'),write('RESET'),append('c','ab')]
+        with tempfile.TemporaryDirectory() as directory, fake_ollama(actions) as (url, requests):
+            with self.client(directory,url) as client:
+                job_id=client.post('/api/tasks',json={'message':'abc oluştur','expected_files':{'out.txt':'abc'}}).json()['task_id']
+                result=wait_job(client,job_id)['result']
+                self.assertEqual(result['status'],'VERIFIED',result)
+                self.assertEqual((Path(directory)/'out.txt').read_text(),'abc')
+                self.assertEqual([x['success'] for x in result['execution_steps']],[True,True,False,True])
+                self.assertIn('üzerine yazma engellendi',json.dumps(requests[-1],ensure_ascii=False))
+
+    def test_first_response_can_exceed_stream_idle_while_heartbeat_runs(self):
+        from task_worker import _generate_unlocked
+        ticks=[]
+        with tempfile.TemporaryDirectory() as directory, fake_ollama([write()],initial_delay=0.18,delay=0.01) as (url,_):
+            store=JobStore(Path(directory)/'jobs.db');task=store.submit({},'slow-start')
+            with patch.dict(os.environ,{'BARIS_OLLAMA_CHAT_URL':url}), patch('task_worker.STREAM_IDLE_SECONDS',0.05), patch('task_worker.HEARTBEAT_SECONDS',0.03):
+                result=asyncio.run(_generate_unlocked({'messages':[]},store,task,1,lambda:ticks.append(1)))
+            self.assertEqual(json.loads(result['message']['content'])['name'],'tool_write_file')
+            self.assertGreaterEqual(len(ticks),2)
+
+    def test_stream_idle_is_still_bounded_after_first_response(self):
+        from task_worker import _generate_unlocked,ModelCallError
+        with tempfile.TemporaryDirectory() as directory, fake_ollama([write()],delay=0.3) as (url,_):
+            store=JobStore(Path(directory)/'jobs.db');task=store.submit({},'idle')
+            with patch.dict(os.environ,{'BARIS_OLLAMA_CHAT_URL':url}), patch('task_worker.STREAM_IDLE_SECONDS',0.05):
+                with self.assertRaises(ModelCallError) as error:
+                    asyncio.run(_generate_unlocked({'messages':[]},store,task,1))
+            self.assertEqual(error.exception.detail['error_type'],'ModelIdleTimeout')
+            self.assertGreater(error.exception.detail['characters'],0)
 
     def test_chunk_limit_enforced_before_disk_change(self):
         from structured_actions import parse_action
@@ -203,7 +289,7 @@ class DurableTests(unittest.TestCase):
             asyncio.run(exercise(directory))
 
     def test_real_write_repair_and_independent_acceptance(self):
-        with tempfile.TemporaryDirectory() as directory, fake_ollama([PLAN, write("Merhaba Barış.\n"), write()]) as (url, requests):
+        with tempfile.TemporaryDirectory() as directory, fake_ollama([PLAN, write("Merhaba Barış.\n"), {"name":"tool_patch_file", "arguments": {"filepath":"out.txt", "old_text":".\n", "new_text":"", "expected_sha256":hashlib.sha256("Merhaba Barış.\n".encode()).hexdigest()}}]) as (url, requests):
             with self.client(directory, url) as client:
                 started = time.monotonic()
                 job_id = self.submit(client)
@@ -365,7 +451,7 @@ class DurableTests(unittest.TestCase):
                 store.finish(ids[0], 'VERIFIED', {'reply':'model says done'})
             store.request_cancel(ids[0])
             result = store.get(ids[0])['result']
-            self.assertEqual(result['build'],'local-ui-v6')
+            self.assertEqual(result['build'],'local-ui-v7')
             self.assertFalse(result['verified'])
 
     def test_hash_append_rejects_replay(self):
