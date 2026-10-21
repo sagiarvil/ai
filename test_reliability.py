@@ -85,6 +85,42 @@ class ReliabilityTests(unittest.TestCase):
             store.record_model_sample('m',8192,0,float('nan'),0)
             self.assertEqual(store.model_profile('m')['samples'],2)
 
+    def exercise_doctor_connection_close(self, fail):
+        from runtime_doctor import inspect_runtime
+        original_connect=sqlite3.connect
+        connections=[]
+        class TrackingConnection(sqlite3.Connection):
+            closed=False
+            def close(self):
+                self.closed=True
+                return super().close()
+            def execute(self,sql,*args,**kwargs):
+                if fail and sql.startswith('SELECT status'):
+                    raise sqlite3.OperationalError('injected read failure')
+                return super().execute(sql,*args,**kwargs)
+        def connect(*args,**kwargs):
+            connection=original_connect(*args,**kwargs,factory=TrackingConnection)
+            connections.append(connection)
+            return connection
+        with self.workspace() as (root,unused):
+            JobStore(root/'.baris_runtime'/'jobs.sqlite3')
+            with patch('runtime_doctor.sqlite3.connect',connect):
+                report=inspect_runtime(root,fetch=lambda *args:{'details':{'size':'test'}})
+            try:
+                self.assertEqual(len(connections),1)
+                self.assertTrue(connections[0].closed,'Doctor database connection was not closed')
+                database=next(item for item in report['checks'] if item['name']=='database')
+                self.assertEqual(database['success'],not fail)
+            finally:
+                for connection in connections:
+                    connection.close()
+
+    def test_doctor_closes_connection_after_success(self):
+        self.exercise_doctor_connection_close(False)
+
+    def test_doctor_closes_connection_after_read_error(self):
+        self.exercise_doctor_connection_close(True)
+
     def test_doctor_reports_missing_ollama_without_claiming_success(self):
         from runtime_doctor import inspect_runtime
         with self.workspace() as (root,store):

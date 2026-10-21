@@ -10,7 +10,7 @@ python3 baris_local.py start --shortcut
 ```
 
 Başlatıcı mevcut Python ortamını kullanır; paket veya model indirmez.
-74 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
+76 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
 başlatır, motor kimliğini doğrular ve tarayıcıyı açar. Varsayılan port 5053'tür.
 Masaüstüne Baris-AI.command kısayolu eklenir; sonraki açılışlarda aynı sunucu kullanılır.
 Port başka uygulamadaysa süreç öldürülmez, açık hata verilir.
@@ -60,7 +60,7 @@ node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-74 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
+76 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
 kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
 model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
 CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
@@ -164,3 +164,10 @@ reddedebiliyordu. İstek doğrulaması, disk kontrolü, görev payload ve engine
 artık aynı TaskService.root kanonik yolunu kullanır. Yeni regresyon geçerli bağlı
 kökü gerçek HTTP/araç yürütmesiyle kabul eder; dışarı kaçan sembolik bağlantıyı
 reddetmeye devam eder. Eski kodda aynı 422 hatası yeniden üretilmiştir.
+
+### Teşhis bağlantısının kapanması
+
+SQLite bağlantısının kendi context manager'ı işlem sınırını yönetir; bağlantıyı
+kapatmaz. Doctor artık contextlib.closing ile normal ve hatalı çıkışta bağlantıyı
+açıkça kapatır. İki regresyon testi gerçek bağlantının kapanmasını denetler.
+Bu değişiklik çalışan görev sürecini yeniden başlatmayı gerektirmez.

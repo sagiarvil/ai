@@ -115,4 +115,12 @@ Profil yalnızca güvenli sınırlar içindeki parça boyutunu küçültür.
 Yeni test önce eski sürümde aynı `422 != 202` hatasıyla KALDI. Kanonik servis
 kökü düzeltildikten sonra test, görev kabulünü ve gerçek yazma/doğrulamayı GEÇTİ.
 İkinci test, bağlı kökten dışarı çıkan symlink yolunun hâlâ reddedildiğini sınar.
-Geliştirme toplamı 74 Python ve 10 Node testidir. Mac çalıştırması ayrı kalır.
+Geliştirme toplamı 76 Python ve 10 Node testidir. Mac çalıştırması ayrı kalır.
+
+## Teşhis kaynağı yaşam döngüsü
+
+Kullanıcının Mac/Python 3.14 çıktısında 74/74 test ve panel açılışı doğrulandı;
+ResourceWarning ise doctor bağlantısının açık kaldığını gösterdi. Yeni test
+eski kodda kapanmamış gerçek bağlantıyı yakaladı. contextlib.closing düzeltmesi,
+normal okuma ve enjekte edilen okuma hatasında kapanmayı doğrular. Bu bulgu
+canlı Mistral görevinin tamamlandığı anlamına gelmez.

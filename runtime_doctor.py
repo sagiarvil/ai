@@ -1,4 +1,5 @@
 """Read-only local diagnosis. Never changes Ollama settings or repairs a database."""
+from contextlib import closing
 import json
 from pathlib import Path
 import platform
@@ -40,7 +41,7 @@ def inspect_runtime(root, model='mistral-small-24b-abliterated:latest', fetch=re
     db=root/'.baris_runtime'/'jobs.sqlite3'
     if db.is_file():
         def database():
-            with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2) as connection:
+            with closing(sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=2)) as connection:
                 integrity=connection.execute('PRAGMA quick_check').fetchone()[0]
                 if integrity!='ok':
                     raise ValueError('Veritabanı bütünlük kontrolü: '+integrity)
