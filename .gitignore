@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local Data & Cache
+*.db
+*.db-wal
+*.db-shm
+*.bin
+prompt_cache/
+models/
+*.gguf
+
+# Logs
+*.log
+*.err
+
+# Firebase
+.firebase/
+firebase-debug.log*
+
+# Secrets & Environment
+.env
+.env.*
+*.env
+
+# Local launcher runtime
+.baris_runtime/
+baris_canli_kabul_*/
+
+
+baris_kirilma_testi/
+baris_sert_test/
+baris_stres_testi/
+tmp/
+tasks/
+
