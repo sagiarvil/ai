@@ -23,8 +23,8 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-WORKSPACE_ROOT = Path(__file__).resolve().parent
-OMNICORE_HOME = Path.home() / '.omnicore'
+WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", str(Path.cwd()))).resolve()
+OMNICORE_HOME = Path(os.environ.get("OMNICORE_HOME", str(Path.home() / '.omnicore'))).resolve()
 SANDBOX_DIR = OMNICORE_HOME / 'sandbox_workspace'
 OMNICORE_HOME.mkdir(parents=True, exist_ok=True)
 SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,6 +159,9 @@ def get_sanitized_env() -> Dict[str, str]:
     existing_path = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
     safe_env["PATH"] = ":".join(extra_paths) + ":" + existing_path
     safe_env["SANDBOX_CONTAINED"] = "1"
+    safe_env["WORKSPACE_ROOT"] = str(WORKSPACE_ROOT)
+    safe_env["SANDBOX_DIR"] = str(SANDBOX_DIR)
+    safe_env["OMNICORE_HOME"] = str(OMNICORE_HOME)
     return safe_env
 
 def set_resource_limits(max_cpu_sec: int = 120):

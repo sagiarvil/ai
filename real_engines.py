@@ -65,33 +65,37 @@ class RealWebSearchEngine:
                     resp = client.get(url, headers={"User-Agent": req.headers.get("User-agent", "Mozilla/5.0")})
                     if resp.status_code == 200:
                         html = resp.text
-                soup = BeautifulSoup(html, "html.parser")
 
-                result_divs = soup.find_all("div", class_="result")
-                for div in result_divs:
-                    title_elem = div.find("a", class_="result__snippet")
-                    header_elem = div.find("h2", class_="result__title")
-                    link_elem = header_elem.find("a") if header_elem else None
+            if not html:
+                return []
 
-                    if link_elem:
-                        raw_href = link_elem.get("href", "")
-                        actual_url = raw_href
-                        if "uddg=" in raw_href:
-                            try:
-                                actual_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
-                            except Exception:
-                                pass
+            soup = BeautifulSoup(html, "html.parser")
 
-                        title = header_elem.get_text(strip=True) if header_elem else "Kaynak"
-                        snippet = title_elem.get_text(strip=True) if title_elem else ""
+            result_divs = soup.find_all("div", class_="result")
+            for div in result_divs:
+                title_elem = div.find("a", class_="result__snippet")
+                header_elem = div.find("h2", class_="result__title")
+                link_elem = header_elem.find("a") if header_elem else None
 
-                        results.append({
-                            "title": title,
-                            "url": actual_url,
-                            "snippet": snippet
-                        })
-                        if len(results) >= max_results:
-                            break
+                if link_elem:
+                    raw_href = link_elem.get("href", "")
+                    actual_url = raw_href
+                    if "uddg=" in raw_href:
+                        try:
+                            actual_url = urllib.parse.unquote(raw_href.split("uddg=")[1].split("&")[0])
+                        except Exception:
+                            pass
+
+                    title = header_elem.get_text(strip=True) if header_elem else "Kaynak"
+                    snippet = title_elem.get_text(strip=True) if title_elem else ""
+
+                    results.append({
+                        "title": title,
+                        "url": actual_url,
+                        "snippet": snippet
+                    })
+                    if len(results) >= max_results:
+                        break
         except Exception:
             pass
 

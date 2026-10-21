@@ -35,9 +35,9 @@ from resilience_kernel import ResilienceKernel, OmniCoreToolAdapters, State
 
 RESILIENCE_KERNEL = ResilienceKernel()
 
-WORKSPACE_ROOT = Path(__file__).resolve().parent
-PROJECTS_ROOT = Path("/Users/macair1/projects").resolve()
-OMNICORE_ROOT = Path("/Users/macair1/.omnicore").resolve()
+WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", str(Path(__file__).resolve().parent))).resolve()
+PROJECTS_ROOT = Path(os.environ.get("PROJECTS_ROOT", str(Path.home() / "projects"))).resolve()
+OMNICORE_ROOT = Path(os.environ.get("OMNICORE_HOME", str(Path.home() / ".omnicore"))).resolve()
 
 PUBLIC_DIR = WORKSPACE_ROOT / 'public'
 INDEX_HTML = PUBLIC_DIR / 'index.html'

@@ -21,7 +21,7 @@ from typing import Any
 
 from sandbox_executor import OMNICORE_HOME, secure_sandbox_run, verify_sandbox_runtime_probe
 
-PROJECT_ROOT = Path('/Users/macair1/projects/ai').resolve()
+PROJECT_ROOT = Path(os.environ.get("WORKSPACE_ROOT", str(Path(__file__).resolve().parent))).resolve()
 STAGING = OMNICORE_HOME / 'installations'
 DEPLOYED = (PROJECT_ROOT / 'installed_engines').resolve()
 REGISTRY = OMNICORE_HOME / 'installed_engines_registry.json'

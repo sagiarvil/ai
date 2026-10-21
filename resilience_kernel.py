@@ -204,10 +204,11 @@ class OmniCoreToolAdapters:
             # Güvenlik denetimi
             raw = Path(filepath)
             target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+            home = Path.home()
             is_allowed = (
                 str(target).startswith(str(root)) or
-                str(target).startswith("/Users/macair1/projects") or
-                str(target).startswith("/Users/macair1/.omnicore") or
+                str(target).startswith(str(home / "projects")) or
+                str(target).startswith(str(home / ".omnicore")) or
                 str(target).startswith("/tmp") or
                 str(target).startswith("/private/tmp")
             )
@@ -216,7 +217,7 @@ class OmniCoreToolAdapters:
             if target.name.startswith(".env") or ".git" in target.parts:
                 return False
             # Merkezi Auditor ve kabul kriterleri dokunulamaz
-            if "omnicore-auditor" in str(target) or str(target).startswith("/Users/macair1/omnicore-auditor"):
+            if "omnicore-auditor" in str(target) or str(target).startswith(str(home / "omnicore-auditor")):
                 return False
             return True
 
@@ -278,10 +279,11 @@ class OmniCoreToolAdapters:
                 return False
             raw = Path(filepath)
             target = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+            home = Path.home()
             is_allowed = (
                 str(target).startswith(str(root)) or
-                str(target).startswith("/Users/macair1/projects") or
-                str(target).startswith("/Users/macair1/.omnicore") or
+                str(target).startswith(str(home / "projects")) or
+                str(target).startswith(str(home / ".omnicore")) or
                 str(target).startswith("/tmp") or
                 str(target).startswith("/private/tmp")
             )
