@@ -1,9 +1,0 @@
-{
-  "timestamp": "2026-10-18 15:44:56",
-  "browser": "Google Chrome (Local Binary)",
-  "network": "Yerel İnternet",
-  "url": "http://127.0.0.1:5050",
-  "title": "Barış AI // Evrensel Canlı Bilgi & İstihbarat Sistemi",
-  "content_length": 1330,
-  "content": "Ω\nBARIŞ AI\nM4 LOCAL\n\nMistral-24B Abliterated\n\nYeni Analiz & Oturum\nFİZİKSEL MOTORLAR:\n• Yerel Mistral-24B (Apple M4 GPU)\n• Google Chrome & Safari Yerel Ağ\n• I2P (Invisible Internet - i2pd)\n• Tor SOCKS5 (127.0.0.1:9050)\n• Crawl4AI Canlı Web Kazıma\n• Slither Akıllı Kontrat Analizi\n• GitHub Otonom Repo Kurucu\nÖRNEK ARAÇ TETİKLEYİCİLERİ\n🌐\nChrome Yerel Tarayıcı Testi\n🔒\nI2P Gizlilik Ağı Testi\n🛡️\nSlither Akıllı Kontrat Denetimi\n🕷️\nCrawl4AI Derin Web Kazıma\nArka Uç Motoru:\nONLINE (Apple M4 (Metal GPU / 17.8 GiB VRAM))\nBarış AI // %100 Fiziksel İcra & Otonom İstihbarat\nYerel Port: 5050\n|\nGitHub\nΩ\nBarış AI Otonom İcra Paneli\n\nSistem doğrudan Apple M4 Metal GPU üzerinde koşan yerel Mistral-24B (Abliterated) modeli tarafından yönetilir. Sıfır simülasyon, sıfır sahte veri; tüm komutlar fiziksel araçlarla icra edilir.\n\n🌐 Yerel Tarayıcılar\nChrome, Safari ve I2P üzerinden yerel internete bağlanarak gerçek web sayfalarını açar ve kaydeder.\n📦 GitHub Repo Kurucu\nGitHub'daki repoları otonom olarak `tools/` altına klonlar, bağımlılıklarını kurar ve sisteme mühürler.\n🛡️ Slither Statik Güvenlik\nSolidity akıllı kontrat kodlarını derleyip derin güvenlik açıklarını (reentrancy vb.) raporlar.\n🕷️ Crawl4AI Motoru\nDinamik web sitelerinden Markdown formatında tam içerik kazır.\n%100 Fiziksel İcra • Sıfır Simülasyon\nShift + Enter: Yeni Satır"
-}

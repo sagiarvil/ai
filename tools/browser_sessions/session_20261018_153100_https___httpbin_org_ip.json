@@ -1,6 +1,0 @@
-{
-  "browser": "Google Chrome (Local Binary)",
-  "url": "https://httpbin.org/ip",
-  "timestamp": "2026-10-18 15:31:00",
-  "content_preview": "{\n  \"origin\": \"92.44.195.224\"\n}\n"
-}

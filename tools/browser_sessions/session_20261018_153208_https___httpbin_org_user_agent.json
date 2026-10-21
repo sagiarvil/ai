@@ -1,6 +1,0 @@
-{
-  "browser": "Google Chrome (Local Binary)",
-  "url": "https://httpbin.org/user-agent",
-  "timestamp": "2026-10-18 15:32:08",
-  "content_preview": "{\n  \"user-agent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\"\n}\n"
-}
