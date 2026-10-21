@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 import durable_api
 from job_store import JobStore
 from task_tools import TaskTools
-from test_durable_runtime import PLAN, fake_ollama
+from test_durable_runtime import PLAN, fake_ollama, wait_job
 
 
 class ReliabilityTests(unittest.TestCase):
@@ -27,6 +27,31 @@ class ReliabilityTests(unittest.TestCase):
             root=Path(directory)
             store=JobStore(root/'jobs.db')
             yield root,store
+
+    def test_symlink_workspace_uses_canonical_service_root(self):
+        action={'name':'tool_write_file','arguments':{'filepath':'out.txt','content':'ok'}}
+        with tempfile.TemporaryDirectory() as directory, fake_ollama([PLAN,action]) as (url,_):
+            parent=Path(directory);real=parent/'real';real.mkdir()
+            alias=parent/'alias';alias.symlink_to(real,target_is_directory=True)
+            with patch.object(durable_api,'WORKSPACE',alias),patch.dict(os.environ,{'BARIS_OLLAMA_CHAT_URL':url}):
+                with TestClient(durable_api.app) as client:
+                    response=client.post('/api/tasks',json={'message':'out.txt oluştur','expected_files':{'out.txt':'ok'}})
+                    self.assertEqual(response.status_code,202,response.text)
+                    job=wait_job(client,response.json()['task_id'])
+                    self.assertEqual(job['status'],'VERIFIED',job)
+                    self.assertEqual((real/'out.txt').read_text(),'ok')
+                    self.assertEqual(client.get('/api/engine_info').json()['workspace'],str(real.resolve()))
+
+    def test_canonical_workspace_still_rejects_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent=Path(directory);real=parent/'real';real.mkdir()
+            outside=parent/'outside';outside.mkdir()
+            (real/'escape').symlink_to(outside,target_is_directory=True)
+            alias=parent/'alias';alias.symlink_to(real,target_is_directory=True)
+            with patch.object(durable_api,'WORKSPACE',alias),TestClient(durable_api.app) as client:
+                response=client.post('/api/tasks',json={'message':'x','expected_files':{'escape/x':'bad'}})
+                self.assertEqual(response.status_code,422,response.text)
+                self.assertFalse((outside/'x').exists())
 
     def test_slow_profile_reduces_future_action_size(self):
         from task_worker import run_job

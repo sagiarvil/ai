@@ -47,6 +47,8 @@ class TaskRequest(BaseModel):
 
 
 def enqueue(req, request, engine):
+    # The service owns the canonical root (e.g. macOS /var -> /private/var).
+    root = engine.root
     if not req.message.strip():
         raise HTTPException(422, "Görev boş olamaz.")
     if req.expected_files is not None and (
@@ -57,16 +59,16 @@ def enqueue(req, request, engine):
     if engine.loop_task is None or engine.loop_task.done():
         raise HTTPException(503, "Görev zamanlayıcısı çalışmıyor; yeni görev kabul edilmedi.")
     try:
-        if shutil.disk_usage(WORKSPACE).free < 64*1024*1024:
+        if shutil.disk_usage(root).free < 64*1024*1024:
             raise HTTPException(507,"Diskte 64 MiB çalışma payı kalmadı; yeni görev kabul edilmedi.")
     except OSError as exc:
         raise HTTPException(503,"Çalışma diski denetlenemedi: " + str(exc))
     for name in (req.expected_files or {}):
-        target = (WORKSPACE / name).resolve()
-        if not target.is_relative_to(WORKSPACE) or target.relative_to(WORKSPACE).parts[:1] in [(".git",),(".baris_runtime",)]:
+        target = (root / name).resolve()
+        if not target.is_relative_to(root) or target.relative_to(root).parts[:1] in [(".git",),(".baris_runtime",)]:
             raise HTTPException(422,"Kabul dosyası çalışma alanı veya izin verilen kapsam dışında.")
     payload = req.model_dump()
-    payload["workspace"] = str(WORKSPACE)
+    payload["workspace"] = str(root)
     key = request.headers.get("idempotency-key") or uuid.uuid4().hex
     if len(key) > 100:
         raise HTTPException(422, "İşlem anahtarı çok uzun.")
@@ -102,7 +104,7 @@ async def info(engine=Depends(service)):
             "scheduler_alive": engine.loop_task is not None and not engine.loop_task.done(),
             "queue_blocked": any(j["child_pid"] or (j["pending"] and json.loads(j["pending"]).get('name')=='tool_run_shell')
                 for j in blocked), "source_root": str(SOURCE_ROOT),
-            "workspace": str(WORKSPACE), "instance": os.environ.get("BARIS_INSTANCE", ""),
+            "workspace": str(engine.root), "instance": os.environ.get("BARIS_INSTANCE", ""),
             "release": os.environ.get("BARIS_RELEASE", "")}
 
 

@@ -10,7 +10,7 @@ python3 baris_local.py start --shortcut
 ```
 
 Başlatıcı mevcut Python ortamını kullanır; paket veya model indirmez.
-72 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
+74 çevrimdışı motor ve entegrasyon testini çalıştırır, yalnızca loopback adresinde sunucu
 başlatır, motor kimliğini doğrular ve tarayıcıyı açar. Varsayılan port 5053'tür.
 Masaüstüne Baris-AI.command kısayolu eklenir; sonraki açılışlarda aynı sunucu kullanılır.
 Port başka uygulamadaysa süreç öldürülmez, açık hata verilir.
@@ -60,7 +60,7 @@ node --check public/app.js
 node --test test_local_ui.cjs
 ```
 
-72 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
+74 Python ve 10 Node testi geliştirme ortamında geçti. Yeni 27 entegrasyon testi
 kalıcı veritabanını, gerçek dosyaları, gerçek alt süreçleri ve HTTP akışını kullanır;
 model yanıtları programlanmış yerel HTTP sunucusundan gelir. Finans stres testi
 CSV analizi, yedi gerçek komut, hatalı girişte önceki sonucu koruma ve tekrar
@@ -155,3 +155,12 @@ yavaş profilde yeni parçalar 350–700 karakter aralığında küçültülür.
 modeller, seçilen model ve salt okunur DB bütünlük/engellenmiş iş/hız profili
 raporunu verir. Otomatik ayar değiştirmez veya bozuk veritabanını onarmaz.
 Tam hata matrisi ve açık kabul koşulları RELIABILITY_REVIEW.md dosyasındadır.
+
+### v8 yol denetimi düzeltmesi
+
+macOS /var ve /private/var gibi sembolik bağlantılı çalışma alanlarında API kabul
+kontrolü, dosyayı çözümlenmemiş kökle karşılaştırdığı için geçerli isteği 422 ile
+reddedebiliyordu. İstek doğrulaması, disk kontrolü, görev payload ve engine_info
+artık aynı TaskService.root kanonik yolunu kullanır. Yeni regresyon geçerli bağlı
+kökü gerçek HTTP/araç yürütmesiyle kabul eder; dışarı kaçan sembolik bağlantıyı
+reddetmeye devam eder. Eski kodda aynı 422 hatası yeniden üretilmiştir.

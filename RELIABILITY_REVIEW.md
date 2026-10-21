@@ -43,6 +43,7 @@ her görevi bitiren endüstriyel ajan sertifikasyonu yapılmamıştır.
 | Disk çalışma payı 64 MiB altına iner | Yeni görev 507 ile reddedilir | Disk yetersizliği testi; bu eşik her görev için kapasite garantisi değil |
 | SQLite yeni işi kaydedemez | 503, kabul edilmiş gibi gösterilmez | Depolama hatası testi |
 | Zamanlayıcı ölür | Yeni iş kabul edilmez; arayüz durumu bildirir | Zamanlayıcı arıza testi |
+| macOS /var → /private/var veya başka bağlı kök | Tek kanonik servis kökü kullanılır | Gerçek API ve dosya yürütmesiyle bağlı kök regresyonu |
 | Kabul yolu dışarı/iç kayıtlara gider | İstek 422; bu yollardan kabul okuması yok | API kapsam testleri |
 | 100 olaydan fazlası var | latest_event ve next_after/has_more | 251 olay testi |
 | Tarayıcı/sunucu yeniden başlar | Aynı görev izlenir; çalışan tekrarlanmaz | Yeniden başlatma testleri |
@@ -108,3 +109,10 @@ Profil yalnızca güvenli sınırlar içindeki parça boyutunu küçültür.
 - [SQLite atomik commit ve güç kesintisi sınırları](https://www.sqlite.org/atomiccommit.html)
 - [Python subprocess — timeout ve süreç yönetimi](https://docs.python.org/3/library/subprocess.html)
 - [Python os — dosya ve süreç işlemleri](https://docs.python.org/3/library/os.html)
+
+## v8 kanonik yol regresyonu
+
+Yeni test önce eski sürümde aynı `422 != 202` hatasıyla KALDI. Kanonik servis
+kökü düzeltildikten sonra test, görev kabulünü ve gerçek yazma/doğrulamayı GEÇTİ.
+İkinci test, bağlı kökten dışarı çıkan symlink yolunun hâlâ reddedildiğini sınar.
+Geliştirme toplamı 74 Python ve 10 Node testidir. Mac çalıştırması ayrı kalır.
