@@ -34,7 +34,7 @@ class ReliabilityTests(unittest.TestCase):
             parent=Path(directory);real=parent/'real';real.mkdir()
             alias=parent/'alias';alias.symlink_to(real,target_is_directory=True)
             with patch.object(durable_api,'WORKSPACE',alias),patch.dict(os.environ,{'BARIS_OLLAMA_CHAT_URL':url}):
-                with TestClient(durable_api.app) as client:
+                with TestClient(durable_api.app, base_url="http://127.0.0.1") as client:
                     response=client.post('/api/tasks',json={'message':'out.txt oluştur','expected_files':{'out.txt':'ok'}})
                     self.assertEqual(response.status_code,202,response.text)
                     job=wait_job(client,response.json()['task_id'])
@@ -48,7 +48,7 @@ class ReliabilityTests(unittest.TestCase):
             outside=parent/'outside';outside.mkdir()
             (real/'escape').symlink_to(outside,target_is_directory=True)
             alias=parent/'alias';alias.symlink_to(real,target_is_directory=True)
-            with patch.object(durable_api,'WORKSPACE',alias),TestClient(durable_api.app) as client:
+            with patch.object(durable_api,'WORKSPACE',alias),TestClient(durable_api.app, base_url="http://127.0.0.1") as client:
                 response=client.post('/api/tasks',json={'message':'x','expected_files':{'escape/x':'bad'}})
                 self.assertEqual(response.status_code,422,response.text)
                 self.assertFalse((outside/'x').exists())
@@ -58,7 +58,7 @@ class ReliabilityTests(unittest.TestCase):
         requests=[]
         with self.workspace() as (root,store):
             model='mistral-small-24b-abliterated:latest'
-            for _ in range(2):store.record_model_sample(model,8192,15,5,100)
+            for _ in range(2):store.record_model_sample(model,8192,90,5,100)
             job=store.submit({'workspace':str(root),'message':'x','budget_seconds':30,
                 'expected_files':{'x':'ok'}},'k');store.claim()
             actions=[PLAN,{'name':'tool_write_file','arguments':{'filepath':'x','content':'ok'}}]
@@ -67,7 +67,7 @@ class ReliabilityTests(unittest.TestCase):
                 return {'message':{'content':json.dumps(actions.pop(0))}}
             previous=signal.getsignal(signal.SIGTERM)
             try:
-                with patch('task_worker.generate',generated):run_job(store,job)
+                with patch('task_worker.generate',generated), patch.dict(os.environ, {'BARIS_MODEL': model}):run_job(store,job)
             finally:signal.signal(signal.SIGTERM,previous)
             self.assertEqual(store.get(job)['status'],'VERIFIED')
             variants=requests[-1]['format']['anyOf']
@@ -219,8 +219,8 @@ class ReliabilityTests(unittest.TestCase):
             job=store.submit({},'k');tools=TaskTools(root,store,job)
             def fast_process(*args,**kwargs):
                 kwargs['stdout'].write(b'x'*4_000_001)
-                return SimpleNamespace(pid=123,returncode=0,poll=lambda:0)
-            with patch('task_tools.subprocess.Popen',fast_process):
+                return SimpleNamespace(pid=123,returncode=0,poll=lambda:0,wait=lambda **kwargs:0)
+            with patch('task_tools.subprocess.Popen',fast_process), patch('task_tools.os.killpg',side_effect=ProcessLookupError):
                 result=tools.run_command('python3 -V')
             self.assertFalse(result['success'])
             self.assertTrue(result['output_limit'])
@@ -251,7 +251,7 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_api_rejects_disk_full_and_outside_acceptance(self):
         with self.workspace() as (root,store),patch.object(durable_api,'WORKSPACE',root):
-            with TestClient(durable_api.app) as client:
+            with TestClient(durable_api.app, base_url="http://127.0.0.1") as client:
                 with patch('durable_api.shutil.disk_usage',return_value=SimpleNamespace(free=1)):
                     self.assertEqual(client.post('/api/tasks',json={'message':'x'}).status_code,507)
                 for path in ('../outside','.baris_runtime/secrets','.git/config'):
@@ -260,7 +260,7 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_api_rejects_dead_scheduler_and_storage_failure(self):
         with self.workspace() as (root,store),patch.object(durable_api,'WORKSPACE',root):
-            with TestClient(durable_api.app) as client:
+            with TestClient(durable_api.app, base_url="http://127.0.0.1") as client:
                 engine=client.app.state.service
                 with patch.object(engine,'loop_task',SimpleNamespace(done=lambda:True)):
                     self.assertEqual(client.post('/api/tasks',json={'message':'x'}).status_code,503)

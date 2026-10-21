@@ -19,9 +19,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from playwright.async_api import async_playwright
 
-WORKSPACE_ROOT = Path('/Users/macair1/projects/ai').resolve()
+WORKSPACE_ROOT = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve()
 SESSIONS_DIR = WORKSPACE_ROOT / "tools" / "browser_sessions"
-SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 SAFARI_PATH = "/Applications/Safari.app"
@@ -138,6 +137,7 @@ class LocalBrowserEngine:
 
     @classmethod
     def _save_session(cls, browser: str, url: str, content: str, network: str = "Direct", title: str = ""):
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
         sanitized_url = "".join([c if c.isalnum() else "_" for c in url])[:40]
         ts = time.strftime("%Y%m%d_%H%M%S")
         filepath = SESSIONS_DIR / f"session_{ts}_{sanitized_url}.json"
@@ -180,3 +180,4 @@ if __name__ == "__main__":
     print(f"[*] Test Başlatılıyor: {url} (I2P: {use_i2p_flag}, Tor: {use_tor_flag})")
     res = asyncio.run(LocalBrowserEngine.open_and_extract(url, browser_name="chrome", use_tor=use_tor_flag, use_i2p=use_i2p_flag))
     print(json.dumps(res, indent=2, ensure_ascii=False))
+

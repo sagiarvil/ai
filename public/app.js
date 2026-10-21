@@ -15,7 +15,7 @@ async function engineInfo() {
   if (!response.ok) throw new Error('Yerel sunucuya ulaşılamadı.');
   const info = await response.json();
   if (info.engine_protocol !== 'baris-execution-v2' ||
-      info.build !== 'local-ui-v8' || info.tool_loop !== true) {
+      info.build !== 'local-ui-v9' || info.tool_loop !== true) {
     throw new Error('Arayüz ve motor sürümü uyuşmuyor.');
   }
   return info;
@@ -39,7 +39,7 @@ async function refreshConnection() {
 }
 
 function renderResult(box, data) {
-  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6', 'local-ui-v7', 'local-ui-v8'].includes(data.build)) {
+  if (data.engine_protocol !== 'baris-execution-v2' || !['local-ui-v5', 'local-ui-v6', 'local-ui-v7', 'local-ui-v8', 'local-ui-v9'].includes(data.build)) {
     throw new Error('Yanıt beklenen motora ait değil.');
   }
   const steps = Array.isArray(data.execution_steps) ? data.execution_steps : [];
@@ -47,7 +47,7 @@ function renderResult(box, data) {
     steps.length > 0 && data.acceptance && data.acceptance.success === true;
   box.replaceChildren();
   const heading = document.createElement('strong');
-  heading.textContent = verified ? 'GÖREV DOĞRULANDI' :
+  heading.textContent = verified ? (data.verification_scope === 'exact_files' ? 'DOSYA KABULÜ DOĞRULANDI' : 'GÖREV DOĞRULANDI') :
     data.status === 'FAILED' ? 'GÖREV BAŞARISIZ' :
     data.status === 'CANCELLED' ? 'GÖREV İPTAL EDİLDİ' :
     data.status === 'BLOCKED' ? 'İNCELEME GEREKİYOR' :
@@ -56,6 +56,17 @@ function renderResult(box, data) {
   const message = document.createElement('p');
   message.textContent = data.reply || 'İşlem açıklaması yok.';
   box.appendChild(message);
+  if (data.verification_scope === 'exact_files') {
+    const scope = document.createElement('p');
+    scope.textContent = 'Doğrulama kapsamı: belirtilen dosyaların birebir içeriği.';
+    box.appendChild(scope);
+  }
+  if (Number.isFinite(data.budget_seconds)) {
+    const timing = document.createElement('p');
+    timing.textContent = 'Kullanılan süre: ' + Math.ceil(data.used_seconds || 0) +
+      ' / ' + data.budget_seconds + ' sn' + (data.failure_code ? ' • Kod: ' + data.failure_code : '');
+    box.appendChild(timing);
+  }
   for (const step of steps) {
     const line = document.createElement('p');
     line.textContent = (step.success ? '✓ ' : '• ') + step.tool;
@@ -188,7 +199,7 @@ async function followTask(taskId, box) {
       const message = document.createElement('p');
       message.textContent = lastMessage;
       const identity = document.createElement('p');
-      identity.textContent = 'Görev: ' + taskId + ' • ' + Math.floor((Date.now()/1000) - job.created) + ' saniye';
+      identity.textContent = taskTiming(job, taskId);
       const cancel = document.createElement('button');
       cancel.textContent = 'Görevi durdur';
       cancel.onclick = async () => {
@@ -225,6 +236,12 @@ async function followTask(taskId, box) {
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
+}
+function taskTiming(job, taskId) {
+  const elapsed = Math.floor((Date.now()/1000) - job.created);
+  return 'Görev: ' + taskId + ' • Geçen ' + elapsed + ' sn' +
+    (Number.isFinite(job.budget_seconds) ? ' • Çalışma bütçesi ' + Math.ceil(job.used || 0) +
+      '/' + job.budget_seconds + ' sn • Kalan ' + Math.ceil(job.remaining_seconds || 0) + ' sn' : '');
 }
 async function resumeVisibleTask() {
   let taskId = localStorage.getItem('barisActiveTask');

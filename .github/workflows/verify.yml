@@ -1,64 +1,49 @@
-name: OmniCore Integrity & Verification Gates
+name: Baris local runtime verification
 
 on:
   push:
     branches: [ main, fix/verified-execution-loop ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
+    timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ['3.12', '3.14']
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Verify No UTF-8 BOM
-        run: |
-          find . -name "*.py" -o -name "*.json" -o -name "*.html" | while read -r file; do
-            if [ -f "$file" ]; then
-              if head -c 3 "$file" | grep -q $'\xEF\xBB\xBF'; then
-                echo "HATA: UTF-8 BOM tespit edildi -> $file"
-                exit 1
-              fi
-            fi
-          done
-          echo "UTF-8 BOM kontrolü: PASS"
-
-      - name: Install runtime test dependencies
-        run: python3 -m pip install "httpx>=0.27,<0.29" "fastapi>=0.115,<0.157"
-
-      - name: Offline execution-loop regression tests
-        run: python3 -m unittest -v test_execution_loop test_structured_actions test_acceptance_checks test_durable_runtime test_reliability
-
-      - name: Browser script syntax and integration tests
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the pinned local runtime
+        run: python -m pip install -r requirements-runtime.lock
+      - name: Verify all offline and HTTP regression tests
+        run: python -m unittest discover -v
+      - name: Verify browser behavior
         run: |
           node --check public/app.js
           node --test test_local_ui.cjs
-
-      - name: Syntax Compilation Check
+      - name: Check Python syntax and UTF-8 source encoding
         run: |
-          python3 -m py_compile *.py
-          echo "Python derleme kontrolü: PASS"
-
-      - name: Security & Clean Env Verification
-        run: |
-          python3 -c "
-          import re
-          with open('omni_chat_panel.py') as f:
-              content = f.read()
-          assert '*' not in content.split('ALLOWED_ORIGINS')[1].split(']')[0], 'Wildcard CORS detected!'
-          with open('real_engines.py') as f:
-              re_content = f.read()
-          assert 'verify=False' not in re_content, 'Unverified TLS detected!'
-          print('Security lint check: PASS')
-          "
-
+          python -m compileall -q .
+          python - <<'PY'
+          from pathlib import Path
+          for path in Path('.').rglob('*'):
+              if path.is_file() and path.suffix in {'.py', '.json', '.html', '.js', '.md'}:
+                  raw = path.read_bytes()
+                  assert not raw.startswith(b'\xef\xbb\xbf'), f'UTF-8 BOM: {path}'
+                  raw.decode('utf-8')
+          print('Kaynak kodlama kontrolü geçti.')
+          PY

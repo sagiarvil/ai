@@ -9,6 +9,11 @@
 
 set -e
 
+if [ "${1-}" != "--apply-legacy-system-configuration" ]; then
+    echo "Eski sistem yapılandırması çalıştırılmadı. Desteklenen başlatıcı: python3 baris_local.py start"
+    exit 2
+fi
+
 TARGET_USER="$(logname 2>/dev/null || echo $USER)"
 USER_HOME="/Users/${TARGET_USER}"
 LLAMA_BIN="/opt/homebrew/bin/llama-server"
@@ -151,3 +156,4 @@ echo "[OK] ZIRHLI MISTRAL-24B DÜĞÜMÜ AKTİF (127.0.0.1:8080 - AIR-GAPPED)"
 echo "Log Takibi : tail -f ${ERR_FILE}"
 echo "Durum      : sudo launchctl print system/com.tactical.mistral24b"
 echo "===================================================================="
+

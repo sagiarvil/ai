@@ -83,7 +83,7 @@ class TaskService:
                             [sys.executable, str(Path(__file__).with_name("task_worker.py")),
                              self.store.path, job_id], stdin=subprocess.DEVNULL,
                             stdout=self.worker_log, stderr=subprocess.STDOUT,
-                            start_new_session=True, env=os.environ.copy())
+                            start_new_session=True, env={k: v for k, v in os.environ.items() if k != 'BARIS_MANAGER_TOKEN'})
                         OWNED_PROCESSES[self.process.pid] = self.process
                         self.store.update(job_id, worker_pid=self.process.pid)
                     except OSError as exc:

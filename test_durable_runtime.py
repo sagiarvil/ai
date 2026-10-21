@@ -80,7 +80,7 @@ class DurableTests(unittest.TestCase):
         with patch.object(durable_api, "WORKSPACE", Path(directory)), patch.dict(
             os.environ, {"BARIS_OLLAMA_CHAT_URL": endpoint}
         ):
-            with TestClient(durable_api.app) as client:
+            with TestClient(durable_api.app, base_url="http://127.0.0.1") as client:
                 yield client
 
     def submit(self, client, message="out.txt içine Merhaba Barış yaz.", key="test"):
@@ -451,7 +451,7 @@ class DurableTests(unittest.TestCase):
                 store.finish(ids[0], 'VERIFIED', {'reply':'model says done'})
             store.request_cancel(ids[0])
             result = store.get(ids[0])['result']
-            self.assertEqual(result['build'],'local-ui-v8')
+            self.assertEqual(result['build'],'local-ui-v9')
             self.assertFalse(result['verified'])
 
     def test_hash_append_rejects_replay(self):

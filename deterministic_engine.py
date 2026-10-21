@@ -6,10 +6,10 @@ Hata Durumları: FAILED, BLOCKED, PARTIAL, ROLLED_BACK, NOT_EXECUTED, UNVERIFIED
 """
 import time
 import json
+import os
 from pathlib import Path
 
-TASKS_LOG_DIR = Path("/Users/macair1/projects/ai/tasks")
-TASKS_LOG_DIR.mkdir(parents=True, exist_ok=True)
+TASKS_LOG_DIR = Path(os.environ.get('BARIS_WORKSPACE', Path(__file__).resolve().parent)).resolve() / 'tasks'
 
 class DeterministicEngine:
     def __init__(self, task_id: str = None):
@@ -24,6 +24,7 @@ class DeterministicEngine:
         self._persist()
 
     def _persist(self):
+        TASKS_LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_file = TASKS_LOG_DIR / f"{self.task_id}.json"
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump({
@@ -38,3 +39,4 @@ class DeterministicEngine:
             e["state"] == "VERIFIED" and e.get("proof", {}).get("inference_pass") 
             for e in self.evidence_log
         )
+

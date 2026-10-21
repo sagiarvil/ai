@@ -5,6 +5,8 @@ import os
 import shutil
 import json
 import sqlite3
+import secrets
+import signal
 from pathlib import Path
 import uuid
 
@@ -13,10 +15,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from task_service import TaskService
+from local_http import LocalHttpGuard
 
 SOURCE_ROOT = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("BARIS_WORKSPACE", SOURCE_ROOT)).resolve()
-BUILD = "local-ui-v8"
+BUILD = "local-ui-v9"
 
 
 @asynccontextmanager
@@ -31,6 +34,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Barış AI", lifespan=lifespan)
+app.add_middleware(LocalHttpGuard)
 
 
 def service(request: Request):
@@ -59,12 +63,22 @@ def enqueue(req, request, engine):
     if engine.loop_task is None or engine.loop_task.done():
         raise HTTPException(503, "Görev zamanlayıcısı çalışmıyor; yeni görev kabul edilmedi.")
     try:
+        if engine.store.queue_state()['blocked']:
+            raise HTTPException(503, 'Belirsiz dış komut kaydı var; kuyruk inceleme bekliyor. Yeni görev alınmadı.')
+    except sqlite3.Error:
+        raise HTTPException(503, 'Görev kuyruğu okunamadı; yeni görev kabul edilmedi.')
+    try:
         if shutil.disk_usage(root).free < 64*1024*1024:
             raise HTTPException(507,"Diskte 64 MiB çalışma payı kalmadı; yeni görev kabul edilmedi.")
     except OSError as exc:
         raise HTTPException(503,"Çalışma diski denetlenemedi: " + str(exc))
     for name in (req.expected_files or {}):
-        target = (root / name).resolve()
+        try:
+            if not name or len(name) > 4096 or '\x00' in name:
+                raise ValueError('Geçersiz yol.')
+            target = (root / name).resolve()
+        except (ValueError, OSError, RuntimeError):
+            raise HTTPException(422, 'Kabul dosyası yolu geçersiz.')
         if not target.is_relative_to(root) or target.relative_to(root).parts[:1] in [(".git",),(".baris_runtime",)]:
             raise HTTPException(422,"Kabul dosyası çalışma alanı veya izin verilen kapsam dışında.")
     payload = req.model_dump()
@@ -96,16 +110,30 @@ async def script():
 
 @app.get("/api/engine_info")
 async def info(engine=Depends(service)):
-    with engine.store.connection() as db:
-        busy = db.execute("SELECT 1 FROM jobs WHERE status='RUNNING'").fetchone() is not None
-        blocked = db.execute("SELECT pending,child_pid FROM jobs WHERE status='BLOCKED'").fetchall()
+    try:
+        state = engine.store.queue_state()
+    except sqlite3.Error:
+        raise HTTPException(503, 'Görev kuyruğu okunamadı; motor hazır sayılmadı.')
     return {"engine_protocol": "baris-execution-v2", "build": BUILD, "tool_loop": True,
-            "durable_tasks": True, "busy": busy,
+            "durable_tasks": True, "busy": state['running'] > 0, "queued": state['queued'],
             "scheduler_alive": engine.loop_task is not None and not engine.loop_task.done(),
-            "queue_blocked": any(j["child_pid"] or (j["pending"] and json.loads(j["pending"]).get('name')=='tool_run_shell')
-                for j in blocked), "source_root": str(SOURCE_ROOT),
+            "queue_blocked": state['blocked'], "source_root": str(SOURCE_ROOT),
+            "model": os.environ.get('BARIS_MODEL', 'mistral-small-24b-abliterated:latest'),
+            "context_length": 8192, "os_sandbox": False,
+            "managed_shutdown": bool(os.environ.get('BARIS_MANAGER_TOKEN')),
             "workspace": str(engine.root), "instance": os.environ.get("BARIS_INSTANCE", ""),
             "release": os.environ.get("BARIS_RELEASE", "")}
+
+
+@app.post('/api/local_shutdown', status_code=202)
+async def local_shutdown(request: Request, engine=Depends(service)):
+    secret = os.environ.get('BARIS_MANAGER_TOKEN', '')
+    supplied = request.headers.get('x-baris-manager', '')
+    if not secret or not secrets.compare_digest(secret.encode(), supplied.encode()):
+        raise HTTPException(403, 'Yönetilen başlatıcı kimliği doğrulanamadı.')
+    # Signal this server only after the response; the launcher never targets an unverified PID.
+    asyncio.get_running_loop().call_later(.1, os.kill, os.getpid(), signal.SIGTERM)
+    return {'status': 'STOPPING'}
 
 
 @app.post("/api/tasks", status_code=202)

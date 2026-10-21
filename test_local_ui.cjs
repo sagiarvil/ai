@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-function setup({build = 'local-ui-v8', reply, delayChat = false, mobile = false} = {}) {
+function setup({build = 'local-ui-v9', reply, delayChat = false, mobile = false} = {}) {
   class Element {
     constructor() { this.children = []; this.style = {}; this.value = ''; this.textContent = ''; }
     appendChild(child) { this.children.push(child); }
@@ -52,11 +52,11 @@ function setup({build = 'local-ui-v8', reply, delayChat = false, mobile = false}
       }
       if (url.startsWith('/api/tasks/')) return {ok: true, json: async () => ({
         id: 'job_test', status: 'UNVERIFIED', created: Date.now()/1000,
-        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v8',
+        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v9',
           status:'UNVERIFIED', verified:false, execution_steps:[], reply:'<script>untrusted</script>'})
       })};
       return {ok: true, json: async () => reply || ({
-        engine_protocol: 'baris-execution-v2', build: 'local-ui-v8',
+        engine_protocol: 'baris-execution-v2', build: 'local-ui-v9',
         status: 'UNVERIFIED', verified: false, execution_steps: [],
         reply: '<script>untrusted</script>'
       })};
@@ -92,7 +92,7 @@ test('file test sends exact acceptance to same-origin endpoint', async () => {
 
 test('model verified flag without independent acceptance is not success', async () => {
   const app = setup({reply: {
-    engine_protocol: 'baris-execution-v2', build: 'local-ui-v8',
+    engine_protocol: 'baris-execution-v2', build: 'local-ui-v9',
     status: 'VERIFIED', verified: true,
     execution_steps: [{tool: 'write', success: true}], acceptance: null
   }});
@@ -181,4 +181,24 @@ test('activity distinguishes recent progress, stalled telemetry, queue and termi
   assert.equal(app.context.activityState({...job,status:'QUEUED'},1100).mode,'queued');
   assert.equal(app.context.activityState({...job,status:'FAILED'},1100).mode,'finished');
   assert.equal(app.context.activityState({...job,latest_event:{kind:'MODEL_START',at:1000}},1000).label,'Model yanıtı bekleniyor');
+});
+
+
+test('task timing separates wall time from the remaining execution budget', () => {
+  const app = setup();
+  const label = app.context.taskTiming({created:Date.now()/1000-40,used:12.2,budget_seconds:900,remaining_seconds:887.8}, 'job_t');
+  assert.match(label, /Çalışma bütçesi 13\/900 sn/);
+  assert.match(label, /Kalan 888 sn/);
+});
+
+test('exact file acceptance does not claim that all program behavior passed', async () => {
+  const app = setup({reply: {
+    engine_protocol:'baris-execution-v2', build:'local-ui-v9', status:'VERIFIED', verified:true,
+    execution_steps:[{tool:'write',success:true}], acceptance:{success:true},
+    verification_scope:'exact_files'
+  }});
+  await tick();
+  app.elements.promptInput.value = 'Dosyayı oluştur';
+  await app.context.sendAction();
+  assert.equal(app.elements.feed.children.at(-1).children[0].textContent, 'DOSYA KABULÜ DOĞRULANDI');
 });

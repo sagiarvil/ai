@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-BARIŞ AI // %100 GERÇEK VE FİZİKSEL MOTOR DOĞRULAMA TEST SÜİTİ
-Sıfır simülasyon, sıfır sahte başarı.
+BARIŞ AI // ESKİ İSTEĞE BAĞLI DIŞ SERVİS ENTEGRASYONLARI
+Bu dosya durable_api motorunu veya genel görev tamamlama başarısını doğrulamaz.
 Doğrulanan Katmanlar:
 1. Tor SOCKS5 yerel ağı (127.0.0.1:9050)
 2. Canlı TLS doğrulamalı DuckDuckGo Web Araştırması
@@ -14,12 +14,15 @@ Doğrulanan Katmanlar:
 
 import asyncio
 import os
+import unittest
+if __name__ != '__main__' and os.environ.get('BARIS_RUN_LEGACY_INTEGRATION') != '1':
+    raise unittest.SkipTest('Eski Tor/Chrome/Slither testleri isteğe bağlıdır. Canlı görev kabulü: baris_local.py verify-live')
 import subprocess
 import tempfile
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from omni_chat_panel import app
+from legacy_omni_chat_panel import app
 from real_engines import RealTorEngine, RealWebSearchEngine
 from browser_controller import LocalBrowserEngine
 from agentic_engine import AutonomousExecutionEngine, ExecutionSandbox, TaskState
@@ -109,3 +112,4 @@ if __name__ == "__main__":
     test_model_runtime_inference()
     test_fastapi_security_and_cors()
     print("=== TÜM GERÇEK MÜHENDİSLİK MOTORLARI DOĞRULANDI (7/7 PASS) ===")
+

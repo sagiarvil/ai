@@ -28,7 +28,10 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
     last_characters = 0
     first_content_seconds = None
     started = time.monotonic()
-    store.event(job_id, "MODEL_START", {"message": "Modelin ilk yanıtı bekleniyor; henüz üretim kanıtı yok.", "limit_seconds": round(seconds, 2)})
+    store.event(job_id, "MODEL_START", {"message": "Modelin ilk yanıtı bekleniyor; henüz üretim kanıtı yok.",
+        "limit_seconds": round(seconds, 2), "messages": len(payload.get('messages', [])),
+        "prompt_utf8_bytes": sum(len(m.get('content', '').encode()) for m in payload.get('messages', [])),
+        "output_tokens_limit": payload.get('options', {}).get('num_predict')})
     timeout = httpx.Timeout(connect=10, read=None, write=20, pool=10)
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         async with asyncio.timeout(seconds):
@@ -75,6 +78,7 @@ async def _stream_generate(payload, store, job_id, seconds, heartbeat=None, diag
     store.event(job_id, "MODEL_DONE", {
         "message": "İşlem kararı üretildi.", "seconds": round(time.monotonic() - started, 1),
         "eval_count": final.get("eval_count"), "prompt_eval_count": final.get("prompt_eval_count"),
+        "prompt_eval_cached_count": final.get('prompt_eval_cached_count'),
         "first_content_seconds": first_content_seconds,
         "load_seconds": final.get("load_duration",0)/1e9,
         "prompt_eval_seconds": final.get("prompt_eval_duration",0)/1e9,
@@ -98,6 +102,14 @@ class ModelCallError(ValueError):
     def __init__(self, detail):
         self.detail = detail
         super().__init__(detail["message"])
+
+
+class TaskBudgetExhausted(TimeoutError):
+    pass
+
+
+class UncertainCommandError(RuntimeError):
+    pass
 
 
 async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
@@ -215,12 +227,18 @@ def run_job(store, job_id):
     def used():
         return base_used + time.monotonic() - start
 
-    def finish(status, reply):
+    tools.heartbeat = lambda: store.update(job_id, used=used())
+
+    def finish(status, reply, failure_code=None):
         store.update(job_id, used=used())
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
-                  "execution_completed": status in {"VERIFIED", "UNVERIFIED"},
+                  "execution_completed": status == "VERIFIED",
                   "reply": reply, "execution_steps": steps, "acceptance": acceptance,
-                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v8"}
+                  "verification_scope": "exact_files" if status == "VERIFIED" else None,
+                  "budget_seconds": payload['budget_seconds'], "used_seconds": round(used(), 2),
+                  "remaining_seconds": round(max(0, payload['budget_seconds'] - used()), 2),
+                  "failure_code": failure_code,
+                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v9"}
         store.finish(job_id, status, result)
 
     try:
@@ -230,18 +248,26 @@ def run_job(store, job_id):
                 return
             remaining = payload["budget_seconds"] - used()
             if remaining <= 0:
-                raise TimeoutError("Toplam görev bütçesi doldu; tamamlanan işlemler korundu.")
+                raise TaskBudgetExhausted("Toplam görev süresi doldu; tamamlanan işlemler korundu. Yeni model veya araç işlemi başlatılmadı.")
             expected = payload.get("expected_files")
             if steps and expected:
                 acceptance = inspect_expected_files(payload["workspace"], expected)
+                if not steps[-1].get('success'):
+                    acceptance.update(success=False, last_action_failed=True,
+                        error='Son araç işlemi başarısız; mevcut dosya tek başına görevi doğrulayamaz.')
                 if acceptance["success"]:
-                    finish("VERIFIED", "Görev bağımsız kabul kontrolünden geçti.")
+                    finish("VERIFIED", "Belirtilen dosyalar bağımsız içerik kontrolünden geçti.")
                     return
                 guard.observe(acceptance)
                 messages.append({"role": "user", "content": "Kabul kontrolü başarısız: " + json.dumps(acceptance, ensure_ascii=False)})
             profile=store.model_profile(model)
             if profile and profile["samples"] >= 2 and profile["chars_per_second"] > 0:
-                chunk_limit=min(chunk_limit,max(350,min(CHUNK_LIMIT,int(profile["chars_per_second"]*30))))
+                # Use only stable profiles, not a different grammar/system prefix every turn.
+                # Tiny chunks double model round trips when prompt startup is expensive.
+                # Reduce only when a full chunk is unlikely to fit the bounded call.
+                predicted = profile['first_seconds'] + (CHUNK_LIMIT + 200) / profile['chars_per_second']
+                if predicted > 210:
+                    chunk_limit = 350
             selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
             for tool in selected:
                 properties = tool["function"]["parameters"].get("properties", {})
@@ -264,6 +290,10 @@ def run_job(store, job_id):
                 message = parse_action(raw, messages, selected)
                 model_failures = 0
             except (ValueError, httpx.HTTPError, TimeoutError) as exc:
+                if used() >= payload['budget_seconds']:
+                    raise TaskBudgetExhausted(
+                        f"Toplam {payload['budget_seconds']} saniyelik görev süresi doldu; "
+                        "son model çağrısının kısmi çıktısı çalıştırılmadı. Tamamlanan dosyalar korundu.") from exc
                 model_failures += 1
                 detail = getattr(exc, "detail", {"message": str(exc) or type(exc).__name__, "error_type": type(exc).__name__})
                 store.event(job_id, "MODEL_ERROR", detail)
@@ -290,7 +320,7 @@ def run_job(store, job_id):
                 finish("CANCELLED", "İşlem başlamadan iptal edildi.")
                 return
             if used() >= payload["budget_seconds"]:
-                raise TimeoutError("Görev bütçesi doldu; yeni araç başlatılmadı.")
+                raise TaskBudgetExhausted("Görev bütçesi doldu; yeni araç başlatılmadı.")
             store.update(job_id, pending={"name": name, "args": args}, used=used())
             store.event(job_id, "TOOL_START", {"message": "Araç çalışıyor: " + name, "tool": name})
             try:
@@ -298,6 +328,8 @@ def run_job(store, job_id):
                 result = tools.execute(name, args)
             except Exception as exc:
                 result = {"success": False, "error": str(exc)}
+            if store.get(job_id)['child_pid']:
+                raise UncertainCommandError('Dış komutun kapandığı doğrulanamadı; işlem tekrarlanmayacak ve kuyruk inceleme bekleyecek.')
             event = {"step": index + 1, "tool_call_id": call["id"], "tool": name,
                      "result": result, "success": result.get("success") is True}
             if name == "tool_plan_steps" and result.get("success"):
@@ -324,9 +356,20 @@ def run_job(store, job_id):
     except KeyboardInterrupt:
         finish("CANCELLED", "Görev durduruldu; tamamlanan adımlar kayıtta korundu.")
     except BaseException as exc:
-        finish("FAILED", str(exc) or type(exc).__name__)
+        if isinstance(exc, TaskBudgetExhausted):
+            code = 'TASK_BUDGET_EXHAUSTED'
+        elif isinstance(exc, ModelCallError):
+            code = 'MODEL_IDLE_TIMEOUT' if exc.detail.get('error_type') == 'ModelIdleTimeout' else 'MODEL_CALL_FAILED'
+        elif isinstance(exc, UncertainCommandError):
+            code = 'COMMAND_CLEANUP_UNCERTAIN'
+        else:
+            code = type(exc).__name__
+        finish("BLOCKED" if isinstance(exc, UncertainCommandError) else "FAILED", str(exc) or type(exc).__name__, code)
     finally:
-        tools.stop_child()
+        try:
+            tools.stop_child()
+        except Exception as exc:
+            store.event(job_id, 'CLEANUP_ERROR', {'message': 'Komut kapatma hatası: ' + str(exc)})
 
 
 if __name__ == "__main__":

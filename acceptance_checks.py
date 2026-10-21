@@ -16,7 +16,11 @@ def inspect_expected_files(root, expected_files):
                 raise ValueError("Çalışma alanı dışında dosya.")
             if target.stat().st_size > 100_000:
                 raise ValueError("Kabul kontrolü dosya sınırı 100 KB.")
-            actual = target.read_bytes().decode("utf-8")
+            with target.open('rb') as source:
+                raw = source.read(100_001)
+            if len(raw) > 100_000:
+                raise ValueError('Kabul kontrolü dosya sınırı 100 KB.')
+            actual = raw.decode("utf-8")
             matched = actual == expected
             offset = next((i for i, (a, b) in enumerate(zip(actual, expected))
                            if a != b), min(len(actual), len(expected)))

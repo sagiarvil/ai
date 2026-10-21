@@ -70,6 +70,9 @@ class ModelManager:
                     eval_count = p_data.get("eval_count", 0)
                     eval_duration = p_data.get("eval_duration", 1)
                     tps = round(eval_count / (eval_duration / 1e9), 2) if eval_duration > 0 else 0.0
+                    if not response_text or type(eval_count) is not int or eval_count <= 0:
+                        return {'success': False, 'inference_pass': False,
+                                'error': 'HTTP 200 alındı ancak gerçek metin/token üretimi doğrulanamadı.'}
 
                     return {
                         "success": True,
@@ -106,3 +109,4 @@ if __name__ == '__main__':
         res = await ModelManager.verify_model_runtime('mistral-small-24b-abliterated:latest')
         print('Model Doğrulama Sonucu:', json.dumps(res, indent=2, ensure_ascii=False))
     asyncio.run(run_test())
+

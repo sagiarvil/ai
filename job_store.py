@@ -92,6 +92,9 @@ class JobStore:
         job = self.get(job_id, after)
         result = {k: job[k] for k in ("id", "status", "created", "updated", "used", "result", "events")}
         result['plan'] = (job.get('checkpoint') or {}).get('plan') or []
+        result['budget_seconds'] = job['payload'].get('budget_seconds')
+        result['remaining_seconds'] = (max(0, result['budget_seconds'] - job['used'])
+                                       if result['budget_seconds'] is not None else None)
         with self.connection() as db:
             latest = db.execute("SELECT * FROM events WHERE job_id=? ORDER BY seq DESC LIMIT 1", (job_id,)).fetchone()
         result['latest_event'] = (dict(seq=latest['seq'], at=latest['at'], kind=latest['kind'],
@@ -99,6 +102,14 @@ class JobStore:
         result['next_after'] = job['events'][-1]['seq'] if job['events'] else max(0, after)
         result['has_more'] = bool(latest and latest['seq'] > result['next_after'])
         return result
+
+    def queue_state(self):
+        with self.connection() as db:
+            counts = dict(db.execute('SELECT status,count(*) FROM jobs GROUP BY status'))
+            blocked = db.execute("SELECT pending,child_pid FROM jobs WHERE status='BLOCKED'").fetchall()
+        return {'running': counts.get('RUNNING', 0), 'queued': counts.get('QUEUED', 0),
+                'blocked': any(r['child_pid'] or (r['pending'] and
+                     json.loads(r['pending']).get('name') == 'tool_run_shell') for r in blocked)}
 
     def record_model_sample(self, model, context, first_seconds, rate, prompt_tokens):
         import math
@@ -144,14 +155,15 @@ class JobStore:
         if status not in TERMINAL:
             raise ValueError("Geçersiz bitiş durumu.")
         result = dict(result, task_id=job_id, status=status,
-                      engine_protocol='baris-execution-v2', build='local-ui-v8')
+                      engine_protocol='baris-execution-v2', build='local-ui-v9')
         result.setdefault('execution_steps', [])
         result.setdefault('acceptance', None)
         result.setdefault('execution_completed', False)
         result['verified'] = status == 'VERIFIED'
         if result['verified'] and not (result['acceptance'] and
                                       result['acceptance'].get('success') is True and
-                                      result['execution_steps']):
+                                      result['execution_steps'] and
+                                      result['execution_steps'][-1].get('success') is True):
             raise ValueError('Doğrulama kanıtı olmadan VERIFIED kaydedilemez.')
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -180,7 +192,7 @@ class JobStore:
                 result = {"task_id":job_id,"status":"CANCELLED","verified":False,
                           "execution_completed":False,"execution_steps":[],"acceptance":None,
                           "reply":"Kuyruktaki görev iptal edildi.",
-                          "engine_protocol":"baris-execution-v2","build":"local-ui-v8"}
+                          "engine_protocol":"baris-execution-v2","build":"local-ui-v9"}
                 db.execute("UPDATE jobs SET status='CANCELLED',cancel=1,result=?,updated=? WHERE id=?",
                            (json.dumps(result,ensure_ascii=False),time.time(),job_id))
                 self._event(db,job_id,"CANCELLED",{"message":result["reply"]})
