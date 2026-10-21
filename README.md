@@ -1,7 +1,7 @@
 # Barış AI — Yerel görev yürütme motoru
 
 Modelin yanıt üretmesi, dosya yazması ve görevin doğrulanması ayrı durumlardır.
-Desteklenen uygulama `durable_api:app`, sürüm `local-ui-v9`.
+Desteklenen uygulama `durable_api:app`, sürüm `local-ui-v10`.
 
 ## Başlatma
 
@@ -66,6 +66,19 @@ SQLite WAL ve ayrı çalışan süreç HTTP kopması ve sayfa yenilemesinden ba�
 Tek model/görev çalışır; sekiz bekleyen/çalışan görev sınırı vardır. Çöken komutun
 sonucu belirsizse otomatik tekrar yapılmaz. Böyle bir BLOCKED komut sonraki
 çalışmaları durdurur; yeni API gönderimi 503 döndürür.
+
+Yürütme, web sunucusundan ayrı bir dosya kilidiyle korunur. Kilit, yeni çalışan
+başlatılırken dosya tanıtıcısıyla devredilir; web süreci PID kaydından önce çökse
+bile ikinci çalışan başlayamaz. Her deneme ayrı sahiplik anahtarı alır; önceki
+denemenin olay, kontrol noktası ve sonuç yazıları reddedilir. Kilit, komutların
+temizliği bitene kadar tutulur. Bu mekanizma yerel dosya sistemi ve bu protokole
+uyan çalışanlar içindir; dağıtık kilit veya işletim sistemi izolasyonu değildir.
+
+Eski sürümden kalmış bir çalışanın kimliği okunamıyorsa süreç ölü sayılmaz ve
+körlemesine sinyal gönderilmez. Eski kayıtta çalışan kimliği de yoksa
+`WORKER_OWNERSHIP_UNCERTAIN` ile BLOCKED olur ve kuyruk durur. Yeni çalışanların
+iptali, PID denetimi çalışmasa da model/komut bekleyişindeki periyodik kontrolle
+uygulanır. Bir dosya yazmasının ortasında iptal, o atomik işlemi geri almaz.
 
 Model JSON şemasıyla tek işlem üretir; native tool-call şablonuna bağımlı değildir.
 Konuşma gerçek system/user/assistant turlarıyla gönderilir. Kod parçaları 700 veya

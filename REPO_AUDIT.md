@@ -1,6 +1,7 @@
-# Uçtan uca depo denetimi — local-ui-v9
+# Uçtan uca depo denetimi — local-ui-v10
 
-Denetlenen başlangıç: `70e099c22e1687e70d837461870488f5fb602de5`,
+İlk tarama: `70e099c22e1687e70d837461870488f5fb602de5`.
+İkinci tarama başlangıcı: `e427af1743d1fd45eaa8f604ee4584e0adf3b236`,
 `fix/verified-execution-loop`. Tarih: 21 Ekim 2026.
 
 ## Sonuç ve kanıt düzeyi
@@ -10,6 +11,12 @@ Başlangıç sürümüne eklenen ilk on regresyon kontrolü **9 başarısızlık
 adları, sonuçları, gerçek komutları ve çıkış kodları `AUDIT_EVIDENCE.json` içindedir.
 Bu kayıt geliştirme ortamının kanıtıdır; kullanıcının Mac'inde canlı Mistral
 kabulü yapılmış olduğunu söylemez. Proje için ölçülmüş genel başarı yüzdesi yoktur.
+
+İkinci taramada eklenen ilk dört sahiplik testi, e427af1 kaynaklarında **4/4
+başarısız** oldu. İki gerçek çalışan aynı görevin model aşamasına girdi; bitmiş
+göreve geç kontrol noktası yazılabildi; başlatma/PID kayıt aralığında görev yanlış
+toparlanabildi ve kimlik okuma hatası ölü süreç sayıldı. Yeni sahiplik protokolü
+ve genişletilmiş kesinti testleri bu somut yeniden üretimlerin üzerine eklendi.
 
 ## Tarama kapsamı
 
@@ -22,6 +29,7 @@ incelendi. Eski oturum verilerinin içeriği çalışma kalitesi kanıtı yapıl
 | Mac açılışı ve girişler | baris_local.py, install_macos_app.py, server.py, omni_chat_panel.py, autonomous_agent.py |
 | API ve yetki sınırları | durable_api.py, yerel Host/Origin, gövde ve yol doğrulaması |
 | Kalıcılık ve zamanlama | job_store.py, task_service.py, iptal, toparlanma ve belirsiz komut durumu |
+| Çalışan sahipliği | execution_ownership.py, devralınan kilit, deneme anahtarı, gerçek web süreci çöküşü |
 | Model ve bağlam | task_worker.py, structured_actions.py, akış, kesik çıktı, profil ve bütçe |
 | Gerçek işlemler | task_tools.py, acceptance_checks.py, dosya ve süreç yaşam döngüsü |
 | Arayüz | public/index.html, public/app.js, kanıt kapsamı, yeniden bağlanma, zaman göstergesi |
@@ -60,6 +68,11 @@ yerel Python motorunu çalıştırmaz; bir bulut kopyası yerel app yerine sayı
 | Çince plan açıklaması görünebiliyor | Türkçe arayüz talebi ihlali | Türkçe açıklama üretilemedi kaydı, CJK plan metni kullanıcıya sunulmaz; ham kullanıcı verisi tercüme edilmez |
 | Yardımcı modüller sabit Mac dizinine yazıyor | Yanlış çalışma alanı ve import yan etkisi | BARIS_WORKSPACE ve kullanım anında dizin oluşturma |
 | Eski sistem betiği doğrudan ayar değiştiriyor | Yanlışlıkla farklı model sunucusu/OS ayarı | Açık legacy uygulama seçeneği olmadan çıkış 2 ve sıfır ayar değişikliği |
+| Aynı RUNNING göreve iki çalışan girebiliyor | Aynı dış işlemin yinelenmesi | Tüm çalışma alanını kapsayan yürütme kilidi; iki gerçek süreçli testte yalnızca tek model girişi ve tek yan etki |
+| Popen ile PID kaydı arasında web süreci çöküyor | Yeni sunucu çalışan yok sanıp görevi yeniden başlatıyor | Kilit Popen'a pass_fds ile devredilir; ebeveyn gerçek exit 77 ile PID kaydından önce ölür, yeni zamanlayıcı tek denemeyi korur |
+| Bitmiş veya önceki denemeye ait çalışan geç kayıt yazıyor | Terminal durum/kontrol noktası bütünlüğü bozuluyor | SQLite transaction içinde status + deneme anahtarı kontrolü; olay/checkpoint/sonuç güncellemeleri reddedilir |
+| PID bilgisi okunamadığında False dönüyor | Yaşayan eski çalışana rağmen tekrar veya yanlış sinyal | True/False/bilinmiyor ayrımı; bilinmeyen eski süreç korunur, kimliksiz eski başlatma belirsizliği kuyruğu engeller |
+| Heartbeat arka plan hatası sessiz ağ okumasını kesmiyor | PID denetimi yoksa iptal model sonuna kadar bekliyor | Akış ve heartbeat birlikte beklenir; iptal/sahiplik hatası ağ bekleyişini keser ve komut temizliği tamamlanır |
 
 ## Kabul testinin bağımsızlığı
 
@@ -74,6 +87,21 @@ programı sadece örnek sonucu yazdığı için kenar veride kalır. Bu iki sonu
 denetleyicisinin sınamasıdır; canlı Mistral becerisi için veri değildir.
 Gerçek TCP testi ayrıca ASGI sunucusu, SQLite, ayrı çalışan süreç ve diski birlikte
 kullanır; model tarafı bu testte de kontrollü yanıttır.
+
+İkinci tarama ayrıca aynı süreç içindeki TestClient yeniden açılışının ötesine
+geçer: gerçek HTTP sunucusu SIGKILL ile kapatılır, ayrı ve yeni bir HTTP süreci
+açılır. Görev tek denemeyle tamamlanır ve model toplam iki defa çağrılır (plan ve
+dosya yazma). Çalışan başlatma sırasında ebeveynin çöküşü ayrı testtir. Eski SQLite
+şeması kayıtları silinmeden yükseltilir. Bunlar yerel işletim sistemi süreç ve
+kilit kanıtıdır; canlı model doğruluğunun kanıtı değildir.
+
+## Gerçek CI gözlemi
+
+e427af1 için PR workflow `39629575148` ve push workflow `39629565664`, GitHub'da
+failure sonucuyla bitti. PR'nin dört matris işi de failure döndü; adım listesi
+boştu ve iş günlüğü alma 404 verdi. Bu verilerle kök neden (runner, hesap veya kod)
+kesinleştirilemedi. CI geçti diye raporlanmadı; yerel testler bu eksik kanıtın
+yerine konulmadı. Yeni commit'in CI sonucu da ayrıca okunmalıdır.
 
 ## Açık yayın kapıları
 

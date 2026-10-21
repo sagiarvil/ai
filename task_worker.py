@@ -12,7 +12,8 @@ import time
 import httpx
 
 from acceptance_checks import AcceptanceGuard, inspect_expected_files
-from job_store import JobStore
+from job_store import JobStore, OwnershipLost
+from execution_ownership import WorkerStore, execution_lock
 from structured_actions import build_request, parse_action
 from task_tools import TaskTools, TOOLS, CHUNK_LIMIT
 
@@ -112,6 +113,10 @@ class UncertainCommandError(RuntimeError):
     pass
 
 
+class WorkerCancelled(RuntimeError):
+    pass
+
+
 async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
     started = time.monotonic()
     diagnostic = {"characters": 0, "elapsed_seconds": 0, "limit_seconds": round(seconds, 2)}
@@ -121,8 +126,14 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
             if heartbeat:
                 heartbeat()
     monitor = asyncio.create_task(pulse())
+    stream = asyncio.create_task(_stream_generate(payload, store, job_id, seconds, heartbeat, diagnostic))
     try:
-        return await _stream_generate(payload, store, job_id, seconds, heartbeat, diagnostic)
+        # A cancellation/ownership failure in the heartbeat must interrupt a
+        # silent network read; an unobserved background exception cannot do so.
+        done, _ = await asyncio.wait({stream, monitor}, return_when=asyncio.FIRST_COMPLETED)
+        if monitor in done:
+            await monitor
+        return await stream
     except (TimeoutError, httpx.HTTPError, ValueError) as exc:
         diagnostic.update(error_type=type(exc).__name__,
                           elapsed_seconds=round(time.monotonic()-started, 2))
@@ -139,11 +150,10 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
         store.event(job_id, "MODEL_INTERRUPTED", diagnostic)
         raise ModelCallError(diagnostic) from exc
     finally:
-        monitor.cancel()
-        try:
-            await monitor
-        except asyncio.CancelledError:
-            pass
+        for task in (stream, monitor):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(stream, monitor, return_exceptions=True)
 
 
 async def generate(payload, store, job_id, seconds, heartbeat=None):
@@ -183,7 +193,26 @@ def compact(messages):
     return fixed + rest
 
 
-def run_job(store, job_id):
+def run_job(store, job_id, lease=None, inherited_fd=None):
+    with execution_lock(store, inherited_fd) as guard:
+        if guard is None:
+            return
+        job = store.get(job_id)
+        if job['status'] != 'RUNNING' or not job['lease'] or (lease is not None and job['lease'] != lease):
+            return
+        worker_store = WorkerStore(store, job_id, job['lease'])
+        if job['cancel']:
+            worker_store.finish(job_id, 'CANCELLED', {'reply': 'Çalışan başlamadan iptal isteği uygulandı.'})
+            return
+        try:
+            _run_owned_job(worker_store, job_id)
+        except OwnershipLost:
+            # Another terminal/claim state is authoritative. Do not overwrite it
+            # with a stale worker's exception, result or cleanup journal entry.
+            return
+
+
+def _run_owned_job(store, job_id):
     job = store.get(job_id)
     if job["status"] != "RUNNING":
         return
@@ -227,7 +256,15 @@ def run_job(store, job_id):
     def used():
         return base_used + time.monotonic() - start
 
-    tools.heartbeat = lambda: store.update(job_id, used=used())
+    def heartbeat():
+        current = store.get(job_id)
+        if current['status'] != 'RUNNING' or current['lease'] != store.lease:
+            raise OwnershipLost('Görevin sahipliği değişti; yeni işlem yapılmadı.')
+        if current['cancel']:
+            raise WorkerCancelled('İptal isteği sessiz model/komut bekleyişi sırasında uygulandı.')
+        store.update(job_id, used=used())
+
+    tools.heartbeat = heartbeat
 
     def finish(status, reply, failure_code=None):
         store.update(job_id, used=used())
@@ -238,7 +275,7 @@ def run_job(store, job_id):
                   "budget_seconds": payload['budget_seconds'], "used_seconds": round(used(), 2),
                   "remaining_seconds": round(max(0, payload['budget_seconds'] - used()), 2),
                   "failure_code": failure_code,
-                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v9"}
+                  "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v10"}
         store.finish(job_id, status, result)
 
     try:
@@ -286,7 +323,7 @@ def run_job(store, job_id):
             try:
                 raw = asyncio.run(generate(
                     request, store, job_id, min(240, remaining),
-                    heartbeat=lambda: store.update(job_id, used=used())))
+                    heartbeat=heartbeat))
                 message = parse_action(raw, messages, selected)
                 model_failures = 0
             except (ValueError, httpx.HTTPError, TimeoutError) as exc:
@@ -353,7 +390,7 @@ def run_job(store, job_id):
                 "progress_keys": sorted(progress_keys), "chunk_limit": chunk_limit})
             store.event(job_id, "TOOL_DONE", event)
         raise TimeoutError("40 işlem sınırı doldu; sonuç doğrulanamadı.")
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, WorkerCancelled):
         finish("CANCELLED", "Görev durduruldu; tamamlanan adımlar kayıtta korundu.")
     except BaseException as exc:
         if isinstance(exc, TaskBudgetExhausted):
@@ -373,4 +410,6 @@ def run_job(store, job_id):
 
 
 if __name__ == "__main__":
-    run_job(JobStore(sys.argv[1]), sys.argv[2])
+    run_job(JobStore(sys.argv[1]), sys.argv[2],
+            sys.argv[3] if len(sys.argv) > 3 else None,
+            int(sys.argv[4]) if len(sys.argv) > 4 else None)

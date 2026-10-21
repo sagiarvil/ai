@@ -21,7 +21,7 @@ def main():
     task_id = None
     try:
         info = request('/api/engine_info')
-        if (info.get('build') != 'local-ui-v9' or
+        if (info.get('build') != 'local-ui-v10' or
                 info.get('source_root') != str(Path(__file__).resolve().parent)):
             raise ValueError('İstemci ve yerel sunucu sürümü veya kaynağı uyuşmuyor.')
         job = request('/api/tasks', {'message': args.message, 'budget_seconds': args.budget}, uuid.uuid4().hex)

@@ -9,6 +9,7 @@ import sys
 import time
 
 from job_store import JobStore
+from execution_ownership import execution_lock
 
 # Popen handles give stronger identity than PID lookup for our own children.
 OWNED_PROCESSES = {}
@@ -52,7 +53,7 @@ class TaskService:
                     stderr=subprocess.DEVNULL)
             return 'task_worker.py' in command and self.store.path in command
         except (OSError, subprocess.CalledProcessError):
-            return False
+            return None
 
     async def start(self):
         self.lock = (self.root / ".baris_runtime" / "scheduler.lock").open("a")
@@ -62,35 +63,39 @@ class TaskService:
             self.lock.close()
             self.lock = None
             raise RuntimeError("Bu çalışma alanında başka görev sunucusu çalışıyor.")
-        self.store.recover(self.worker_alive)
         self.loop_task = asyncio.create_task(self.dispatch())
 
     async def dispatch(self):
         while True:
             if self.process is not None and self.process.poll() is not None:
-                self.store.recover(self.worker_alive)
+                OWNED_PROCESSES.pop(self.process.pid, None)
                 self.process = None
                 if self.worker_log:
                     self.worker_log.close()
                     self.worker_log = None
             if self.process is None:
-                self.store.recover(self.worker_alive)
-                job_id = self.store.claim()
-                if job_id:
-                    try:
-                        self.worker_log = (self.root / ".baris_runtime" / (job_id + ".log")).open("ab")
-                        self.process = subprocess.Popen(
-                            [sys.executable, str(Path(__file__).with_name("task_worker.py")),
-                             self.store.path, job_id], stdin=subprocess.DEVNULL,
-                            stdout=self.worker_log, stderr=subprocess.STDOUT,
-                            start_new_session=True, env={k: v for k, v in os.environ.items() if k != 'BARIS_MANAGER_TOKEN'})
-                        OWNED_PROCESSES[self.process.pid] = self.process
-                        self.store.update(job_id, worker_pid=self.process.pid)
-                    except OSError as exc:
-                        if self.worker_log:
-                            self.worker_log.close()
-                            self.worker_log = None
-                        self.store.finish(job_id, "FAILED", {"reply": "Görev süreci başlatılamadı: " + str(exc)})
+                with execution_lock(self.store) as guard:
+                    if guard is not None:
+                        self.store._recover_when_idle(self.worker_alive)
+                        job_id = self.store.claim()
+                        if job_id:
+                            lease = self.store.get(job_id)['lease']
+                            try:
+                                self.worker_log = (self.root / ".baris_runtime" / (job_id + ".log")).open("ab")
+                                self.process = subprocess.Popen(
+                                    [sys.executable, str(Path(__file__).with_name("task_worker.py")),
+                                     self.store.path, job_id, lease, str(guard.fileno())],
+                                    pass_fds=(guard.fileno(),), stdin=subprocess.DEVNULL,
+                                    stdout=self.worker_log, stderr=subprocess.STDOUT,
+                                    start_new_session=True, env={k: v for k, v in os.environ.items() if k != 'BARIS_MANAGER_TOKEN'})
+                                OWNED_PROCESSES[self.process.pid] = self.process
+                                # The worker registers itself under its claim. No unguarded
+                                # spawn -> parent PID journal window exists after handoff.
+                            except OSError as exc:
+                                if self.worker_log:
+                                    self.worker_log.close()
+                                    self.worker_log = None
+                                self.store.finish(job_id, "FAILED", {"reply": "Görev süreci başlatılamadı: " + str(exc)}, lease=lease)
             with self.store.connection() as db:
                 cancelled = db.execute("SELECT id,worker_pid FROM jobs WHERE status='RUNNING' AND cancel=1").fetchall()
             for row in cancelled:

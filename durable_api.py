@@ -19,7 +19,7 @@ from local_http import LocalHttpGuard
 
 SOURCE_ROOT = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("BARIS_WORKSPACE", SOURCE_ROOT)).resolve()
-BUILD = "local-ui-v9"
+BUILD = "local-ui-v10"
 
 
 @asynccontextmanager

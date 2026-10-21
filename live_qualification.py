@@ -116,7 +116,7 @@ def qualify(root, base='http://127.0.0.1:5053', budget=900, fetch=None, log=prin
     try:
         info = request('/api/engine_info')
         report['engine'] = info
-        check('motor_surumu', 'local-ui-v9', info.get('build'))
+        check('motor_surumu', 'local-ui-v10', info.get('build'))
         check('calisma_alani', str(root), info.get('workspace'))
         check('zamanlayici_hazir', True, info.get('scheduler_alive') is True)
         check('kuyruk_bos', True, not info.get('busy') and not info.get('queued') and not info.get('queue_blocked'))

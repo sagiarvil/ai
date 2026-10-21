@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-function setup({build = 'local-ui-v9', reply, delayChat = false, mobile = false} = {}) {
+function setup({build = 'local-ui-v10', reply, delayChat = false, mobile = false} = {}) {
   class Element {
     constructor() { this.children = []; this.style = {}; this.value = ''; this.textContent = ''; }
     appendChild(child) { this.children.push(child); }
@@ -52,11 +52,11 @@ function setup({build = 'local-ui-v9', reply, delayChat = false, mobile = false}
       }
       if (url.startsWith('/api/tasks/')) return {ok: true, json: async () => ({
         id: 'job_test', status: 'UNVERIFIED', created: Date.now()/1000,
-        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v9',
+        events: [], result: reply || ({engine_protocol:'baris-execution-v2', build:'local-ui-v10',
           status:'UNVERIFIED', verified:false, execution_steps:[], reply:'<script>untrusted</script>'})
       })};
       return {ok: true, json: async () => reply || ({
-        engine_protocol: 'baris-execution-v2', build: 'local-ui-v9',
+        engine_protocol: 'baris-execution-v2', build: 'local-ui-v10',
         status: 'UNVERIFIED', verified: false, execution_steps: [],
         reply: '<script>untrusted</script>'
       })};
@@ -92,7 +92,7 @@ test('file test sends exact acceptance to same-origin endpoint', async () => {
 
 test('model verified flag without independent acceptance is not success', async () => {
   const app = setup({reply: {
-    engine_protocol: 'baris-execution-v2', build: 'local-ui-v9',
+    engine_protocol: 'baris-execution-v2', build: 'local-ui-v10',
     status: 'VERIFIED', verified: true,
     execution_steps: [{tool: 'write', success: true}], acceptance: null
   }});
@@ -193,7 +193,7 @@ test('task timing separates wall time from the remaining execution budget', () =
 
 test('exact file acceptance does not claim that all program behavior passed', async () => {
   const app = setup({reply: {
-    engine_protocol:'baris-execution-v2', build:'local-ui-v9', status:'VERIFIED', verified:true,
+    engine_protocol:'baris-execution-v2', build:'local-ui-v10', status:'VERIFIED', verified:true,
     execution_steps:[{tool:'write',success:true}], acceptance:{success:true},
     verification_scope:'exact_files'
   }});

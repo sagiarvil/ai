@@ -16,7 +16,7 @@ import uuid
 import webbrowser
 
 SOURCE = Path(__file__).resolve().parent
-BUILD = "local-ui-v9"
+BUILD = "local-ui-v10"
 
 
 def process_command(pid):
@@ -116,7 +116,7 @@ def main():
                 managed_old = (
                     info.get('source_root') == str(SOURCE)
                     and info.get('engine_protocol') == 'baris-execution-v2'
-                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6','local-ui-v7','local-ui-v8','local-ui-v9'}
+                    and info.get('build') in {'local-ui-v4','local-ui-v5','local-ui-v6','local-ui-v7','local-ui-v8','local-ui-v9','local-ui-v10'}
                     and state.get('instance') == info.get('instance')
                     and state.get('pid') and not info.get('busy')
                 )
@@ -140,7 +140,7 @@ def main():
             subprocess.run(
                 [sys.executable, "-m", "unittest", "-v", "test_execution_loop",
                  "test_structured_actions", "test_acceptance_checks", "test_durable_runtime", "test_reliability",
-                 "test_audit_regressions", "test_live_qualification", "test_http_smoke"],
+                 "test_audit_regressions", "test_live_qualification", "test_http_smoke", "test_worker_ownership"],
                 cwd=SOURCE, check=True)
             instance = uuid.uuid4().hex
             manager_token = secrets.token_hex(32)
