@@ -141,7 +141,12 @@ class HttpSmokeTests(unittest.TestCase):
                     invalid = urllib.request.Request(base + '/api/engine_info', headers={'Host': 'evil.example'})
                     with self.assertRaises(urllib.error.HTTPError) as error:
                         opener.open(invalid, timeout=2)
-                    self.assertEqual(error.exception.code, 400)
+                    try:
+                        self.assertEqual(error.exception.code, 400)
+                    finally:
+                        # HTTPError owns a response stream even when rejection
+                        # is expected; close it on assertion failure as well.
+                        error.exception.close()
                 finally:
                     try:
                         if task_id and server.poll() is None:
