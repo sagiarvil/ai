@@ -148,7 +148,7 @@ async def _generate_unlocked(payload, store, job_id, seconds, heartbeat=None):
         if monitor in done:
             await monitor
         return await stream
-    except (TimeoutError, httpx.HTTPError, ValueError) as exc:
+    except (TimeoutError, httpx.HTTPError, ValueError, RuntimeError) as exc:
         diagnostic.update(error_type=type(exc).__name__,
                           elapsed_seconds=round(time.monotonic()-started, 2))
         if isinstance(exc, ModelIdleTimeout):
@@ -237,7 +237,7 @@ def _run_owned_job(store, job_id):
             "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
             "Sonra her çağrıda tek işlemi eksiksiz tamamla. Python kodunda fonksiyonları ve kütüphane çağrılarını (örneğin statistics.variance(list), statistics.stdev(list)) parametreleriyle eksiksiz ve doğru üret. "
             "Dosya 8000 karakterden küçükse parçalama yapma; tek bir tool_write_file ile baştan sona eksiksiz yaz. Yalnızca 8000 karakteri aşan dev dosyalarda parçalama ve tool_append_file kullan. Mevcut dosyayı write ile baştan yazma; "
-            "düzeltme için hash kontrollü tek eşleşmeli patch kullan. Kodun tamamını tek shell satırına gömme. "
+            "düzeltme için hash kontrollü tek eşleşmeli patch kullan. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
             "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları veya pipe (| cat) çalıştırma. "
             "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
             "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"])},
@@ -335,6 +335,7 @@ def _run_owned_job(store, job_id):
             request["stream"] = True
             request["keep_alive"] = "10m"
             request["options"]["num_predict"] = 4096
+            request["options"]["repeat_penalty"] = 1.1
             request["messages"][0]["content"] += (
                 " Eksiksiz, tam ve doğrulanabilir üretim kodunu üret. "
                 "İlgili araçları parametreleriyle eksiksiz çağır.")
@@ -344,7 +345,7 @@ def _run_owned_job(store, job_id):
                     heartbeat=heartbeat))
                 message = parse_action(raw, messages, selected)
                 model_failures = 0
-            except (ValueError, httpx.HTTPError, TimeoutError) as exc:
+            except (ValueError, httpx.HTTPError, TimeoutError, RuntimeError) as exc:
                 if used() >= payload['budget_seconds']:
                     raise TaskBudgetExhausted(
                         f"Toplam {payload['budget_seconds']} saniyelik görev süresi doldu; "

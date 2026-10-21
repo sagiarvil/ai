@@ -141,7 +141,7 @@ def build_request(model, messages, tools):
         "messages": chat_messages(messages, instruction),
         "format": schema,
         "stream": False,
-        "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 2048},
+        "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 2048, "repeat_penalty": 1.1},
     }
 
 
