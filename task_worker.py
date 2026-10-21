@@ -18,6 +18,18 @@ from structured_actions import build_request, parse_action
 from task_tools import TaskTools, TOOLS, CHUNK_LIMIT
 
 
+def safe_tool_content(result, max_chars=4000):
+    """Araç çıktısını bağlam penceresini taşırmayacak şekilde baştan ve sondan dengeli korur."""
+    text = json.dumps(result, ensure_ascii=False)
+    if len(text) <= max_chars:
+        return text
+    half = (max_chars - 80) // 2
+    head = text[:half]
+    tail = text[-half:]
+    omitted = len(text) - len(head) - len(tail)
+    return f"{head}\n\n[... {omitted} karakter bağlam koruması için özetlendi ...]\n\n{tail}"
+
+
 STREAM_IDLE_SECONDS = 90
 HEARTBEAT_SECONDS = 2
 
@@ -224,8 +236,8 @@ def _run_owned_job(store, job_id):
         {"role": "system", "content": (
             "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
             "Sonra her çağrıda tek işlemi eksiksiz tamamla. Python kodunda fonksiyonları ve kütüphane çağrılarını (örneğin statistics.variance(list), statistics.stdev(list)) parametreleriyle eksiksiz ve doğru üret. "
-            "Büyük programları 700 karakterlik mantıksal parçalarla yaz ve hash kontrollü append ile birleştir; kod satırlarını veya fonksiyonları yarıda kesme. Mevcut dosyayı write ile baştan yazma; "
-            "düzeltme için hash kontrollü tek eşleşmeli patch kullan. İlk yanıtta bütün programı üretme. Kodun tamamını tek shell satırına gömme. Hataları araç çıktısıyla "
+            "Dosya 8000 karakterden küçükse parçalama yapma; tek bir tool_write_file ile baştan sona eksiksiz yaz. Yalnızca 8000 karakteri aşan dev dosyalarda parçalama ve tool_append_file kullan. Mevcut dosyayı write ile baştan yazma; "
+            "düzeltme için hash kontrollü tek eşleşmeli patch kullan. Kodun tamamını tek shell satırına gömme. Hataları araç çıktısıyla "
             "düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
             "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"])},
         {"role": "user", "content": payload["message"] + (
@@ -394,12 +406,23 @@ def _run_owned_job(store, job_id):
             if progress_key and progress_key not in progress_keys:
                 progress_keys.add(progress_key)
                 guard = AcceptanceGuard()
+            consecutive_failures = checkpoint.get("consecutive_failures", 0)
+            if result.get("success") is True:
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures == 2:
+                    messages.append({"role": "user", "content": "DİKKAT: Son 2 işlem başarısız oldu. Hatanın kök nedenine odaklanın; aynı hatalı yamayı veya argümanları tekrarlamayın."})
+                elif consecutive_failures >= 6:
+                    raise ValueError("Arka arkaya 6 araç işlemi başarısız oldu; kısır döngü engellendi.")
+
             messages.extend([message, {"role": "tool", "tool_call_id": call["id"],
-                                       "content": json.dumps(result, ensure_ascii=False)[:18000]}])
+                                       "content": safe_tool_content(result, max_chars=4000)}])
             # Atomically clear the uncertain action with its post-action checkpoint.
             store.update(job_id, pending=None, used=used(), checkpoint={
                 "messages": messages, "steps": steps, "plan": plan, "stage": index + 1,
-                "progress_keys": sorted(progress_keys), "chunk_limit": chunk_limit})
+                "progress_keys": sorted(progress_keys), "chunk_limit": chunk_limit,
+                "consecutive_failures": consecutive_failures})
             store.event(job_id, "TOOL_DONE", event)
         raise TimeoutError("40 işlem sınırı doldu; sonuç doğrulanamadı.")
     except (KeyboardInterrupt, WorkerCancelled):

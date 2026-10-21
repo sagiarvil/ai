@@ -198,6 +198,8 @@ class TaskTools:
             argv[0] = sys.executable
         safe_env = {k: v for k, v in os.environ.items()
                     if k in {"PATH", "HOME", "LANG", "TMPDIR", "USER"}}
+        safe_env["PYTHONUNBUFFERED"] = "1"
+        safe_env["PYTHONDONTWRITEBYTECODE"] = "1"
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
             self.child = subprocess.Popen(argv, cwd=self.root, env=safe_env,
                                           stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
