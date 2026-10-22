@@ -310,17 +310,47 @@ def _run_owned_job(store, job_id):
                 elif last_stdout not in final_reply:
                     final_reply = f"{final_reply}\n\nSonuç:\n{last_stdout}"
             else:
+                found_content = None
+                found_name = None
                 for s in reversed(steps):
-                    if s.get("tool") in {"tool_write_file", "tool_patch_file"}:
-                        p = s.get("result", {}).get("path")
-                        if p and (p.endswith(".json") or p.endswith(".txt") or p.endswith(".csv")) and not p.endswith(".py"):
+                    p = s.get("result", {}).get("path")
+                    if p and (p.endswith(".json") or p.endswith(".txt") or p.endswith(".csv")) and not p.endswith(".py"):
+                        try:
+                            c = Path(p).read_text(encoding="utf-8").strip()
+                            if c and len(c) < 3000:
+                                found_content, found_name = c, Path(p).name
+                                break
+                        except Exception:
+                            pass
+                if not found_content:
+                    scan_dirs = [Path(payload["workspace"]), Path("/tmp"), Path("/private/tmp")]
+                    candidates = []
+                    for s_dir in scan_dirs:
+                        if not s_dir.exists():
+                            continue
+                        try:
+                            for item in s_dir.iterdir():
+                                if item.is_file() and item.suffix in {".json", ".txt", ".csv"} and not item.name.startswith((".", "test_")):
+                                    try:
+                                        mtime = item.stat().st_mtime
+                                        if mtime >= (start - 10):
+                                            candidates.append((mtime, item))
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    if candidates:
+                        candidates.sort(key=lambda x: x[0], reverse=True)
+                        for _, c_path in candidates:
                             try:
-                                content = Path(p).read_text(encoding="utf-8").strip()
-                                if content and len(content) < 2000:
-                                    final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç Dosyası ({Path(p).name}):\n{content}"
+                                text = c_path.read_text(encoding="utf-8").strip()
+                                if text and len(text) < 3000:
+                                    found_content, found_name = text, c_path.name
                                     break
                             except Exception:
                                 pass
+                if found_content:
+                    final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç ({found_name}):\n{found_content}"
 
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status == "VERIFIED",
