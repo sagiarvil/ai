@@ -176,11 +176,7 @@ class TaskTools:
             raise ValueError("Bilinmeyen araç.")
         if name == "tool_write_file" and path.exists():
             resolved_str = str(path.resolve())
-            protected_core = {'server.py', 'durable_api.py', 'task_worker.py', 'task_tools.py', 'baris_local.py', 'omni_chat_panel.py', 'runtime_doctor.py', 'job_store.py', 'acceptance_checks.py', 'structured_actions.py'}
             if resolved_str.startswith(("/tmp/", "/private/tmp/")):
-                path.unlink(missing_ok=True)
-            elif (path in self.created_in_job or path.suffix in {'.py', '.json', '.txt', '.csv', '.log', '.sh'}) and not path.name.startswith(('test_', 'test.')) and path.name not in protected_core:
-                # Kendi görev dosyalarını veya scriptleri kendini iyileştirme (self-healing) kapsamında yeniden yazabilir
                 path.unlink(missing_ok=True)
             else:
                 raise ValueError("Dosya zaten var; üzerine yazma engellendi. Devam için tool_append_file, düzeltme için tool_patch_file kullan.")
@@ -230,7 +226,8 @@ class TaskTools:
                 output.flush()
                 os.fsync(output.fileno())
             if name == "tool_write_file":
-                os.replace(temporary, path)
+                # Atomic create-if-absent; a concurrent creator cannot be overwritten.
+                os.link(temporary, path)
                 self.created_in_job.add(path)
             else:
                 if self.read(path) != previous:
