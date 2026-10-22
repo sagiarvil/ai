@@ -237,6 +237,8 @@ def _run_owned_job(store, job_id):
             "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
             "Sonra her çağrıda tek işlemi eksiksiz tamamla. Görevin tüm adımlarını (veri hazırlama, veritabanı, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere (generate.py, import.py vb.) bölme. "
             "Python kodunda fonksiyonları ve kütüphane çağrılarını (örneğin statistics.variance(list), statistics.stdev(list), hashlib.sha256()) parametreleriyle eksiksiz ve doğru üret. "
+            "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main() veya hesapla()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. Program mutlaka hesaplanan nihai sonuçları terminale print() ile basmalıdır. "
+            "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
             "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını (SyntaxError) önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan; tek tırnak içine unescaped tek tırnak gömme. "
             "Terminal çıktısını (stdout) boğmamak için devasa veri dizilerini veya binlerce elemanlı listeleri asla print ile ekrana basma; terminale yalnızca kısa özet istatistikleri ve sonuç JSON nesnesini bas. "
             "Dosya 8000 karakterden küçükse parçalama yapma; tek bir tool_write_file ile baştan sona eksiksiz yaz. Yalnızca 8000 karakteri aşan dev dosyalarda parçalama ve tool_append_file kullan. Mevcut dosyayı write ile baştan yazma; "
@@ -293,9 +295,36 @@ def _run_owned_job(store, job_id):
                     "scope": "execution_proof",
                     "details": f"Tüm görev adımları ({len(steps)} adım) başarıyla icra edildi ve doğrulandı."
                 }
+        final_reply = reply
+        if status == "VERIFIED":
+            last_stdout = None
+            for s in reversed(steps):
+                if s.get("tool") == "tool_run_shell" and s.get("result", {}).get("stdout"):
+                    out = s["result"]["stdout"].strip()
+                    if out:
+                        last_stdout = out
+                        break
+            if last_stdout:
+                if not final_reply or final_reply == "Araç işlemleri başarıyla tamamlandı ve doğrulandı.":
+                    final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç:\n{last_stdout}"
+                elif last_stdout not in final_reply:
+                    final_reply = f"{final_reply}\n\nSonuç:\n{last_stdout}"
+            else:
+                for s in reversed(steps):
+                    if s.get("tool") in {"tool_write_file", "tool_patch_file"}:
+                        p = s.get("result", {}).get("path")
+                        if p and (p.endswith(".json") or p.endswith(".txt") or p.endswith(".csv")) and not p.endswith(".py"):
+                            try:
+                                content = Path(p).read_text(encoding="utf-8").strip()
+                                if content and len(content) < 2000:
+                                    final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç Dosyası ({Path(p).name}):\n{content}"
+                                    break
+                            except Exception:
+                                pass
+
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status == "VERIFIED",
-                  "reply": reply, "execution_steps": steps, "acceptance": current_acceptance,
+                  "reply": final_reply, "execution_steps": steps, "acceptance": current_acceptance,
                   "verification_scope": "exact_files" if (status == "VERIFIED" and payload.get("expected_files")) else ("execution_proof" if status == "VERIFIED" else None),
                   "budget_seconds": payload['budget_seconds'], "used_seconds": round(used(), 2),
                   "remaining_seconds": round(max(0, payload['budget_seconds'] - used()), 2),
