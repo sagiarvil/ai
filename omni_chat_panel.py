@@ -293,66 +293,6 @@ def tool_run_slither(solidity_code: str) -> str:
     except Exception as e:
         return f"[Slither Hata]: {e}"
 
-def tool_capture_and_analyze_screen(prompt: str = "") -> str:
-    """Masaüstü ekranını sessizce yakalar, aktif pencereyi tespit eder ve OCR ile metinleri ayıklar."""
-    try:
-        import base64
-        from PIL import Image
-        import pytesseract
-
-        # Aktif pencere / ön plandaki uygulamayı macOS AppleScript ile bul
-        frontmost_app = "Bilinmiyor"
-        try:
-            res_app = subprocess.run(
-                ["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
-                capture_output=True, text=True, timeout=5
-            )
-            if res_app.returncode == 0 and res_app.stdout.strip():
-                frontmost_app = res_app.stdout.strip()
-        except Exception:
-            pass
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-            tmp_path = tmp_file.name
-
-        try:
-            # -x: sessiz ekran yakalama (dekuplaj ve ses çıkartmaz)
-            capture_res = subprocess.run(["/usr/sbin/screencapture", "-x", tmp_path], capture_output=True, timeout=10)
-            if capture_res.returncode != 0 or not os.path.exists(tmp_path):
-                return f"[Ekran Yakalama Hatası]: screencapture başarısız oldu (çıkış kodu: {capture_res.returncode})."
-
-            img = Image.open(tmp_path)
-            w, h = img.size
-
-            # OCR metin ayıklama
-            ocr_text = ""
-            try:
-                ocr_text = pytesseract.image_to_string(img, lang="tur+eng", timeout=15)
-            except Exception:
-                try:
-                    ocr_text = pytesseract.image_to_string(img, timeout=10)
-                except Exception as ocr_err:
-                    ocr_text = f"[OCR okuma uyarısı]: {ocr_err}"
-
-            ocr_summary = ocr_text.strip()[:3500] if ocr_text else "Ekranda okunabilir metin saptanamadı."
-
-            return (
-                f"### 🖥️ [MASAÜSTÜ EKRAN GÖRSEL ANALİZİ]\n"
-                f"- **Ön Plandaki Aktif Uygulama:** `{frontmost_app}`\n"
-                f"- **Ekran Çözünürlüğü:** {w}x{h} piksel\n"
-                f"- **Kullanıcı İnceleme Talebi:** {prompt if prompt else 'Genel Ekran Durumu'}\n\n"
-                f"**📝 Ekranda Tespit Edilen Metinler ve İçerik (OCR):**\n"
-                f"```text\n{ocr_summary}\n```\n"
-            )
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-    except Exception as e:
-        return f"[Masaüstü Görsel Zeka Hatası]: {str(e)}"
-
 # ==============================================================================
 # MODEL TOOLS ŞEMASI
 # ==============================================================================
@@ -458,20 +398,6 @@ tools = [
                 "required": ["solidity_code"]
             }
         }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_capture_and_analyze_screen",
-            "description": "Kullanıcının masaüstü ekranını sessizce yakalar, aktif ön pencereyi tespit eder ve OCR görsel zeka ile ekrandaki kodları ve metinleri okuyup analiz eder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {"type": "string", "description": "Kullanıcının ekranda özel olarak incelenmesini istediği alan veya soru"}
-                },
-                "required": []
-            }
-        }
     }
 ]
 
@@ -572,8 +498,6 @@ async def dispatch_tool_call(fname: str, fargs: dict) -> str:
         return await tool_crawl_website(fargs.get("url", ""))
     elif fname == "tool_run_slither":
         return tool_run_slither(fargs.get("solidity_code", ""))
-    elif fname == "tool_capture_and_analyze_screen":
-        return tool_capture_and_analyze_screen(fargs.get("prompt", ""))
     return f"[Bilinmeyen Araç]: {fname}"
 
 
@@ -882,46 +806,7 @@ async def excel_smart_router_endpoint(req: Request):
                 "sheet_name": "BİLANÇO"
             }
 
-                # B0) CANLI EKRAN / BİLGİSAYAR EKRANI / TARAYICI AÇMA
-        is_screen_cmd = any(k in p_norm for k in [
-            "ekran ac", "ekrani ac", "ekran kontrol", "tarayici ac", "tarayiciyi ac",
-            "canli ekran", "pencere ac", "chrome ac", "google ac", "site ac",
-            "ekranda ac", "ekranda goster", "bilgisayar ekran", "ekrana ac", "ekran kontrolu"
-        ])
-        if is_screen_cmd:
-            target_url = "https://www.google.com"
-            url_match = re.search(r'https?://[^\s]+', user_prompt)
-            if url_match:
-                target_url = url_match.group(0)
-            elif any(k in p_norm for k in ["tcmb", "kur", "doviz"]):
-                target_url = "https://www.tcmb.gov.tr/kurlar/kurlar_tr.html"
-            elif any(k in p_norm for k in ["hava", "hava durumu"]):
-                target_url = "https://www.mgm.gov.tr"
-            elif any(w in p_norm for w in ["ara", "bul", "incele"]):
-                clean_query = user_prompt
-                for remove_w in ["canlı", "canli", "ekranda", "ekran", "aç", "ac", "tarayıcıda", "tarayicida", "ara", "bul", "ve", "ile"]:
-                    clean_query = re.sub(r'\b' + re.escape(remove_w) + r'\b', "", clean_query, flags=re.IGNORECASE)
-                clean_query = clean_query.strip()
-                if clean_query:
-                    import urllib.parse
-                    target_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_query)}"
-
-            try:
-                subprocess.Popen(["open", "-a", "Google Chrome", target_url])
-            except Exception:
-                try:
-                    subprocess.Popen(["open", target_url])
-                except Exception:
-                    pass
-
-            return {
-                "mode": "action",
-                "reply": f"🖥️ **Bilgisayar Ekranı Kontrolü Açıldı!**\n\nMasaüstünüzde canlı **Google Chrome** penceresi açıldı ve `{target_url}` adresi yüklendi.",
-                "actions": [],
-                "sheet_name": sheet_name
-            }
-
-        # B) Sayfa / Sekme Açma veya İsimlendirme
+                # B) Sayfa / Sekme Açma veya İsimlendirme
         is_sheet_cmd = any(k in p_norm for k in ["sayfa ac", "sayfa ekle", "sayfa olustur", "sekme ac", "sekme ekle", "sekme olustur", "yeni sayfa", "yeni sekme"])
         target_sheet_name = None
 
@@ -1776,74 +1661,6 @@ async def api_run_code(req: RunCodeRequest):
                 os.remove(tmp_script)
             except Exception:
                 pass
-
-@app.post("/api/screen/capture")
-async def api_screen_capture():
-    """
-    Kullanıcının web panelinden tek tıkla masaüstü ekranını yakalayıp önizleme ve OCR metnini döner.
-    """
-    try:
-        import base64
-        from PIL import Image
-        import pytesseract
-
-        frontmost_app = "Bilinmiyor"
-        try:
-            res_app = subprocess.run(
-                ["/usr/bin/osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
-                capture_output=True, text=True, timeout=5
-            )
-            if res_app.returncode == 0 and res_app.stdout.strip():
-                frontmost_app = res_app.stdout.strip()
-        except Exception:
-            pass
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-            tmp_path = tmp_file.name
-
-        try:
-            capture_res = subprocess.run(["/usr/sbin/screencapture", "-x", tmp_path], capture_output=True, timeout=10)
-            if capture_res.returncode != 0 or not os.path.exists(tmp_path):
-                return {"success": False, "error": "Ekran yakalanamadı."}
-
-            img = Image.open(tmp_path)
-            w, h = img.size
-
-            # Küçük thumbnail oluştur (chatte hızlı önizleme için)
-            thumb = img.copy()
-            thumb.thumbnail((800, 500))
-            buffered = io.BytesIO()
-            thumb.save(buffered, format="JPEG", quality=75)
-            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-            # OCR yap
-            ocr_text = ""
-            try:
-                ocr_text = pytesseract.image_to_string(img, lang="tur+eng", timeout=15)
-            except Exception:
-                try:
-                    ocr_text = pytesseract.image_to_string(img, timeout=10)
-                except Exception as oe:
-                    ocr_text = f"[OCR okuma uyarısı]: {oe}"
-
-            clean_ocr = ocr_text.strip() if ocr_text else "Metin bulunamadı."
-
-            return {
-                "success": True,
-                "frontmost_app": frontmost_app,
-                "resolution": f"{w}x{h}",
-                "image_data": f"data:image/jpeg;base64,{img_b64}",
-                "ocr_summary": clean_ocr[:2000],
-                "ocr_full": clean_ocr
-            }
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 @app.post("/api/voice/stop")
 async def voice_stop():
