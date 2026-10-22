@@ -348,6 +348,11 @@ def _run_owned_job(store, job_id):
     if job["status"] != "RUNNING":
         return
     payload = job["payload"]
+    if not payload.get("expected_files"):
+        try:
+            (Path(payload["workspace"]) / "cozum.py").unlink(missing_ok=True)
+        except Exception:
+            pass
     checkpoint = job["checkpoint"] or {}
     messages = checkpoint.get("messages", [
         {"role": "system", "content": (
@@ -356,7 +361,7 @@ def _run_owned_job(store, job_id):
             "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
             "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
             "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
-            "KOD MİMARİSİ STANDARDI: Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (file.write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
+            "KOD MİMARİSİ STANDARDI: Python dosyasını 'cozum.py' olarak oluştur (tool_write_file). Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (open('results.txt', 'w', encoding='utf-8').write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
             "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas. Eğer kullanıcı tablo düzeninde istiyorsa sonuçları simetrik, düzgün hizalı Markdown tablosu ('| Başlık | Değer |' ve '|:---|:---:|') olarak hem dosyaya kaydet hem de print() ile bas. "
             "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
             "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. Python dosyasında çok satırlı metin veya dosya yazarken f-string hatası (unterminated f-string) yapma. "
