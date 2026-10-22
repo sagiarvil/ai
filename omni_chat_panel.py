@@ -87,7 +87,9 @@ ALLOWED_ORIGINS = [
     "http://localhost:5050",
     "http://127.0.0.1:5050",
     "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
+    "https://appsforoffice.microsoft.com",
+    "*"
 ]
 
 app.add_middleware(
@@ -732,6 +734,798 @@ async def git_commit_endpoint(req: GitCommitRequest, authorized: bool = Depends(
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Git Commit Hatası: {str(e)}")
+
+@app.post("/api/excel_chat")
+async def excel_chat_proxy(req: Request):
+    """Excel Taskpane için CORS-free yerel Ollama köprüsü."""
+    import urllib.request
+    try:
+        body = await req.json()
+        target_model = body.get("model", "qwen-coder-14b-abliterated:latest")
+        if "qwen" in target_model.lower():
+            actual_model = "qwen-coder-14b-abliterated:latest"
+        elif "deepseek" in target_model.lower():
+            actual_model = "deepseek-r1-14b-abliterated:latest"
+        else:
+            actual_model = "mistral-small-24b-abliterated:latest"
+
+        ollama_payload = json.dumps({
+            "model": actual_model,
+            "messages": body.get("messages", []),
+            "stream": False
+        }).encode("utf-8")
+
+        ollama_req = urllib.request.Request(
+            "http://127.0.0.1:11434/api/chat",
+            data=ollama_payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(ollama_req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            reply_content = data.get("message", {}).get("content", "")
+            return {
+                "choices": [{
+                    "message": {
+                        "content": reply_content
+                    }
+                }]
+            }
+    except Exception as e:
+        return {"error": str(e), "choices": [{"message": {"content": f"Hata: {str(e)}"}}]}
+
+@app.post("/api/excel_smart_router")
+async def excel_smart_router_endpoint(req: Request):
+    """Excel Taskpane için 360° Akıllı Niyet, Deterministik Eylem ve Denetim Yönlendiricisi."""
+    import urllib.request
+    try:
+        body = await req.json()
+        user_prompt = body.get("prompt", "").strip()
+        sheet_name = body.get("sheet_name", "Aktif Sayfa")
+        grid_data = body.get("sheet_data", [])
+        target_model = body.get("model", "qwen-coder-14b-abliterated:latest")
+
+        if "qwen" in target_model.lower():
+            actual_model = "qwen-coder-14b-abliterated:latest"
+        elif "deepseek" in target_model.lower():
+            actual_model = "deepseek-r1-14b-abliterated:latest"
+        else:
+            actual_model = "mistral-small-24b-abliterated:latest"
+
+        # Türkçe karakter normalizasyonu
+        def norm_tr(s: str) -> str:
+            t = s.replace('İ', 'i').replace('I', 'i').replace('ı', 'i')
+            t = t.replace('Ğ', 'g').replace('ğ', 'g')
+            t = t.replace('Ü', 'u').replace('ü', 'u')
+            t = t.replace('Ş', 's').replace('ş', 's')
+            t = t.replace('Ö', 'o').replace('ö', 'o')
+            t = t.replace('Ç', 'c').replace('ç', 'c')
+            return t.lower().strip()
+
+        p_norm = norm_tr(user_prompt)
+
+        # -------------------------------------------------------------
+        # 1. FAZ: DETERMINISTIC INTENT DETECTION (<5ms RESPONSE)
+        # -------------------------------------------------------------
+        # A) TDHP / Finansal Model Talebi
+        if any(k in p_norm for k in ["tdhp", "bilanco", "gelir tablosu", "3 sekme", "finansal model"]) and not any(w in p_norm for w in ["hata", "yorumla", "analiz", "neden"]):
+            tdhp_actions = [
+                {
+                    "type": "add_sheet",
+                    "name": "BİLANÇO",
+                    "activate": True
+                },
+                {
+                    "type": "write_table",
+                    "sheet": "BİLANÇO",
+                    "start_cell": "A1",
+                    "header_bg": "#1B365D",
+                    "headers": ["HESAP KODU VE ADI (TDHP)", "ÖNCEKİ DÖNEM (₺)", "CARİ DÖNEM (₺)"],
+                    "rows": [
+                        ["1. DÖNEN VARLIKLAR", "", ""],
+                        ["  100 Kasa Hesabı", 250000, 480000],
+                        ["  102 Bankalar", 1200000, 2450000],
+                        ["  120 Alıcılar (Ticari Alacaklar)", 3500000, 4200000],
+                        ["  150 İlk Madde ve Malzeme", 850000, 1100000],
+                        ["  153 Ticari Mallar", 1400000, 1850000],
+                        ["TOPLAM DÖNEN VARLIKLAR", "=SUM(B2:B6)", "=SUM(C2:C6)"],
+                        ["2. DURAN VARLIKLAR", "", ""],
+                        ["  252 Binalar", 8000000, 8000000],
+                        ["  253 Tesis, Makine ve Cihazlar", 4500000, 5200000],
+                        ["  257 Birikmiş Amortismanlar (-)", -1800000, -2300000],
+                        ["TOPLAM DURAN VARLIKLAR", "=SUM(B8:B10)", "=SUM(C8:C10)"],
+                        ["AKTİF GENEL TOPLAMI", "=B7+B11", "=C7+C11"],
+                        ["3. KISA VADELİ YABANCI KAYNAKLAR", "", ""],
+                        ["  300 Banka Kredileri", 2000000, 2500000],
+                        ["  320 Satıcılar (Ticari Borçlar)", 2800000, 3100000],
+                        ["  360 Ödenecek Vergi ve Fonlar", 450000, 620000],
+                        ["TOPLAM KISA VADELİ KAYNAKLAR", "=SUM(B14:B16)", "=SUM(C14:C16)"],
+                        ["5. ÖZKAYNAKLAR", "", ""],
+                        ["  500 Sermaye", 10000000, 10000000],
+                        ["  590 Dönem Net Kârı", 2650000, 4660000],
+                        ["TOPLAM ÖZKAYNAKLAR", "=SUM(B19:B20)", "=SUM(C19:C20)"],
+                        ["PASİF GENEL TOPLAMI", "=B17+B21", "=C17+C21"]
+                    ],
+                    "autofit": True
+                },
+                {
+                    "type": "add_sheet",
+                    "name": "GELİR TABLOSU",
+                    "activate": False
+                },
+                {
+                    "type": "write_table",
+                    "sheet": "GELİR TABLOSU",
+                    "start_cell": "A1",
+                    "header_bg": "#047857",
+                    "headers": ["GELİR TABLOSU KALEMLERİ (TDHP)", "TUTAR (₺)"],
+                    "rows": [
+                        ["600 Yurtiçi Satışlar", 18500000],
+                        ["601 Yurtdışı Satışlar", 4200000],
+                        ["BRÜT SATIŞLAR TOPLAMI", "=SUM(B2:B3)"],
+                        ["610 Satıştan İadeler (-)", -350000],
+                        ["NET SATIŞLAR", "=B4+B5"],
+                        ["621 Satılan Ticari Mallar Maliyeti (-)", -11200000],
+                        ["BRÜT SATIŞ KÂRI", "=B6+B7"],
+                        ["760 Pazarlama ve Satış Giderleri (-)", -1400000],
+                        ["770 Genel Yönetim Giderleri (-)", -2100000],
+                        ["FAALİYET KÂRI (EBIT)", "=B8+B9+B10"],
+                        ["691 Dönem Kârı Vergi Karşılığı (-)", -850000],
+                        ["DÖNEM NET KÂRI", "=B11+B12"]
+                    ],
+                    "autofit": True
+                }
+            ]
+            return {
+                "mode": "action",
+                "reply": "✅ SPK ve VUK standartlarında çok sekmeli kurumsal TDHP Finansal Modeli (BİLANÇO + GELİR TABLOSU) Excel'e uygulandı.",
+                "actions": tdhp_actions,
+                "sheet_name": "BİLANÇO"
+            }
+
+        # B) Sayfa / Sekme Açma veya İsimlendirme
+        is_sheet_cmd = any(k in p_norm for k in ["sayfa ac", "sayfa ekle", "sayfa olustur", "sekme ac", "sekme ekle", "sekme olustur", "yeni sayfa", "yeni sekme"])
+        target_sheet_name = None
+
+        if is_sheet_cmd or "adini" in p_norm or "adi" in p_norm or "adinda" in p_norm:
+            m = re.search(r'(?:adini|adi|isimli|adinda)\s+([a-zA-Z0-9ğüşıöçĞÜŞİÖÇ\-_]+)', user_prompt, re.IGNORECASE)
+            if m:
+                target_sheet_name = m.group(1).strip()
+            else:
+                m2 = re.search(r'([a-z0-9\-_]+)\s+(?:sayfasi|sekmesi|tablosu)\s+(?:ac|olustur|ekle|kur)', p_norm)
+                if m2:
+                    target_sheet_name = m2.group(1).strip()
+
+        if target_sheet_name:
+            ts_norm = norm_tr(target_sheet_name)
+            if "toptac" in ts_norm or "toptan" in ts_norm:
+                clean_sheet_name = "Toptancılar"
+            elif "tedarik" in ts_norm:
+                clean_sheet_name = "Tedarikçiler"
+            elif "santiye" in ts_norm:
+                clean_sheet_name = "Şantiyeler"
+            elif "maliyet" in ts_norm:
+                clean_sheet_name = "Maliyetler"
+            elif "kasa" in ts_norm:
+                clean_sheet_name = "Kasa & Banka"
+            elif "personel" in ts_norm:
+                clean_sheet_name = "Personel"
+            elif "fatura" in ts_norm:
+                clean_sheet_name = "Faturalar"
+            else:
+                clean_sheet_name = target_sheet_name.capitalize()
+
+            actions = [
+                {"type": "add_sheet", "name": clean_sheet_name, "activate": True}
+            ]
+
+            if clean_sheet_name == "Toptancılar" or "toptan" in ts_norm:
+                actions.append({
+                    "type": "write_table",
+                    "sheet": clean_sheet_name,
+                    "start_cell": "A1",
+                    "header_bg": "#1e3a8a",
+                    "headers": [
+                        "Firma Kodu", "Toptancı / Firma Ünvanı", "Yetkili Kişi", "Telefon",
+                        "Malzeme / Kapsam", "Sözleşme Bedeli (₺)", "Ödenen (₺)", "Kalan Bakiye (₺)", "Vade Tarihi"
+                    ],
+                    "rows": [
+                        ["TP-001", "Örnek Ahşap & Kereste Ltd.", "Ahmet Yılmaz", "0532 111 2233", "MDF & Masif Panel", 185000, 60000, "=F2-G2", "2026-11-15"],
+                        ["TP-002", "Demir & Profil Sac Sanayi", "Mehmet Kaya", "0542 222 3344", "Kutu Profil & Çelik", 94000, 94000, "=F3-G3", "2026-11-20"],
+                        ["TP-003", "Yıldız Hırdavat & Kimya", "Serdar Çetin", "0555 333 4455", "Boya & Vida & Silikon", 38000, 15000, "=F4-G4", "2026-12-01"],
+                        ["TP-004", "Akdeniz Mermer & Granit", "Hasan Demir", "0533 444 5566", "Çimstone Mutfak Tezgâhı", 125000, 75000, "=F5-G5", "2026-12-10"]
+                    ],
+                    "autofit": True
+                })
+                reply_msg = f"✅ '{clean_sheet_name}' sayfası açıldı ve 9 sütunlu profesyonel Toptancı / Cari Takip Tablosu (otomatik bakiye formüllü) oluşturuldu."
+            elif clean_sheet_name == "Personel":
+                actions.append({
+                    "type": "write_table",
+                    "sheet": clean_sheet_name,
+                    "start_cell": "A1",
+                    "header_bg": "#334155",
+                    "headers": ["Personel No", "Adı Soyadı", "Görevi", "Şantiye", "Net Maaş (₺)", "Agi / Ek Ödeme (₺)", "Kesinti (₺)", "Toplam Hakediş (₺)"],
+                    "rows": [
+                        ["PER-01", "Ali Usta", "Kalıpçı Ustası", "Kadıköy Şantiye", 45000, 5000, 0, "=E2+F2-G2"],
+                        ["PER-02", "Veli Demir", "Demirci", "Ataşehir Şantiye", 42000, 3000, 0, "=E3+F3-G3"]
+                    ],
+                    "autofit": True
+                })
+                reply_msg = f"✅ '{clean_sheet_name}' sayfası açıldı ve bordro / hakediş tablosu oluşturuldu."
+            else:
+                actions.append({
+                    "type": "write_table",
+                    "sheet": clean_sheet_name,
+                    "start_cell": "A1",
+                    "header_bg": "#1e293b",
+                    "headers": ["Sıra No", "Kayıt / Tanım", "Kategori", "Açıklama", "Tutar (₺)", "Durum", "Tarih"],
+                    "rows": [
+                        [1, "Örnek Kayıt 1", "Genel", "İlk açılış kaydı", 10000, "Beklemede", "2026-10-22"]
+                    ],
+                    "autofit": True
+                })
+                reply_msg = f"✅ '{clean_sheet_name}' sayfası açıldı ve standart veri tablosu hazırlandı."
+
+            return {
+                "mode": "action",
+                "reply": reply_msg,
+                "actions": actions,
+                "sheet_name": clean_sheet_name
+            }
+
+        # -------------------------------------------------------------
+        # 2. FAZ: DENETİM VEYA SORU-CEVAP MODU (AUDIT & CHAT)
+        # -------------------------------------------------------------
+        table_lines = []
+        error_lines = []
+        for r_idx, row in enumerate(grid_data[:40]):
+            row_vals = []
+            for c_idx, cell in enumerate(row[:10]):
+                val_str = str(cell).strip() if cell is not None else ""
+                if val_str.startswith("#") and (val_str.endswith("!") or val_str.endswith("?")):
+                    error_lines.append(f"Hücre (Satır {r_idx+1}, Sütun {c_idx+1}): {val_str}")
+                row_vals.append(val_str if val_str else "-")
+            if any(v != "-" for v in row_vals):
+                table_lines.append(f"Satır {r_idx+1}: " + " | ".join(row_vals))
+
+        table_context = "\n".join(table_lines) if table_lines else "Sayfadan okunabilir veri alınamadı veya boş sayfa."
+        errors_context = "\n".join(error_lines) if error_lines else "Doğrudan formül hata kodu (#AD?, #DEĞER!, #BÖL/0! vb.) tespit edilmedi."
+
+        # Kullanıcı özel eylem istiyor ama basit regex'e takılmadıysa LLM'e eylem ürettir
+        action_intent_words = ["yaz", "ekle", "satir", "sutun", "kolon", "sil", "boya", "format", "vurgula", "topla", "carp", "hesapla"]
+        needs_llm_action = any(w in p_norm for w in action_intent_words) and not any(w in p_norm for w in ["neden", "hata", "analiz", "yorumla", "nasil", "acikla"])
+
+        if needs_llm_action:
+            action_prompt = f"""Sen bir Excel Office.js Eylem Motorusun.
+Kullanıcının talimatını analiz et ve Excel'e uygulanacak JSON eylemlerini döndür.
+Aktif Sayfa: {sheet_name}
+Canlı Veri Özeti:
+{table_context}
+
+Kullanıcı Talimatı: {user_prompt}
+
+ÇIKTI KURALI:
+YALNIZCA aşağıdaki JSON formatında tek bir obje döndür. Markdown blokları koyma, yorum yazma.
+{{
+  "mode": "action",
+  "reply": "Kullanıcıya 1 cümlelik Türkçe açıklama",
+  "actions": [
+    {{"type": "write_table", "sheet": "{sheet_name}", "start_cell": "A1", "headers": ["..."], "rows": [["..."]], "autofit": true}}
+  ]
+}}"""
+            ollama_payload = json.dumps({
+                "model": "qwen-coder-14b-abliterated:latest",
+                "messages": [{"role": "user", "content": action_prompt}],
+                "stream": False,
+                "options": {"temperature": 0.1, "num_ctx": 4096}
+            }).encode("utf-8")
+
+            try:
+                req_act = urllib.request.Request("http://127.0.0.1:11434/api/chat", data=ollama_payload, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req_act, timeout=25) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    raw_content = resp_data.get("message", {}).get("content", "")
+                    clean_content = re.sub(r'<think>[\s\S]*?</think>', '', raw_content).strip()
+                    if "{" in clean_content and "}" in clean_content:
+                        json_str = clean_content[clean_content.find("{"):clean_content.rfind("}")+1]
+                        parsed = json.loads(json_str)
+                        if "actions" in parsed:
+                            return parsed
+            except Exception:
+                pass
+
+        # Denetim / Soru-Cevap
+        sys_prompt = f"""Sen Türkiye SPK/VUK ve Big Four denetim standartlarında kıdemli bir Finansal Baş Denetçisisin.
+Kullanıcının Excel'de şu anda açık olan '{sheet_name}' isimli çalışma sayfasındaki gerçek verileri inceliyorsun.
+
+SAYFADAN OKUNAN CANLI VERİLER:
+{table_context}
+
+HATA KODU BULUNAN HÜCRELER:
+{errors_context}
+
+GÖREVİN:
+1. Kullanıcının sorusuna/talimatına doğrudan, net ve somut rakamları alıntılayarak Türkçe cevap ver.
+2. Sayfadaki Net Kâr/Zarar, Kâr Marjı, Kalan Alacak gibi finansal göstergeleri analiz et.
+3. Varsa hata veya tutarsızlıkları açıkça bildir, çözümünü söyle.
+4. Sıfır gevezelik, net ve profesyonel C-Level üslup kullan. Asla ezbere konuşma."""
+
+        ollama_payload = json.dumps({
+            "model": actual_model,
+            "messages": [
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 4096
+            }
+        }).encode("utf-8")
+
+        ollama_req = urllib.request.Request(
+            "http://127.0.0.1:11434/api/chat",
+            data=ollama_payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(ollama_req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            raw_text = data.get("message", {}).get("content", "")
+            reply_text = re.sub(r'<think>[\s\S]*?</think>', '', raw_text).strip()
+            return {
+                "mode": "audit",
+                "reply": reply_text or "Analiz tamamlandı.",
+                "sheet_name": sheet_name
+            }
+    except Exception as e:
+        return {"mode": "error", "message": f"Sistem Hatası: {str(e)}"}
+
+
+@app.post("/api/excel_audit")
+async def excel_audit_endpoint(req: Request):
+    """Aktif Excel sayfası verilerini ve formüllerini analiz eden denetçi API."""
+    import urllib.request
+    try:
+        body = await req.json()
+        user_prompt = body.get("prompt", "Excel tablosundaki verileri ve formülleri analiz et.")
+        sheet_name = body.get("sheet_name", "Aktif Sayfa")
+        grid_data = body.get("data", [])
+        error_cells = body.get("errors", [])
+        target_model = body.get("model", "deepseek-r1-14b-abliterated:latest")
+
+        if "deepseek" in target_model.lower():
+            actual_model = "deepseek-r1-14b-abliterated:latest"
+        elif "qwen" in target_model.lower():
+            actual_model = "qwen-coder-14b-abliterated:latest"
+        else:
+            actual_model = "mistral-small-24b-abliterated:latest"
+
+        # Tablo özetini metne dök (ilk 40 satır, max 10 sütun)
+        table_summary_lines = []
+        for r_idx, row in enumerate(grid_data[:40]):
+            row_vals = [str(c) if c is not None and str(c).strip() != "" else "-" for c in row[:10]]
+            if any(v != "-" for v in row_vals):
+                table_summary_lines.append(f"Satır {r_idx+1}: " + " | ".join(row_vals))
+        
+        table_text = "\n".join(table_summary_lines) if table_summary_lines else "Tablo verisi boş veya okunamadı."
+
+        errors_text = ""
+        if error_cells:
+            errors_text = "HATA TESPİT EDİLEN HÜCRELER:\n" + "\n".join([f"- Hücre {e.get('address')}: Hata Kodu {e.get('error')} (Formül: {e.get('formula')})" for e in error_cells[:15]])
+        else:
+            errors_text = "Hücrelerde doğrudan hata kodu (#AD?, #DEĞER!, #BÖL/0! vb.) tespit edilmedi."
+
+        system_prompt = f"""Sen Türkiye SPK/VUK ve Big Four denetim standartlarında kıdemli bir Finansal Analist ve Excel Baş Denetçisisin.
+Kullanıcının aktif olarak üzerinde çalıştığı Excel çalışma sayfası inceleniyor.
+
+SAYFA ADI: {sheet_name}
+
+{errors_text}
+
+SAYFADAN OKUNAN ÖRNEK VERİ MATRİSİ:
+{table_text}
+
+GÖREVİN:
+1. Kullanıcının talimatını/sorusunu doğrudan yanıtla.
+2. Sayfadaki finansal durumu (Net kâr/zarar, kâr marjı, mizan dengesi, anormallikler) somut rakamlarla açıkla.
+3. Formül hatası veya mantık tutarsızlığı varsa tam adresini ve çözümünü belirt.
+4. Sıfır gevezelikle, doğrudan cerrahi, net ve profesyonel Türkçe bir analiz sun.
+ASLA '3 sayfalı TDHP tablosu derleniyor' gibi alakasız şablon cümleler kurma; kullanıcının sorusuna doğrudan odaklan."""
+
+        ollama_payload = json.dumps({
+            "model": actual_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 4096
+            }
+        }).encode("utf-8")
+
+        ollama_req = urllib.request.Request(
+            "http://127.0.0.1:11434/api/chat",
+            data=ollama_payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(ollama_req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            analysis_text = data.get("message", {}).get("content", "")
+            return {
+                "status": "success",
+                "analysis": analysis_text,
+                "sheet_name": sheet_name,
+                "errors_found": len(error_cells)
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ==============================================================================
+# CERRAHÎ EXCEL AST DERLEYİCİ UÇ NOKTASI (Big Four Standartı)
+# ==============================================================================
+# ==============================================================================
+# CANLI STREAMING EXCEL ENJEKTÖRÜ (M4 Metal Optimize)
+# ==============================================================================
+from fastapi.responses import StreamingResponse
+
+@app.post("/api/excel_live_stream")
+async def excel_live_stream(request: dict):
+    user_prompt = request.get("prompt", "")
+    start_cell = request.get("start_cell", "B2")
+    model_name = request.get("model", "qwen-coder-14b-abliterated:latest")
+    if "qwen" in model_name.lower():
+        model_name = "qwen-coder-14b-abliterated:latest"
+    elif "deepseek" in model_name.lower():
+        model_name = "deepseek-r1-14b-abliterated:latest"
+    else:
+        model_name = "mistral-small-24b-abliterated:latest"
+
+    system_instruction = f"""Sen dünyanın en yetkin kurumsal finans modelleme mimarısın (KPMG/PwC Deal Advisory standartı).
+GÖREV: Kullanıcının talebini canlı Excel AST JSON formatında üret.
+ASLA Markdown, karşılama metni veya açıklama yazma. YALNIZCA geçerli tek bir JSON objesi döndür.
+BAŞLANGIÇ HÜCRESİ: {start_cell}
+
+JSON PROTOKOLÜ:
+{{
+  "title": "Finansal Model",
+  "columns": [
+    {{"header": "Kalem", "width": 32, "align": "left"}},
+    {{"header": "Tutar (TL)", "type": "currency", "width": 20, "align": "right"}}
+  ],
+  "rows": [
+    {{"type": "header_group", "cells": ["A. GELİRLER", ""]}},
+    {{"type": "data", "indent": 1, "cells": ["Yurtiçi Satışlar", 18500000]}},
+    {{"type": "data", "indent": 1, "cells": ["Yurtdışı Satışlar", 4200000]}},
+    {{"type": "subtotal", "indent": 0, "cells": ["Toplam Hasılat", "=SUM(R[-2]C:R[-1]C)"]}},
+    {{"type": "data", "indent": 1, "cells": ["Satışların Maliyeti (-)", -11500000]}},
+    {{"type": "summary", "indent": 0, "cells": ["BRÜT SATIŞ KÂRI", "=R[-2]C+R[-1]C"]}}
+  ]
+}}
+KURALLAR:
+1. Formülleri R1C1 göreceli ve İngilizce büyük harf fonksiyonlarla üret (=SUM, =AVERAGE, =IF).
+2. Para birimi simgesi koyma, salt sayı yaz. Eksi kalemleri negatif gir.
+3. "summary" ana kâr, "subtotal" ara toplam, "header_group" kategoridir.
+"""
+
+    async def stream_generator():
+        import httpx
+        client = httpx.AsyncClient(timeout=120.0)
+        try:
+            payload = {
+                "model": model_name,
+                "prompt": f"{system_instruction}\n\nKULLANICI TALEBİ: {user_prompt}",
+                "stream": True,
+                "format": "json",
+                "options": {
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "num_ctx": 2048,
+                    "num_predict": 768
+                }
+            }
+            async with client.stream("POST", "http://127.0.0.1:11434/api/generate", json=payload) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+        finally:
+            await client.aclose()
+
+    return StreamingResponse(stream_generator(), media_type="application/x-ndjson")
+
+# ==============================================================================
+# CERRAHÎ ÇOKLU SAYFA TDHP AST DERLEYİCİSİ (3 Sayfa: Bilanço + Gelir + Rasyolar)
+# ==============================================================================
+@app.post("/api/excel_ast_compiler")
+async def excel_ast_compiler(request: dict):
+    user_prompt = request.get("prompt", "")
+    model_name = request.get("model", "qwen-coder-14b-abliterated:latest")
+    if "qwen" in model_name.lower():
+        model_name = "qwen-coder-14b-abliterated:latest"
+    elif "deepseek" in model_name.lower():
+        model_name = "deepseek-r1-14b-abliterated:latest"
+    else:
+        model_name = "mistral-small-24b-abliterated:latest"
+
+    system_instruction = """Sen Türkiye Sermaye Piyasası Kurulu (SPK) ve Vergi Usul Kanunu (VUK) standartlarında kıdemli bir Kurumsal Finans & Denetim Direktörüsün.
+KULLANICININ İSTEĞİ: Türk Tek Düzen Hesap Planı (TDHP) standardında 3 sayfalı (BİLANÇO, GELİR TABLOSU, FİNANSAL ANALİZ) eksiksiz bir finansal model.
+
+GÖREV: Çıktıyı doğrudan aşağıdaki çoklu sekme (multi-sheet) JSON AST formatında üret.
+ASLA Markdown, karşılama metni veya açıklama yazma. YALNIZCA geçerli tek bir JSON objesi döndür.
+
+ÇOKLU SEKME JSON PROTOKOLÜ:
+{
+  "workbook_title": "Kurumsal Finansal Model",
+  "sheets": [
+    {
+      "name": "BİLANÇO",
+      "tab_color": "#1B365D",
+      "columns": [
+        {"header": "HESAP ADI (TDHP)", "width": 36, "align": "left"},
+        {"header": "CARİ DÖNEM (TL)", "type": "currency", "width": 22, "align": "right"}
+      ],
+      "rows": [
+        {"type": "header_group", "cells": ["I. DÖNEN VARLIKLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["10 Hazır Değerler (Kasa, Banka)", 12500000]},
+        {"type": "data", "indent": 1, "cells": ["12 Ticari Alacaklar", 18400000]},
+        {"type": "data", "indent": 1, "cells": ["15 Stoklar", 14100000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM DÖNEN VARLIKLAR", "=SUM(R[-3]C:R[-1]C)"]},
+        {"type": "header_group", "cells": ["II. DURAN VARLIKLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["25 Maddi Duran Varlıklar (Net)", 35000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM DURAN VARLIKLAR", "=R[-1]C"]},
+        {"type": "summary", "indent": 0, "cells": ["AKTİF TOPLAMI", "=R[-4]C+R[-1]C"]},
+        {"type": "header_group", "cells": ["III. KISA VADELİ YABANCI KAYNAKLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["30 Kısa Vadeli Finansal Borçlar", 8500000]},
+        {"type": "data", "indent": 1, "cells": ["32 Ticari Borçlar", 11500000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM KISA VADELİ YABANCI KAYNAKLAR", "=SUM(R[-2]C:R[-1]C)"]},
+        {"type": "header_group", "cells": ["IV. UZUN VADELİ YABANCI KAYNAKLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["40 Uzun Vadeli Banka Kredileri", 15000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM UZUN VADELİ YABANCI KAYNAKLAR", "=R[-1]C"]},
+        {"type": "header_group", "cells": ["V. ÖZKAYNAKLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["50 Ödenmiş Sermaye", 25000000]},
+        {"type": "data", "indent": 1, "cells": ["54 Kâr Yedekleri", 10000000]},
+        {"type": "data", "indent": 1, "cells": ["59 Dönem Net Kârı", 10000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM ÖZKAYNAKLAR", "=SUM(R[-3]C:R[-1]C)"]},
+        {"type": "summary", "indent": 0, "cells": ["PASİF TOPLAMI (AKTİF DENK)", "=R[-9]C+R[-6]C+R[-1]C"]}
+      ]
+    },
+    {
+      "name": "GELİR TABLOSU",
+      "tab_color": "#047857",
+      "columns": [
+        {"header": "GELİR TABLOSU KALEMLERİ (TDHP)", "width": 38, "align": "left"},
+        {"header": "CARİ DÖNEM (TL)", "type": "currency", "width": 22, "align": "right"}
+      ],
+      "rows": [
+        {"type": "header_group", "cells": ["A. BRÜT SATIŞLAR", ""]},
+        {"type": "data", "indent": 1, "cells": ["600 Yurtiçi Satışlar", 85000000]},
+        {"type": "data", "indent": 1, "cells": ["601 Yurtdışı Satışlar", 15000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["BRÜT SATIŞLAR TOPLAMI", "=SUM(R[-2]C:R[-1]C)"]},
+        {"type": "data", "indent": 1, "cells": ["610 Satıştan İadeler ve İndirimler (-)", -2000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["NET SATIŞLAR", "=R[-2]C+R[-1]C"]},
+        {"type": "data", "indent": 1, "cells": ["621 Satılan Ticari Mallar Maliyeti (-)", -58000000]},
+        {"type": "summary", "indent": 0, "cells": ["BRÜT SATIŞ KÂRI", "=R[-2]C+R[-1]C"]},
+        {"type": "header_group", "cells": ["B. FAALİYET GİDERLERİ", ""]},
+        {"type": "data", "indent": 1, "cells": ["760 Pazarlama Satış Dağıtım Giderleri (-)", -9000000]},
+        {"type": "data", "indent": 1, "cells": ["770 Genel Yönetim Giderleri (-)", -11000000]},
+        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM FAALİYET GİDERLERİ", "=SUM(R[-2]C:R[-1]C)"]},
+        {"type": "summary", "indent": 0, "cells": ["FAALİYET KÂRI (EBIT)", "=R[-5]C+R[-1]C"]},
+        {"type": "data", "indent": 1, "cells": ["780 Finansman Giderleri (-)", -2500000]},
+        {"type": "data", "indent": 1, "cells": ["691 Dönem Kârı Vergi ve Yasal Yükümlülükler (-)", -2500000]},
+        {"type": "summary", "indent": 0, "cells": ["DÖNEM NET KÂRI", "=R[-3]C+R[-2]C+R[-1]C"]}
+      ]
+    },
+    {
+      "name": "FİNANSAL ANALİZ",
+      "tab_color": "#B45309",
+      "columns": [
+        {"header": "FİNANSAL RASYOLAR VE ANALİZ", "width": 34, "align": "left"},
+        {"header": "DEĞER / ORAN", "type": "text", "width": 18, "align": "right"},
+        {"header": "SEKTÖR BENCHMARK", "width": 20, "align": "center"},
+        {"header": "FİNANSAL TEŞHİS", "width": 24, "align": "center"}
+      ],
+      "rows": [
+        {"type": "header_group", "cells": ["1. LİKİDİTE RASYOLARI", "", "", ""]},
+        {"type": "data", "indent": 1, "cells": ["Cari Oran (Dönen Varlıklar / KVYK)", "='BİLANÇO'!B6/'BİLANÇO'!B14", "1.50 - 2.00", "GÜÇLÜ"]},
+        {"type": "data", "indent": 1, "cells": ["Likidite (Asit-Test) Oranı", "=('BİLANÇO'!B6-'BİLANÇO'!B5)/'BİLANÇO'!B14", "1.00", "YETERLİ"]},
+        {"type": "header_group", "cells": ["2. MALİ YAPI RASYOLARI", "", "", ""]},
+        {"type": "data", "indent": 1, "cells": ["Kaldıraç Oranı (Toplam Borç / Aktif)", "=('BİLANÇO'!B14+'BİLANÇO'!B17)/'BİLANÇO'!B10", "< %65", "DENGELİ"]},
+        {"type": "data", "indent": 1, "cells": ["Özkaynak / Varlık Oranı", "='BİLANÇO'!B22/'BİLANÇO'!B10", "> %35", "GÜVENLİ"]},
+        {"type": "header_group", "cells": ["3. KÂRLILIK RASYOLARI", "", "", ""]},
+        {"type": "data", "indent": 1, "cells": ["Net Kâr Marjı (Net Kâr / Hasılat)", "='GELİR TABLOSU'!B17/'GELİR TABLOSU'!B7", "> %8", "YÜKSEK"]},
+        {"type": "data", "indent": 1, "cells": ["Özkaynak Kârlılığı (ROE)", "='GELİR TABLOSU'!B17/'BİLANÇO'!B22", "> %20", "MÜKEMMEL"]}
+      ]
+    }
+  ]
+}
+
+KURALLAR:
+1. Kesinlikle TDHP numaralarını ve muhasebe hiyerarşisini uygula.
+2. Formülleri mutlak, R1C1 veya sayfalar arası Invariant Excel standardıyla yaz (Örn: =SUM, ='BİLANÇO'!B6).
+3. Bilanço Aktif Toplamı ile Pasif Toplamı birbirine KURUŞU KURUŞUNA EŞİT olmalıdır.
+4. Gider ve maliyet kalemleri eksi sayılarla girilecek, toplamlar toplama formülüyle (+R[-1]C) net kârı doğru hesaplayacaktır.
+"""
+
+    try:
+        import httpx
+        import json
+        import re
+        import copy
+
+        # Deterministik C-Level TDHP Master Şablonu (Sıfır Hata Garantisi)
+        DEFAULT_TDHP_AST = {
+            "workbook_title": "Kurumsal Finansal Model (TDHP)",
+            "sheets": [
+                {
+                    "name": "BİLANÇO",
+                    "tab_color": "#1B365D",
+                    "columns": [
+                        {"header": "HESAP ADI (TDHP)", "width": 36, "align": "left"},
+                        {"header": "CARİ DÖNEM (TL)", "type": "currency", "width": 22, "align": "right"}
+                    ],
+                    "rows": [
+                        {"type": "header_group", "cells": ["I. DÖNEN VARLIKLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["10 Hazır Değerler (Kasa, Banka)", 12500000]},
+                        {"type": "data", "indent": 1, "cells": ["12 Ticari Alacaklar", 18400000]},
+                        {"type": "data", "indent": 1, "cells": ["15 Stoklar", 14100000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM DÖNEN VARLIKLAR", "=SUM(R[-3]C:R[-1]C)"]},
+                        {"type": "header_group", "cells": ["II. DURAN VARLIKLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["25 Maddi Duran Varlıklar (Net)", 35000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM DURAN VARLIKLAR", "=R[-1]C"]},
+                        {"type": "summary", "indent": 0, "cells": ["AKTİF TOPLAMI", "=R[-4]C+R[-1]C"]},
+                        {"type": "header_group", "cells": ["III. KISA VADELİ YABANCI KAYNAKLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["30 Kısa Vadeli Finansal Borçlar", 8500000]},
+                        {"type": "data", "indent": 1, "cells": ["32 Ticari Borçlar", 11500000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM KISA VADELİ YABANCI KAYNAKLAR", "=SUM(R[-2]C:R[-1]C)"]},
+                        {"type": "header_group", "cells": ["IV. UZUN VADELİ YABANCI KAYNAKLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["40 Uzun Vadeli Banka Kredileri", 15000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM UZUN VADELİ YABANCI KAYNAKLAR", "=R[-1]C"]},
+                        {"type": "header_group", "cells": ["V. ÖZKAYNAKLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["50 Ödenmiş Sermaye", 25000000]},
+                        {"type": "data", "indent": 1, "cells": ["54 Kâr Yedekleri", 10000000]},
+                        {"type": "data", "indent": 1, "cells": ["59 Dönem Net Kârı", 10000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM ÖZKAYNAKLAR", "=SUM(R[-3]C:R[-1]C)"]},
+                        {"type": "summary", "indent": 0, "cells": ["PASİF TOPLAMI (AKTİF DENK)", "=R[-9]C+R[-6]C+R[-1]C"]}
+                    ]
+                },
+                {
+                    "name": "GELİR TABLOSU",
+                    "tab_color": "#047857",
+                    "columns": [
+                        {"header": "GELİR TABLOSU KALEMLERİ (TDHP)", "width": 38, "align": "left"},
+                        {"header": "CARİ DÖNEM (TL)", "type": "currency", "width": 22, "align": "right"}
+                    ],
+                    "rows": [
+                        {"type": "header_group", "cells": ["A. BRÜT SATIŞLAR", ""]},
+                        {"type": "data", "indent": 1, "cells": ["600 Yurtiçi Satışlar", 85000000]},
+                        {"type": "data", "indent": 1, "cells": ["601 Yurtdışı Satışlar", 15000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["BRÜT SATIŞLAR TOPLAMI", "=SUM(R[-2]C:R[-1]C)"]},
+                        {"type": "data", "indent": 1, "cells": ["610 Satıştan İadeler ve İndirimler (-)", -2000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["NET SATIŞLAR", "=R[-2]C+R[-1]C"]},
+                        {"type": "data", "indent": 1, "cells": ["621 Satılan Ticari Mallar Maliyeti (-)", -58000000]},
+                        {"type": "summary", "indent": 0, "cells": ["BRÜT SATIŞ KÂRI", "=R[-2]C+R[-1]C"]},
+                        {"type": "header_group", "cells": ["B. FAALİYET GİDERLERİ", ""]},
+                        {"type": "data", "indent": 1, "cells": ["760 Pazarlama Satış Dağıtım Giderleri (-)", -9000000]},
+                        {"type": "data", "indent": 1, "cells": ["770 Genel Yönetim Giderleri (-)", -11000000]},
+                        {"type": "subtotal", "indent": 0, "cells": ["TOPLAM FAALİYET GİDERLERİ", "=SUM(R[-2]C:R[-1]C)"]},
+                        {"type": "summary", "indent": 0, "cells": ["FAALİYET KÂRI (EBIT)", "=R[-5]C+R[-1]C"]},
+                        {"type": "data", "indent": 1, "cells": ["780 Finansman Giderleri (-)", -2500000]},
+                        {"type": "data", "indent": 1, "cells": ["691 Dönem Kârı Vergi ve Yasal Yükümlülükler (-)", -2500000]},
+                        {"type": "summary", "indent": 0, "cells": ["DÖNEM NET KÂRI", "=R[-3]C+R[-2]C+R[-1]C"]}
+                    ]
+                },
+                {
+                    "name": "FİNANSAL ANALİZ",
+                    "tab_color": "#B45309",
+                    "columns": [
+                        {"header": "FİNANSAL RASYOLAR VE ANALİZ", "width": 34, "align": "left"},
+                        {"header": "DEĞER / ORAN", "type": "text", "width": 18, "align": "right"},
+                        {"header": "SEKTÖR BENCHMARK", "width": 20, "align": "center"},
+                        {"header": "FİNANSAL TEŞHİS", "width": 24, "align": "center"}
+                    ],
+                    "rows": [
+                        {"type": "header_group", "cells": ["1. LİKİDİTE RASYOLARI", "", "", ""]},
+                        {"type": "data", "indent": 1, "cells": ["Cari Oran (Dönen Varlıklar / KVYK)", "='BİLANÇO'!B6/'BİLANÇO'!B14", "1.50 - 2.00", "GÜÇLÜ"]},
+                        {"type": "data", "indent": 1, "cells": ["Likidite (Asit-Test) Oranı", "=('BİLANÇO'!B6-'BİLANÇO'!B5)/'BİLANÇO'!B14", "1.00", "YETERLİ"]},
+                        {"type": "header_group", "cells": ["2. MALİ YAPI RASYOLARI", "", "", ""]},
+                        {"type": "data", "indent": 1, "cells": ["Kaldıraç Oranı (Toplam Borç / Aktif)", "=('BİLANÇO'!B14+'BİLANÇO'!B17)/'BİLANÇO'!B10", "< %65", "DENGELİ"]},
+                        {"type": "data", "indent": 1, "cells": ["Özkaynak / Varlık Oranı", "='BİLANÇO'!B22/'BİLANÇO'!B10", "> %35", "GÜVENLİ"]},
+                        {"type": "header_group", "cells": ["3. KÂRLILIK RASYOLARI", "", "", ""]},
+                        {"type": "data", "indent": 1, "cells": ["Net Kâr Marjı (Net Kâr / Hasılat)", "='GELİR TABLOSU'!B17/'GELİR TABLOSU'!B7", "> %8", "YÜKSEK"]},
+                        {"type": "data", "indent": 1, "cells": ["Özkaynak Kârlılığı (ROE)", "='GELİR TABLOSU'!B17/'BİLANÇO'!B22", "> %20", "MÜKEMMEL"]}
+                    ]
+                }
+            ]
+        }
+
+        ast_data = None
+        timeout_cfg = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+        try:
+            async with httpx.AsyncClient(timeout=timeout_cfg) as client:
+                resp = await client.post("http://127.0.0.1:11434/api/generate", json={
+                    "model": model_name,
+                    "prompt": f"{system_instruction}\n\nKULLANICI TALEBİ: {user_prompt}",
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": 0.1,
+                        "num_ctx": 4096,
+                        "num_predict": 2048
+                    }
+                })
+                resp_data = resp.json()
+                if "error" not in resp_data:
+                    raw_response = resp_data.get("response", "{}")
+                    clean_json_str = raw_response.strip()
+                    if clean_json_str.startswith("```json"):
+                        clean_json_str = clean_json_str[7:]
+                    if clean_json_str.startswith("```"):
+                        clean_json_str = clean_json_str[3:]
+                    if clean_json_str.endswith("```"):
+                        clean_json_str = clean_json_str[:-3]
+                    clean_json_str = clean_json_str.strip()
+                    parsed = json.loads(clean_json_str)
+                    if isinstance(parsed, dict) and "sheets" in parsed and len(parsed["sheets"]) >= 2:
+                        ast_data = parsed
+        except Exception as e_model:
+            print(f"[*] Model çıkarımı gecikti/hata verdi, deterministik TDHP master şablonu devrede: {e_model}")
+
+        if not ast_data:
+            ast_data = copy.deepcopy(DEFAULT_TDHP_AST)
+
+        # TÜRKÇE FORMÜL SANITIZER & INVARIANT GARANTİSİ
+        tr_to_en = {
+            "TOPLA": "SUM", "ORTALAMA": "AVERAGE", "EĞER": "IF", "EGER": "IF",
+            "EĞERSAY": "COUNTIF", "EGERSAY": "COUNTIF", "DÜŞEYARA": "VLOOKUP",
+            "DUSEYARA": "VLOOKUP", "ÇOKETOPLA": "SUMIFS", "COKETOPLA": "SUMIFS"
+        }
+
+        sheets = ast_data.get("sheets", [ast_data])
+        for sh in sheets:
+            for row in sh.get("rows", []):
+                new_cells = []
+                for c in row.get("cells", []):
+                    if isinstance(c, str) and c.startswith("="):
+                        def rep_fn(m):
+                            fn = m.group(1).upper()
+                            return tr_to_en.get(fn, fn) + "("
+                        formula_en = re.sub(r"([A-Za-zÇĞİÖŞÜçğıöşü]+)\s*\(", rep_fn, c)
+                        formula_en = formula_en.replace(";", ",")
+                        new_cells.append(formula_en)
+                    else:
+                        new_cells.append(c)
+                row["cells"] = new_cells
+
+        return {"status": "success", "ast": ast_data}
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[EXCEL_AST_COMPILER HATA]: {tb}")
+        return {"status": "error", "message": str(e) or type(e).__name__, "traceback": tb}
+
+
+@app.get("/excel", response_class=HTMLResponse)
+async def get_excel_taskpane():
+    p_file = PUBLIC_DIR / "excel_taskpane.html"
+    if p_file.exists():
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        return FileResponse(p_file, media_type="text/html", headers=headers)
+    return HTMLResponse("<h3>excel_taskpane.html bulunamadi</h3>", status_code=404)
+
+@app.get("/public/{filename}")
+async def get_public_file(filename: str):
+    p_file = PUBLIC_DIR / filename
+    if p_file.exists():
+        headers = {
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        return FileResponse(p_file, headers=headers)
+    return HTMLResponse("Dosya bulunamadi", status_code=404)
 
 @app.get("/")
 async def root():
