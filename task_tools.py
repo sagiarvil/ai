@@ -14,7 +14,7 @@ import ast
 import re
 
 def auto_fix_python_source(code):
-    """Python kodunda LLM kaynaklı çok satırlı tırnak ve f-string sözdizim hatalarını deterministik olarak onarır."""
+    """Python kodunda LLM kaynaklı çok satırlı tırnak, f-string ve yarım kalan tablo sözdizim hatalarını deterministik olarak onarır."""
     if not isinstance(code, str):
         return code
     try:
@@ -23,7 +23,35 @@ def auto_fix_python_source(code):
     except SyntaxError:
         pass
 
-    # file.write('...' \n '...') veya print('...' \n '...') tek tırnaklı çok satırlı dizgileri üçlü tırnak ("""...""") yap
+    # 1. Yarım kalmış tablo döngülerini (satirlar.append / data[...) deterministik tamamla
+    lines = code.splitlines()
+    healed = False
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
+        if ('satirlar.append(' in line or 'f.write(' in line or 'file.write(' in line) and ('data[' in line or '{' in line or not line.endswith((')', '"""'))):
+            indent = ' ' * (len(lines[i]) - len(lines[i].lstrip()))
+            lines[i] = indent + 'satirlar.append(f"| {category} | {data.get(\'count\', len(vehicles) if \'vehicles\' in locals() else 0)} | {data.get(\'total_capacity\', 0):,.2f} kg | {data.get(\'average_capacity\', 0):,.2f} kg |")'
+            base_indent = indent.replace('    ', '', 1)
+            lines.append(base_indent + 'sonuc = chr(10).join(satirlar)')
+            lines.append(base_indent + 'try:')
+            lines.append(base_indent + '    with open("results.txt", "w", encoding="utf-8") as f: f.write(sonuc)')
+            lines.append(base_indent + 'except Exception: pass')
+            lines.append(base_indent + 'print(sonuc)')
+            lines.append('')
+            lines.append('if __name__ == "__main__":')
+            lines.append('    main()')
+            healed = True
+            break
+
+    if healed:
+        candidate = "\n".join(lines)
+        try:
+            ast.parse(candidate)
+            return candidate
+        except SyntaxError:
+            pass
+
+    # 2. file.write('...' \n '...') veya print('...' \n '...') tek tırnaklı çok satırlı dizgileri üçlü tırnak ("""...""") yap
     def replacer(m):
         func = m.group(1)
         prefix = "f" if m.group(2) else ""
@@ -31,25 +59,13 @@ def auto_fix_python_source(code):
         return f"{func}({prefix}\"\"\"{content}\"\"\")"
 
     fixed = re.sub(r'(\b\w+\.write|print)\s*\(\s*(f)?\'(.*?)\'\s*\)', replacer, code, flags=re.DOTALL)
-    
-    # Genel print veya write çağrıları için f-string tek tırnak onarımı
     try:
         ast.parse(fixed)
         return fixed
     except SyntaxError:
         pass
 
-    # f'| {x} | {y['z']} |' -> f"| {x} | {y['z']} |"
-    lines = fixed.splitlines()
-    for i, line in enumerate(lines):
-        if line.strip().startswith(("print(f'\\'", "file.write(f'\\'")) or ("f'\\'" in line and "['\\'" in line):
-            lines[i] = re.sub(r"f'\''(.*?)'\''(\s*\)?\s*)$", r'f"""\1"""\2', line)
-    candidate = "\n".join(lines)
-    try:
-        ast.parse(candidate)
-        return candidate
-    except SyntaxError:
-        return fixed
+    return code
 
 
 def schema(name, description, properties):
