@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp 
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xsi:type="TaskPaneApp">
+  <Id>e5b4c3a2-9f0e-4d8c-7b6a-5f4e3d2c1b0a</Id>
+  <Version>2.0.0.0</Version>
+  <ProviderName>BarisAI-Engine</ProviderName>
+  <DefaultLocale>tr-TR</DefaultLocale>
+  <DisplayName DefaultValue="Barış AI Kokpit" />
+  <Description DefaultValue="Kurumsal Excel Asistanı" />
+  <IconUrl DefaultValue="http://127.0.0.1:5050/b_logo.png" />
+  <SupportUrl DefaultValue="http://127.0.0.1:5050" />
+  <AppDomains>
+    <AppDomain>http://127.0.0.1:5050</AppDomain>
+    <AppDomain>http://127.0.0.1:11434</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="http://127.0.0.1:5050/public/excel_taskpane.html?v=1792672922" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
