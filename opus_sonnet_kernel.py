@@ -156,6 +156,8 @@ class PhysicalToolExecutor:
                     if chk.returncode != 0:
                         if backup is not None:
                             target.write_text(backup, encoding="utf-8")
+                        else:
+                            target.unlink(missing_ok=True)
                         return {"ok": False, "error": f"Python sözdizimi hatası (Otomatik Rollback yapıldı):\n{chk.stderr}"}
                 return {"ok": True, "path": rel, "bytes": len(content.encode("utf-8")), "verified_syntax": True}
 
@@ -231,6 +233,7 @@ EPİZODİK HAFIZA (Son Doğrulanmış Görevler):
 {recent_mem}
 
 MUTLAK İCRA YASALARI:
+0. ASLA kullanıcının sormadığı 'İndirimli Ürün Sayısı / Toplam İndirim Tutarı / Genel Ciro' gibi uydurma veya ezbere tablolar üretme! Yalnızca kullanıcının son mesajındaki gerçek soruya odaklan.
 1. KULLANICIYA "Şu adımları izleyin: 1. GitHub'a gidin, 2. Şunu çalıştırın" ŞEKLİNDE TAVSİYE VERMEK KESİNLİKLE YASAKTIR!
 2. Kullanıcının istediği işlemi (GitHub araması, model/repo kurulumu, dosya/kod analizi, bug düzeltme, openpyxl ile Excel dosyası üretimi, sunucu/port kontrolü) FİZİKSEL ARAÇLARI ÇAĞIRARAK BİZZAT SEN YAPACAKSIN.
 3. En az 1 fiziksel araç (shell_exec, read_file, write_file, patch_file, python_eval) çalıştırıp gerçek sistem çıktısını doğrulamadan "final_verified_answer" çağırmak YASAKTIR!

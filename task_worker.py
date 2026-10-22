@@ -32,8 +32,6 @@ def safe_tool_content(result, max_chars=2000):
 
 
 TR_KEY_MAP = {
-    "discounted_product_count": "İndirim Uygulanan Ürün Sayısı",
-    "total_discount_amount": "Yapılan Toplam İndirim Tutarı",
     "total_revenue": "Nihai Genel Toplam Ciro",
     "total_sum": "Toplam Değer",
     "average": "Ortalama Değer",
@@ -121,7 +119,7 @@ def format_human_reply(text):
     if "|" in clean and any(k in clean for k in ("|---", "|:--", "|--", "\n|", "||", "| |")):
         sym_table = format_symmetric_markdown_table(clean)
         if not sym_table.startswith("### ") and not sym_table.startswith("## "):
-            header_lead = "### Analiz ve Doğrulama Raporu\n\nTalep edilen sınıflandırma ve hesaplama işlemleri tamamlanmış olup sonuçlar aşağıda simetrik tablo halinde sunulmuştur:\n\n"
+            header_lead = "### Analiz ve Doğrulama Raporu\n\nGörev çıktısı:\n\n"
             if sym_table.startswith("Görev başarıyla tamamlandı."):
                 sym_table = sym_table.replace("Görev başarıyla tamamlandı.", header_lead).strip()
             else:
