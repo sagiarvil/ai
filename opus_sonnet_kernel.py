@@ -211,20 +211,69 @@ class OpusSonnetAutonomousEngine:
         s, e = cleaned.find("{"), cleaned.rfind("}")
         if s != -1 and e != -1 and e > s:
             cleaned = cleaned[s:e+1]
-        return json.loads(cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Toleranslı temizlik: Kırık tırnak ve newline onarımı
+            safe = re.sub(r'(?<!\\)"', r'\"', cleaned)
+            # Dıştaki açılış ve kapanış tırnaklarını koru
+            if safe.startswith(r'\"') and safe.endswith(r'\"'):
+                safe = "{" + safe[2:-2] + "}"
+            try:
+                return json.loads(cleaned.replace('\n', '\\n'))
+            except Exception:
+                # Son çare: regex ile tool ve thought çıkarma
+                tool_m = re.search(r'"tool"\s*:\s*"([^"]+)"', cleaned)
+                thought_m = re.search(r'"thought"\s*:\s*"([^"]+)"', cleaned)
+                cmd_m = re.search(r'"command"\s*:\s*"([^"]+)"', cleaned)
+                path_m = re.search(r'"path"\s*:\s*"([^"]+)"', cleaned)
+                summary_m = re.search(r'"summary"\s*:\s*"([^"]+)"', cleaned)
+                if tool_m:
+                    args = {}
+                    if cmd_m: args["command"] = cmd_m.group(1)
+                    if path_m: args["path"] = path_m.group(1)
+                    if summary_m: args["summary"] = summary_m.group(1)
+                    return {
+                        "thought": thought_m.group(1) if thought_m else "Otonom karar",
+                        "tool": tool_m.group(1),
+                        "args": args
+                    }
+                raise
 
     @classmethod
     async def run_autonomous_loop(
         cls,
         user_prompt: str,
-        model: str = "qwen-coder-14b-abliterated:latest",
-        max_steps: int = 6
+        model: str = "mistral-small-24b-abliterated:latest",
+        max_steps: int = 8
     ) -> Dict[str, Any]:
         repo_map = RepoMapIndexer.get_repo_map()
         recent_mem = EpisodicMemoryBridge.recall_recent()
 
+        # Faz 1: Derin Akıl Yürütme ve Stratejik Plan (DeepSeek-R1 CoT Injection)
+        reasoning_plan = ""
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as cot_client:
+                cot_resp = await cot_client.post("http://127.0.0.1:11434/api/generate", json={
+                    "model": "deepseek-r1-14b-abliterated:latest",
+                    "prompt": f"Kullanıcı görevi: '{user_prompt}'. Bu görevi fiziksel olarak çözmek için en mantıklı 1-2 adımı ve çalıştırılacak araçları (shell_exec, read_file vb.) kısa teknik maddelerle düşün.",
+                    "stream": False,
+                    "options": {"temperature": 0.6, "num_ctx": 4096, "num_predict": 400}
+                })
+                cot_raw = cot_resp.json().get("response", "")
+                think_match = re.search(r"<think>(.*?)</think>", cot_raw, flags=re.DOTALL)
+                if think_match:
+                    reasoning_plan = think_match.group(1).strip()[:600]
+                else:
+                    reasoning_plan = cot_raw.strip()[:600]
+        except Exception:
+            reasoning_plan = "Doğrudan fiziksel sistem araçlarıyla hedefe odaklan."
+
         system_prompt = f"""Sen Barış AI Otonom Mühendislik ve İcra Çekirdeğisin (Claude Opus / Claude Code Standardı).
 ÇALIŞMA DİZİNİ: /Users/macair1/projects/ai (Apple M4 Donanımı)
+
+MİMARİ AKIL YÜRÜTME & STRATEJİK PLAN:
+{reasoning_plan}
 
 CANLI REPO AST HARİTASI (Projedeki Mevcut Modül ve Sınıfların):
 {repo_map}
@@ -344,12 +393,17 @@ HER ADIMDA YALNIZCA AŞAĞIDAKİ JSON OBJESİNİ DÖNDÜR:
                     "observation": obs
                 })
 
+                err_hint = ""
+                if not obs.get("ok"):
+                    err_msg = str(obs.get("error") or obs.get("stderr") or "Bilinmeyen hata")
+                    err_hint = f"\n⚠️ DÜZELTME YÖNÜ: Araç başarısız oldu ({err_msg[:200]}). Parametreleri veya dosya yollarını kontrol edip düzeltilmiş aracı çağır."
+
                 history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
                 history.append({
                     "role": "user",
                     "content": (
                         f"FİZİKSEL ARAÇ ÇIKTISI (Adım {step} - {tool_name}):\n"
-                        f"{json.dumps(obs, ensure_ascii=False)}\n\n"
+                        f"{json.dumps(obs, ensure_ascii=False)}{err_hint}\n\n"
                         f"Eğer işlem başarılıysa ve tüm gereksinimler fiziksel olarak doğrulandıysa 'final_verified_answer' aracını çağır. "
                         f"Hata varsa (ok=false) veya ek işlem gerekiyorsa bir sonraki fiziksel aracı çağır."
                     )
@@ -398,14 +452,14 @@ def mount_opus_sonnet_gateway(app):
                     prompt = m.get("content", "")
                     break
 
-        model = request.get("model", "qwen-coder-14b-abliterated:latest")
-        if model not in ["qwen-coder-14b-abliterated:latest", "deepseek-r1:latest", "mistral-small:24b", "deepseek-r1-14b-abliterated:latest"]:
-            model = "qwen-coder-14b-abliterated:latest"
+        model = request.get("model", "mistral-small-24b-abliterated:latest")
+        if model not in ["mistral-small-24b-abliterated:latest", "deepseek-r1-14b-abliterated:latest", "qwen-coder-14b-abliterated:latest"]:
+            model = "mistral-small-24b-abliterated:latest"
 
         res = await OpusSonnetAutonomousEngine.run_autonomous_loop(
             user_prompt=prompt,
             model=model,
-            max_steps=int(request.get("max_steps", 6))
+            max_steps=int(request.get("max_steps", 8))
         )
         return {
             "status": res["status"],

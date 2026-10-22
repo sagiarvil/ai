@@ -329,11 +329,14 @@ GÖREV:
             except Exception as e:
                 return {"mode": "error", "message": f"Denetim hatası: {str(e)}"}
 
-        # 2. DETERMINİSTİK TDHP & FİNANSAL KARAR MOTORU MODU (Bilanço / Gelir Tablosu / Rasyolar / Kontrol Merkezi)
-        tdhp_triggers = ["bilanco", "gelir tablosu", "tdhp", "tek duzen", "finansal analiz", "rasyo", "mizan"]
-        if any(t in p_lower for t in tdhp_triggers):
-            blueprint = build_industrial_tdhp_blueprint(scale_factor=1.0, company_title="KURUMSAL FİNANS")
-            return {"mode": "build", "workbook": blueprint}
+        # 2. DETERMINİSTİK ÇOK BOYUTLU FİNANSAL SENTEZ MOTORU
+        from dynamic_financial_synthesizer import DynamicFinancialSynthesizer
+        intent = DynamicFinancialSynthesizer.detect_intent(prompt)
+        if intent != "FREE_FORM":
+            raw_wb = DynamicFinancialSynthesizer.synthesize_workbook(prompt)
+            compiler = SymbolicWorkbookCompiler()
+            compiled_sheets = compiler.compile_sheets(raw_wb.get("sheets", []))
+            return {"mode": "build", "intent": intent, "workbook": {"sheets": compiled_sheets}}
 
         # 3. ÖZEL SEKTÖREL / SERBEST MODEL DERLEYİCİSİ (Sembolik AST ile Sıfır Koordinat Kayması)
         custom_sys = f"""Sen Claude-Code seviyesinde Sembolik Excel AST Derleyicisisin.
