@@ -1868,5 +1868,10 @@ async def voice_speak(req: VoiceSpeakRequest):
             pass
     return {"status": "SPEAKING", "text": clean_text}
 
+# --- BARIŞ AI V4 SYMBOLIC COMPILER HOOK ---
+from excel_agent_v4 import register_excel_agent_v4_routes
+register_excel_agent_v4_routes(app)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=5050)
+

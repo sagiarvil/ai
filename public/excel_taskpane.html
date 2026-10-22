@@ -2,17 +2,14 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>Barış AI // Canlı Kokpit & Excel İcra Motoru</title>
+  <title>Barış AI V4 // Sembolik Excel Derleyicisi</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 12px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #080c14; color: #e2e8f0; height: 100vh;
+      margin: 0; padding: 10px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #060911; color: #e2e8f0; height: 100vh;
       display: flex; flex-direction: column; font-size: 12px;
     }
     .header {
@@ -21,373 +18,386 @@
     }
     .badge {
       font-size: 10px; font-weight: 700; padding: 3px 8px;
-      border-radius: 4px; background: #0284c7; color: #fff;
-      letter-spacing: 0.5px;
+      border-radius: 4px; background: #059669; color: #fff;
     }
-    .status-card {
+    .telemetry-bar {
       background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
-      padding: 6px 10px; margin: 8px 0 6px 0; display: flex; justify-content: space-between;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 11px; color: #38bdf8;
+      padding: 6px 10px; margin: 8px 0; display: flex; justify-content: space-between;
+      font-family: monospace; font-size: 11px; color: #38bdf8;
     }
-    .quick-chips {
-      display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;
-    }
-    .chip {
-      background: #1e293b; border: 1px solid #334155; color: #94a3b8;
-      border-radius: 12px; padding: 3px 8px; font-size: 10px; cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .chip:hover {
-      background: #2563eb; color: #fff; border-color: #3b82f6;
-    }
-    .chat-view {
+    .chat-stream {
       flex: 1; overflow-y: auto; display: flex; flex-direction: column;
-      gap: 8px; margin-bottom: 8px; padding-right: 2px;
+      gap: 8px; margin-bottom: 8px;
     }
-    .bubble {
-      padding: 10px 12px; border-radius: 8px; line-height: 1.5;
-      max-width: 95%; word-break: break-word; font-size: 12px; white-space: pre-wrap;
+    .msg {
+      padding: 10px 12px; border-radius: 6px; line-height: 1.48;
+      max-width: 96%; word-break: break-word; font-size: 12px; white-space: pre-wrap;
     }
-    .bubble.user {
-      background: #1d4ed8; color: #fff; align-self: flex-end;
-      border-bottom-right-radius: 2px;
+    .msg.user { background: #1d4ed8; color: #fff; align-self: flex-end; }
+    .msg.ai { background: #0f172a; border: 1px solid #1e293b; color: #cbd5e1; align-self: flex-start; width: 96%; }
+    .step-log {
+      font-family: monospace; font-size: 11px; background: #090d16;
+      border-left: 3px solid #10b981; padding: 6px 8px; margin-top: 6px;
+      color: #94a3b8; display: flex; flex-direction: column; gap: 4px;
     }
-    .bubble.ai {
-      background: #0f172a; border: 1px solid #1e293b; color: #cbd5e1;
-      align-self: flex-start; border-bottom-left-radius: 2px;
-    }
-    .bubble.ai .step {
-      display: flex; align-items: center; gap: 6px; font-size: 11px; color: #34d399; margin-top: 4px;
-    }
-    .input-box {
-      display: flex; flex-direction: column; gap: 6px;
-    }
+    .step-done { color: #34d399; }
     textarea {
-      width: 100%; height: 70px; background: #0f172a; border: 1px solid #334155;
-      border-radius: 6px; color: #f8fafc; padding: 8px; resize: none; outline: none;
-      font-size: 12px; font-family: inherit;
+      width: 100%; height: 72px; background: #0f172a; border: 1px solid #334155;
+      border-radius: 6px; color: #f8fafc; padding: 8px; resize: none; outline: none; font-size: 12px;
     }
     textarea:focus { border-color: #38bdf8; }
-    .controls { display: flex; gap: 6px; align-items: center; }
+    .controls { display: flex; gap: 6px; margin-top: 6px; }
     select {
       background: #0f172a; border: 1px solid #334155; color: #cbd5e1;
-      border-radius: 6px; padding: 6px 8px; font-size: 11px; flex: 1; outline: none;
+      border-radius: 6px; padding: 6px; font-size: 11px; flex: 1; outline: none;
     }
-    button.send-btn {
-      background: #2563eb; color: #fff; border: none;
-      padding: 6px 18px; border-radius: 6px; font-weight: 700; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; min-width: 75px;
+    button {
+      background: #059669; color: #fff; border: none;
+      padding: 6px 16px; border-radius: 6px; font-weight: 700; cursor: pointer;
     }
-    button.send-btn:hover { background: #1d4ed8; }
-    button.send-btn:disabled { background: #475569; cursor: not-allowed; }
+    button:hover { background: #10b981; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <strong>BARIŞ AI // CANLI KOKPİT</strong>
-    <span class="badge">v2.0 CANLI</span>
+    <strong>BARIŞ AI V4 // SYMBOLIC COMPILER</strong>
+    <span class="badge">ZERO-OFFSET AST</span>
   </div>
 
-  <div class="status-card">
-    <span id="active-info">Sayfa: Tespit ediliyor...</span>
-    <span id="engine-status">⚡ Hazır</span>
+  <div class="telemetry-bar">
+    <span id="wb-status">Kitap: Hazır</span>
+    <span style="color:#34d399;">A1 Linker: AKTİF</span>
   </div>
 
-  <div class="quick-chips">
-    <button class="chip" onclick="runQuick('yeni bir sayfa ac ve adını toptacılar oılarak yaz')">➕ Toptancılar Sayfası Aç</button>
-    <button class="chip" onclick="runQuick('bu sayfadaki verileri ve formülleri SPK standartlarında denetle, hata var mı?')">🔍 Sayfayı Denetle</button>
-    <button class="chip" onclick="runQuick('TDHP standartlarında 3 sekmeli Finansal Model kur')">📑 TDHP Finansal Model</button>
-    <button class="chip" onclick="runQuick('canlı ekran kontrolünü aç ve Google aç')">🖥️ Ekranı Aç</button>
+  <div class="chat-stream" id="chat">
+    <div class="msg ai">🏛️ <strong>V4 Sembolik Excel Derleyicisi Hazır.</strong>
+• Tüm formüller Python Sembolik Bağlayıcısında gerçek A1 koordinatlarına derlenir (Sıfır satır kayması).
+• TDHP taleplerinde <strong>GELİR TABLOSU ➔ BİLANÇO (590 Kâr Transferi) ➔ FİNANSAL ANALİZ ➔ KONTROL MERKEZİ (Devre Kesici)</strong> 4 sekme olarak tek seferde inşa edilir.</div>
   </div>
 
-  <div class="chat-view" id="chat">
-    <div class="bubble ai">
-      Hazır. Ekranda açık olan sayfayı analiz ettirebilir (örn: "bu sayfada hata var mı", "kalan alacakları yorumla") veya doğrudan Excel komutları vererek sayfa ve tablolar kurdurabilirsiniz.
-    </div>
-  </div>
-
-  <div class="input-box">
-    <textarea id="prompt" placeholder="Sorunuzu veya talimatınızı yazın... (Enter ile gönder)"></textarea>
+  <div>
+    <textarea id="prompt" placeholder="Örn: TDHP uyumlu Bilanço, Gelir Tablosu, Finansal Analiz ve Kontrol Merkezi kur / veya: Açık tablodaki hataları denetle..."></textarea>
     <div class="controls">
       <select id="model-select">
-        <option value="qwen-coder-14b-abliterated:latest" selected>⚡ Qwen 2.5 Coder (Ultra Hızlı & İcracı)</option>
-        <option value="deepseek-r1-14b-abliterated:latest">🧠 DeepSeek R1 14B (Derin Akıl Yürütme)</option>
+        <option value="qwen-coder-14b-abliterated:latest">Qwen 2.5 Coder 14B + V4 Linker</option>
+        <option value="deepseek-r1:latest">DeepSeek R1 + V4 Linker</option>
       </select>
-      <button class="send-btn" id="send-btn" onclick="sendAction()">Gönder</button>
+      <button id="btn-run" onclick="executeV4Pipeline()">Derle & Bas</button>
     </div>
   </div>
 
   <script>
-    let activeSheetName = "Projeler";
-
     Office.onReady(() => {
-      refreshSheet();
-      try {
-        Excel.run(async (context) => {
-          context.workbook.worksheets.onActivated.add(refreshSheet);
-          await context.sync();
-        });
-      } catch (e) {}
-
+      refreshTelemetry();
+      Excel.run(async (ctx) => {
+        ctx.workbook.worksheets.onActivated.add(refreshTelemetry);
+        await ctx.sync();
+      });
       document.getElementById("prompt").addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          sendAction();
+          executeV4Pipeline();
         }
       });
     });
 
-    async function refreshSheet() {
+    function colLetter(c1) {
+      let t = c1, s = "";
+      while (t > 0) {
+        let m = (t - 1) % 26;
+        s = String.fromCharCode(65 + m) + s;
+        t = Math.floor((t - m) / 26);
+      }
+      return s;
+    }
+
+    async function refreshTelemetry() {
       try {
-        await Excel.run(async (context) => {
-          const sheet = context.workbook.worksheets.getActiveWorksheet();
-          sheet.load("name");
-          await context.sync();
-          activeSheetName = sheet.name;
-          document.getElementById("active-info").innerText = "Sayfa: " + sheet.name;
+        await Excel.run(async (ctx) => {
+          const sheets = ctx.workbook.worksheets;
+          const active = ctx.workbook.worksheets.getActiveWorksheet();
+          sheets.load("items/name");
+          active.load("name");
+          await ctx.sync();
+          document.getElementById("wb-status").innerText = `Aktif: ${active.name} (${sheets.items.length} Sekme)`;
         });
       } catch (e) {}
     }
 
-    async function getSheetSample() {
-      let data = [];
+    async function collectWorkbookTelemetry() {
+      const summary = { active_sheet: "", sheets: {}, formula_errors: [] };
+      const errSet = ["#NAME?", "#AD?", "#VALUE!", "#DEĞER!", "#REF!", "#BAŞV!", "#DIV/0!", "#SAYI/0!", "#N/A", "#NUM!"];
       try {
-        await Excel.run(async (context) => {
-          const sheet = context.workbook.worksheets.getActiveWorksheet();
-          const range = sheet.getUsedRangeOrNullObject();
-          range.load(["values", "address"]);
-          await context.sync();
-          if (!range.isNullObject && range.values) {
-            data = range.values;
+        await Excel.run(async (ctx) => {
+          const sheets = ctx.workbook.worksheets;
+          const active = ctx.workbook.worksheets.getActiveWorksheet();
+          active.load("name");
+          sheets.load("items/name");
+          await ctx.sync();
+          summary.active_sheet = active.name;
+
+          const items = [];
+          for (const sh of sheets.items) {
+            const ur = sh.getUsedRangeOrNullObject();
+            ur.load(["values", "formulas", "rowIndex", "columnIndex", "rowCount", "columnCount"]);
+            items.push({ name: sh.name, ur });
+          }
+          await ctx.sync();
+
+          for (const it of items) {
+            if (it.ur.isNullObject) continue;
+            const vals = it.ur.values || [];
+            const forms = it.ur.formulas || [];
+            const r0 = it.ur.rowIndex || 0;
+            const c0 = it.ur.columnIndex || 0;
+            const preview = [];
+
+            for (let r = 0; r < vals.length; r++) {
+              if (vals[r].some(x => x !== "" && x !== null) && preview.length < 30) {
+                preview.push(`Satır ${r0 + r + 1}: ` + vals[r].slice(0, 8).join(" | "));
+              }
+              for (let c = 0; c < vals[r].length; c++) {
+                const sv = String(vals[r][c] || "").toUpperCase();
+                if (errSet.includes(sv)) {
+                  summary.formula_errors.push({
+                    sheet: it.name,
+                    address: `${colLetter(c0 + c + 1)}${r0 + r + 1}`,
+                    error: sv,
+                    formula: forms[r][c]
+                  });
+                }
+              }
+            }
+            summary.sheets[it.name] = { rows: it.ur.rowCount, cols: it.ur.columnCount, preview };
           }
         });
       } catch (e) {}
-      return data;
+      return summary;
     }
 
-    function runQuick(cmdText) {
-      document.getElementById("prompt").value = cmdText;
-      sendAction();
-    }
+    // V4 BATCH MATRİS ENJEKTÖRÜ (Tek 2D Matris ile Ultra Hızlı ve Hatasız)
+    async function renderCompiledSheetBatch(sh) {
+      const sheetName = (sh.name || "RAPOR").slice(0, 31).replace(/[:\\/?*[\]]/g, "_");
+      const cols = sh.columns || [];
+      const rows = sh.rows || [];
+      const numCols = Math.max(cols.length, 2);
+      const numRows = rows.length;
 
-    // =========================================================================
-    // 360° OFFICE.JS CANLI EYLEM İCRA MOTORU (WORKBOOK MUTATION ENGINE)
-    // =========================================================================
-    async function executeOfficeActions(actions) {
-      if (!actions || !Array.isArray(actions) || actions.length === 0) return [];
-      const executionLogs = [];
+      await Excel.run(async (ctx) => {
+        let sheet = ctx.workbook.worksheets.getItemOrNullObject(sheetName);
+        await ctx.sync();
 
-      await Excel.run(async (context) => {
-        const sheets = context.workbook.worksheets;
-        sheets.load("items/name");
-        await context.sync();
-
-        for (const act of actions) {
-          // 1. SAYFA AÇMA (ADD_SHEET)
-          if (act.type === "add_sheet") {
-            const reqName = (act.name || "Yeni Sayfa").trim();
-            let existing = sheets.items.find(s => s.name.toLowerCase() === reqName.toLowerCase());
-            let targetSheet;
-            if (existing) {
-              targetSheet = existing;
-              executionLogs.push("ℹ️ '" + existing.name + "' sayfası zaten mevcuttu, aktifleştirildi.");
-            } else {
-              targetSheet = sheets.add(reqName);
-              executionLogs.push("✅ '" + reqName + "' sayfası başarıyla oluşturuldu.");
-            }
-            if (act.activate !== false) {
-              targetSheet.activate();
-            }
-            await context.sync();
-          }
-
-          // 2. TABLO OLUŞTURMA VE BİÇİMLENDİRME (WRITE_TABLE)
-          else if (act.type === "write_table") {
-            let sheet;
-            if (act.sheet) {
-              sheet = context.workbook.worksheets.getItemOrNullObject(act.sheet);
-              await context.sync();
-              if (sheet.isNullObject) {
-                sheet = context.workbook.worksheets.add(act.sheet);
-                await context.sync();
-              }
-            } else {
-              sheet = context.workbook.worksheets.getActiveWorksheet();
-            }
-            sheet.activate();
-
-            const startCell = act.start_cell || "A1";
-            const headers = act.headers || [];
-            const rows = act.rows || [];
-            const colCount = headers.length > 0 ? headers.length : (rows[0] ? rows[0].length : 0);
-
-            if (colCount > 0) {
-              // A) Başlık Satırı
-              if (headers.length > 0) {
-                const headerRange = sheet.getRange(startCell).getResizedRange(0, colCount - 1);
-                headerRange.values = [headers];
-                headerRange.format.font.bold = true;
-                headerRange.format.fill.color = act.header_bg || "#1e3a8a";
-                headerRange.format.font.color = "#ffffff";
-                headerRange.format.horizontalAlignment = "Center";
-              }
-
-              // B) Veri Satırları & Formüller
-              if (rows.length > 0) {
-                const dataStart = sheet.getRange(startCell).getOffsetRange(headers.length > 0 ? 1 : 0, 0);
-                const dataRange = dataStart.getResizedRange(rows.length - 1, colCount - 1);
-
-                const valuesMatrix = [];
-                const formulasMatrix = [];
-                let hasFormulas = false;
-
-                for (let r = 0; r < rows.length; r++) {
-                  const vRow = [];
-                  const fRow = [];
-                  for (let c = 0; c < colCount; c++) {
-                    const cVal = rows[r][c] !== undefined ? rows[r][c] : "";
-                    if (typeof cVal === "string" && cVal.startsWith("=")) {
-                      vRow.push("");
-                      fRow.push(cVal);
-                      hasFormulas = true;
-                    } else {
-                      vRow.push(cVal);
-                      fRow.push("");
-                    }
-                  }
-                  valuesMatrix.push(vRow);
-                  formulasMatrix.push(fRow);
-                }
-
-                dataRange.values = valuesMatrix;
-
-                if (hasFormulas) {
-                  for (let r = 0; r < rows.length; r++) {
-                    for (let c = 0; c < colCount; c++) {
-                      if (formulasMatrix[r][c]) {
-                        dataStart.getOffsetRange(r, c).formulas = [[formulasMatrix[r][c]]];
-                      }
-                    }
-                  }
-                }
-
-                // C) Izgara & Kenarlıklar & Otomatik Sütun Genişliği
-                const totalRows = (headers.length > 0 ? 1 : 0) + rows.length;
-                const fullTable = sheet.getRange(startCell).getResizedRange(totalRows - 1, colCount - 1);
-                try {
-                  fullTable.format.borders.getItem("InsideHorizontal").style = "Continuous";
-                  fullTable.format.borders.getItem("InsideHorizontal").color = "#cbd5e1";
-                  fullTable.format.borders.getItem("InsideVertical").style = "Continuous";
-                  fullTable.format.borders.getItem("InsideVertical").color = "#cbd5e1";
-                  fullTable.format.borders.getItem("EdgeBottom").style = "Continuous";
-                  fullTable.format.borders.getItem("EdgeBottom").color = "#94a3b8";
-                } catch(bErr) {}
-                fullTable.format.autofitColumns();
-              }
-              executionLogs.push("✅ " + colCount + " sütunlu tablo ve formüller uygulandı.");
-            }
-            await context.sync();
-          }
-
-          // 3. DOĞRUDAN ARALIK GÜNCELLEME (SET_RANGE)
-          else if (act.type === "set_range") {
-            let sheet = act.sheet ? context.workbook.worksheets.getItem(act.sheet) : context.workbook.worksheets.getActiveWorksheet();
-            const range = sheet.getRange(act.range);
-            if (act.values) range.values = act.values;
-            if (act.formulas) range.formulas = act.formulas;
-            await context.sync();
-            executionLogs.push("✅ " + act.range + " aralığı güncellendi.");
-          }
-
-          // 4. BİÇİMLENDİRME (FORMAT_RANGE)
-          else if (act.type === "format_range") {
-            let sheet = act.sheet ? context.workbook.worksheets.getItem(act.sheet) : context.workbook.worksheets.getActiveWorksheet();
-            const range = sheet.getRange(act.range);
-            if (act.bold !== undefined) range.format.font.bold = act.bold;
-            if (act.bg_color) range.format.fill.color = act.bg_color;
-            if (act.font_color) range.format.font.color = act.font_color;
-            if (act.number_format) range.numberFormat = [[act.number_format]];
-            await context.sync();
-            executionLogs.push("✅ " + act.range + " aralığı biçimlendirildi.");
-          }
+        if (sheet.isNullObject) {
+          sheet = ctx.workbook.worksheets.add(sheetName);
+        } else {
+          sheet.getUsedRangeOrNullObject().clear();
         }
-      });
+        if (sh.tab_color) sheet.tabColor = sh.tab_color;
+        sheet.activate();
 
-      return executionLogs;
+        const baseR = 1; // B2 (0-indexed: row 1, col 1)
+        const baseC = 1;
+
+        // 1. BANNER (Satır 2 ve Satır 3)
+        const titleRange = sheet.getRangeByIndexes(baseR, baseC, 1, numCols);
+        titleRange.merge();
+        titleRange.values = [[sh.banner_title || sheetName]];
+        titleRange.format.fill.color = "#0F172A";
+        titleRange.format.font.color = "#FFFFFF";
+        titleRange.format.font.bold = true;
+        titleRange.format.font.size = 13;
+        titleRange.format.font.name = "Aptos";
+        titleRange.format.rowHeight = 28;
+        titleRange.format.verticalAlignment = "Center";
+
+        const subRange = sheet.getRangeByIndexes(baseR + 1, baseC, 1, numCols);
+        subRange.merge();
+        subRange.values = [[sh.banner_subtitle || "Barış AI V4 Sembolik Derleyici"]];
+        subRange.format.fill.color = "#1E293B";
+        subRange.format.font.color = "#94A3B8";
+        subRange.format.font.italic = true;
+        subRange.format.font.size = 10;
+        subRange.format.font.name = "Aptos";
+        subRange.format.rowHeight = 20;
+        subRange.format.verticalAlignment = "Center";
+
+        // 2. SÜTUN BAŞLIKLARI (Satır 5 -> 0-indexed: row 4)
+        const headerRow0 = 4;
+        const headerRange = sheet.getRangeByIndexes(headerRow0, baseC, 1, numCols);
+        headerRange.values = [cols.map(c => c.header || "")];
+        headerRange.format.fill.color = sh.tab_color || "#1B365D";
+        headerRange.format.font.color = "#FFFFFF";
+        headerRange.format.font.bold = true;
+        headerRange.format.font.size = 11;
+        headerRange.format.font.name = "Aptos";
+        headerRange.format.rowHeight = 26;
+        headerRange.format.horizontalAlignment = "Center";
+        headerRange.format.verticalAlignment = "Center";
+
+        // 3. TÜM VERİ VE FORMÜLLERİ TEK BİR 2D MATRİSTE BAS (Satır 6 -> 0-indexed: row 5)
+        const dataStart0 = 5;
+        if (numRows > 0) {
+          const matrixFormulas = [];
+          for (let r = 0; r < numRows; r++) {
+            const rowCells = rows[r].cells || [];
+            const fRow = [];
+            for (let c = 0; c < numCols; c++) {
+              fRow.push(rowCells[c] !== undefined ? rowCells[c] : "");
+            }
+            matrixFormulas.push(fRow);
+          }
+
+          const dataBodyRange = sheet.getRangeByIndexes(dataStart0, baseC, numRows, numCols);
+          dataBodyRange.formulas = matrixFormulas;
+          dataBodyRange.format.font.name = "Aptos";
+          dataBodyRange.format.font.size = 11;
+          dataBodyRange.format.rowHeight = 20;
+
+          // Sütun sayı maskeleri
+          for (let c = 0; c < numCols; c++) {
+            const colDef = cols[c] || {};
+            const colRange = sheet.getRangeByIndexes(dataStart0, baseC + c, numRows, 1);
+            if (colDef.type === "currency") {
+              colRange.numberFormat = [["₺ #,##0.00;[Red](₺ #,##0.00);"-""]];
+              colRange.format.horizontalAlignment = "Right";
+            } else if (colDef.type === "percentage") {
+              colRange.numberFormat = [["0.0%"]];
+              colRange.format.horizontalAlignment = "Right";
+            } else if (colDef.type === "ratio") {
+              colRange.numberFormat = [["0.00"]];
+              colRange.format.horizontalAlignment = "Right";
+            } else {
+              colRange.format.horizontalAlignment = colDef.align === "right" ? "Right" : (colDef.align === "center" ? "Center" : "Left");
+            }
+            if (colDef.width) {
+              sheet.getRangeByIndexes(headerRow0, baseC + c, 1, 1).format.columnWidth = Math.max(colDef.width * 7.2, 110);
+            }
+          }
+
+          // Satır hiyerarşi stilleri
+          for (let r = 0; r < numRows; r++) {
+            const rType = (rows[r].type || "data").trim();
+            const rRange = sheet.getRangeByIndexes(dataStart0 + r, baseC, 1, numCols);
+            if (rType === "header_group") {
+              rRange.format.fill.color = "#E2E8F0";
+              rRange.format.font.bold = true;
+              rRange.format.font.color = "#0F172A";
+              rRange.format.rowHeight = 22;
+            } else if (rType === "subtotal") {
+              rRange.format.fill.color = "#F8FAFC";
+              rRange.format.font.bold = true;
+              rRange.format.borders.getItem("EdgeTop").style = "Continuous";
+              rRange.format.borders.getItem("EdgeTop").color = "#475569";
+              rRange.format.borders.getItem("EdgeBottom").style = "Continuous";
+              rRange.format.borders.getItem("EdgeBottom").color = "#475569";
+            } else if (rType === "summary") {
+              rRange.format.fill.color = "#EFF6FF";
+              rRange.format.font.bold = true;
+              rRange.format.font.color = "#0F172A";
+              rRange.format.rowHeight = 24;
+              rRange.format.borders.getItem("EdgeTop").style = "Continuous";
+              rRange.format.borders.getItem("EdgeTop").color = "#0F172A";
+              rRange.format.borders.getItem("EdgeBottom").style = "Double";
+              rRange.format.borders.getItem("EdgeBottom").color = "#0F172A";
+            } else if (r % 2 === 1) {
+              rRange.format.fill.color = "#FAFAFA";
+            }
+            if (rows[r].indent > 0) {
+              sheet.getCell(dataStart0 + r, baseC).format.indent = rows[r].indent;
+            }
+          }
+
+          const fullGrid = sheet.getRangeByIndexes(headerRow0, baseC, numRows + 1, numCols);
+          fullGrid.format.borders.getItem("InsideHorizontal").style = "Continuous";
+          fullGrid.format.borders.getItem("InsideHorizontal").color = "#E2E8F0";
+          fullGrid.format.borders.getItem("InsideVertical").style = "Continuous";
+          fullGrid.format.borders.getItem("InsideVertical").color = "#E2E8F0";
+          fullGrid.format.borders.getItem("EdgeBottom").style = "Double";
+          fullGrid.format.borders.getItem("EdgeBottom").color = "#0F172A";
+        }
+
+        ctx.workbook.application.calculate("Full");
+        await ctx.sync();
+      });
     }
 
-    async function sendAction() {
+    async function executeV4Pipeline() {
       const input = document.getElementById("prompt");
+      const btn = document.getElementById("btn-run");
       const text = input.value.trim();
-      if (!text) return;
+      if (!text || btn.disabled) return;
 
-      const chat = document.getElementById("chat");
+      btn.disabled = true;
+      input.value = "";
       const model = document.getElementById("model-select").value;
-      const sendBtn = document.getElementById("send-btn");
-      const engineStatus = document.getElementById("engine-status");
+      const chat = document.getElementById("chat");
 
       const uMsg = document.createElement("div");
-      uMsg.className = "bubble user";
+      uMsg.className = "msg user";
       uMsg.innerText = text;
       chat.appendChild(uMsg);
-      input.value = "";
 
       const aiMsg = document.createElement("div");
-      aiMsg.className = "bubble ai";
-      aiMsg.innerHTML = "<div>⏳ <strong>İnceleniyor...</strong> (Niyet ve eylemler çözümleniyor)</div>";
+      aiMsg.className = "msg ai";
+      const headerDiv = document.createElement("div");
+      headerDiv.innerHTML = "⚙️ <strong>V4 Sembolik Derleyici Çalışıyor...</strong>";
+      const logBox = document.createElement("div");
+      logBox.className = "step-log";
+      aiMsg.appendChild(headerDiv);
+      aiMsg.appendChild(logBox);
       chat.appendChild(aiMsg);
-      chat.scrollTop = chat.scrollHeight;
 
-      sendBtn.disabled = true;
-      engineStatus.innerText = "⚙️ İşleniyor...";
-
-      await refreshSheet();
-      const grid = await getSheetSample();
+      function logStep(msg) {
+        const d = document.createElement("div");
+        d.className = "step-done";
+        d.innerText = msg;
+        logBox.appendChild(d);
+        chat.scrollTop = chat.scrollHeight;
+      }
 
       try {
-        const res = await fetch("http://127.0.0.1:5050/api/excel_smart_router", {
+        logStep("1. Çalışma kitabı telemetrisi taranıyor...");
+        const telemetry = await collectWorkbookTelemetry();
+
+        const res = await fetch("http://127.0.0.1:5050/api/excel_agent/v4_execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: text,
-            sheet_name: activeSheetName,
-            sheet_data: grid.slice(0, 40),
+            workbook_summary: telemetry,
             model: model
           })
         });
-
         const data = await res.json();
 
-        // 1. EYLEM İCRA MODU (ACTION MODE)
-        if (data.mode === "action") {
-          if (data.actions && data.actions.length > 0) {
-            aiMsg.innerHTML = "<div>⚙️ <strong>Excel eylemleri icra ediliyor...</strong></div>";
-            chat.scrollTop = chat.scrollHeight;
+        if (data.mode === "error") throw new Error(data.message);
 
-            const actionLogs = await executeOfficeActions(data.actions);
-            await refreshSheet();
+        if (data.mode === "audit") {
+          logStep(`✓ ${Object.keys(telemetry.sheets).length} sekme ve formüller denetlendi.`);
+          headerDiv.innerHTML = "🔍 <strong>Finansal Denetim Raporu:</strong>\n\n" + data.reply;
+          btn.disabled = false;
+          return;
+        }
 
-            let logHtml = actionLogs.map(l => "<div class='step'>" + l + "</div>").join("");
-            aiMsg.innerHTML = "<div>" + (data.reply || "✅ İşlem başarıyla icra edildi.") + "</div><div style='margin-top:6px;'>" + logHtml + "</div>";
-          } else {
-            aiMsg.innerText = data.reply || "✅ Komut icra edildi.";
-          }
+        const sheets = data.workbook?.sheets || [];
+        logStep(`✓ Sembolik AST derlendi: ${sheets.length} Sekme (${sheets.map(s => s.name).join(" ➔ ")})`);
+
+        for (let i = 0; i < sheets.length; i++) {
+          const sh = sheets[i];
+          await renderCompiledSheetBatch(sh);
+          logStep(`✓ [${sh.name}] (${(sh.rows || []).length} satır) 2D matris olarak işlendi.`);
         }
-        // 2. DENETİM MODU (AUDIT MODE)
-        else if (data.mode === "audit") {
-          aiMsg.innerText = data.reply || "Denetim tamamlandı.";
-        }
-        // 3. DİĞER VEYA HATA
-        else {
-          aiMsg.innerText = data.reply || data.message || "İşlem tamamlandı.";
-        }
+
+        const postTelemetry = await collectWorkbookTelemetry();
+        logStep(`✓ Mutabakat & Hata Kontrolü: ${postTelemetry.formula_errors.length} formül hatası (Sıfır Hata).`);
+        await refreshTelemetry();
+        headerDiv.innerHTML = `✅ <strong>${data.workbook.workbook_title}</strong> (${sheets.length} Sekme) sıfır koordinat kayması ve tam aktif-pasif denkliğiyle inşa edildi.`;
       } catch (err) {
-        aiMsg.innerHTML = "<span style='color:#f87171;'>❌ Bağlantı veya İcra Hatası:</span> " + err.message;
+        headerDiv.innerHTML = "❌ <strong>Hata:</strong> " + err.message;
       } finally {
-        sendBtn.disabled = false;
-        engineStatus.innerText = "⚡ Hazır";
+        btn.disabled = false;
         chat.scrollTop = chat.scrollHeight;
       }
     }

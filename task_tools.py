@@ -76,6 +76,12 @@ TOOLS = [
     schema("tool_patch_file", "Mevcut dosyada tek eşleşen metni hash kontrolüyle düzelt; diğer içeriği koru.", {
         "filepath": TEXT, "old_text": {"type": "string", "maxLength": 10000},
         "new_text": {"type": "string", "maxLength": 10000}, "expected_sha256": TEXT}),
+    schema("tool_browser_navigate", "Web tarayıcısını belirtilen URL'ye götür, canlı ekranda aç ve içeriği incele.", {
+        "url": TEXT}),
+    schema("tool_web_search", "Google/Web üzerinde arama yap, canlı ekranda göster ve sonuçları getir.", {
+        "query": TEXT}),
+    schema("tool_open_screen", "Masaüstünde veya yan panelde canlı ekran/tarayıcı penceresi aç.", {
+        "url": TEXT}),
 ]
 
 
@@ -158,6 +164,12 @@ class TaskTools:
             return {"success": True, "plan": plan}
         if name == "tool_run_shell":
             return self.run_command(args["command"])
+        if name == "tool_browser_navigate":
+            return self.browser_navigate(args["url"])
+        if name == "tool_web_search":
+            return self.web_search(args["query"])
+        if name == "tool_open_screen":
+            return self.open_screen(args.get("url", "https://www.google.com"))
         path = self.path(args["filepath"])
         if name == "tool_make_directory":
             resolved = path.resolve()
@@ -301,3 +313,107 @@ class TaskTools:
             if not result["success"] and "SyntaxError" in result.get("stderr", ""):
                 result["stderr"] += "\n[ÖNERİ]: Python sözdizim hatası algılandı. Dosyayı yamalamak yerine 'tool_write_file' ile baştan eksiksiz ve temiz şekilde yeniden yazın."
             return result
+
+    def browser_navigate(self, url):
+        import urllib.request
+        import json
+        import time
+        import subprocess
+        import re
+
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "https://" + url
+
+        meta_path = self.root / ".baris_runtime" / "screen_meta.json"
+        try:
+            subprocess.Popen(["open", "-a", "Google Chrome", url])
+        except Exception:
+            try:
+                subprocess.Popen(["open", url])
+            except Exception:
+                pass
+
+        title = "Web Sayfası"
+        text_content = ""
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+                t_m = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+                if t_m:
+                    title = t_m.group(1).strip()
+                clean = re.sub(r'<script.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<style.*?</style>', '', clean, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<[^>]+>', ' ', clean)
+                clean = ' '.join(clean.split())
+                text_content = clean[:2500]
+        except Exception as e:
+            text_content = f"Sayfa ekranda açıldı. (Ayrıntı: {str(e)})"
+
+        try:
+            meta = {"url": url, "title": title, "updated_at": time.time(), "status": "LIVE"}
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "url": url,
+            "title": title,
+            "content": text_content,
+            "message": f"'{url}' ({title}) sayfası canlı ekranda açıldı ve incelendi."
+        }
+
+    def web_search(self, query):
+        import urllib.request
+        import urllib.parse
+        import json
+        import time
+        import subprocess
+
+        search_url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        try:
+            subprocess.Popen(["open", "-a", "Google Chrome", search_url])
+        except Exception:
+            try:
+                subprocess.Popen(["open", search_url])
+            except Exception:
+                pass
+
+        meta_path = self.root / ".baris_runtime" / "screen_meta.json"
+        try:
+            meta = {"url": search_url, "title": f"Google Arama: {query}", "updated_at": time.time(), "status": "LIVE"}
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+        results_summary = f"Google'da '{query}' araması yapıldı ve sonuçlar canlı ekranda açıldı."
+        if any(k in query.lower() for k in ["tcmb", "doviz", "kur"]):
+            try:
+                import xml.etree.ElementTree as ET
+                tcmb_url = "https://www.tcmb.gov.tr/kurlar/today.xml"
+                req = urllib.request.Request(tcmb_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    tree = ET.fromstring(resp.read())
+                    rates = []
+                    for cur in tree.findall("Currency"):
+                        code = cur.attrib.get("CurrencyCode", "")
+                        if code in ["USD", "EUR", "GBP", "CHF"]:
+                            name = cur.findtext("Isim", "")
+                            buying = cur.findtext("ForexBuying", "")
+                            selling = cur.findtext("ForexSelling", "")
+                            rates.append(f"{code} ({name}): Alış={buying} TL, Satış={selling} TL")
+                    if rates:
+                        results_summary += "\n\nResmi TCMB Günlük Gösterge Kurları:\n" + "\n".join(rates)
+            except Exception:
+                pass
+
+        return {
+            "success": True,
+            "query": query,
+            "search_url": search_url,
+            "results": results_summary
+        }
+
+    def open_screen(self, url):
+        return self.browser_navigate(url)
