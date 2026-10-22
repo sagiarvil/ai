@@ -586,11 +586,12 @@ def _run_owned_job(store, job_id):
                 for candidate in sorted(ws.glob("*.*")):
                     if candidate.suffix in {".txt", ".json", ".md", ".csv"} and candidate.name not in {"requirements.txt", "pyproject.toml"}:
                         try:
-                            c_text = candidate.read_text(encoding="utf-8").strip()
-                            if len(c_text) > 10:
-                                finish("VERIFIED", f"Görev başarıyla tamamlandı.\n\nSonuç ({candidate.name}):\n{format_human_reply(c_text)}")
-                                found_res = True
-                                return
+                            if candidate.stat().st_mtime >= (start - 5):
+                                c_text = candidate.read_text(encoding="utf-8").strip()
+                                if len(c_text) > 10:
+                                    finish("VERIFIED", f"Görev başarıyla tamamlandı.\n\nSonuç ({candidate.name}):\n{format_human_reply(c_text)}")
+                                    found_res = True
+                                    return
                         except Exception:
                             pass
                 if has_successful_run and has_successful_write:

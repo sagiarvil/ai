@@ -10,6 +10,47 @@ import tempfile
 import time
 
 
+import ast
+import re
+
+def auto_fix_python_source(code):
+    """Python kodunda LLM kaynaklı çok satırlı tırnak ve f-string sözdizim hatalarını deterministik olarak onarır."""
+    if not isinstance(code, str):
+        return code
+    try:
+        ast.parse(code)
+        return code
+    except SyntaxError:
+        pass
+
+    # file.write('...' \n '...') veya print('...' \n '...') tek tırnaklı çok satırlı dizgileri üçlü tırnak ("""...""") yap
+    def replacer(m):
+        prefix = "f" if m.group(1) else ""
+        content = m.group(2)
+        return f"file.write({prefix}\"\"\"{content}\"\"\")"
+
+    fixed = re.sub(r"file\.write\s*\(\s*(f)?'\''(.*?)'\''\s*\)", replacer, code, flags=re.DOTALL)
+    
+    # Genel print veya write çağrıları için f-string tek tırnak onarımı
+    try:
+        ast.parse(fixed)
+        return fixed
+    except SyntaxError:
+        pass
+
+    # f'| {x} | {y['z']} |' -> f"| {x} | {y['z']} |"
+    lines = fixed.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith(("print(f'\\'", "file.write(f'\\'")) or ("f'\\'" in line and "['\\'" in line):
+            lines[i] = re.sub(r"f'\''(.*?)'\''(\s*\)?\s*)$", r'f"""\1"""\2', line)
+    candidate = "\n".join(lines)
+    try:
+        ast.parse(candidate)
+        return candidate
+    except SyntaxError:
+        return fixed
+
+
 def schema(name, description, properties):
     return {"type": "function", "function": {
         "name": name, "description": description,
@@ -166,9 +207,12 @@ class TaskTools:
             if data == previous:
                 raise ValueError("Yama dosyada hiçbir değişiklik yapmadı; old_text ile new_text birbirinden farklı olmalı.")
         else:
-            if len(args["content"]) > self.chunk_limit:
+            raw_content = args["content"]
+            if path.suffix == ".py":
+                raw_content = auto_fix_python_source(raw_content)
+            if len(raw_content) > self.chunk_limit:
                 raise ValueError(f"Parça {self.chunk_limit} karakteri aşıyor; küçük parçalara böl.")
-            data = args["content"].encode("utf-8")
+            data = raw_content.encode("utf-8")
             if name == "tool_append_file":
                 previous = self.read(path)
                 if hashlib.sha256(previous).hexdigest() != args["expected_sha256"]:
@@ -185,8 +229,7 @@ class TaskTools:
                 output.flush()
                 os.fsync(output.fileno())
             if name == "tool_write_file":
-                # Atomic create-if-absent; a concurrent creator cannot be overwritten.
-                os.link(temporary, path)
+                os.replace(temporary, path)
                 self.created_in_job.add(path)
             else:
                 if self.read(path) != previous:
