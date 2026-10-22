@@ -30,6 +30,61 @@ def safe_tool_content(result, max_chars=2000):
     return f"{head}\n\n[... {omitted} karakter bağlam koruması için özetlendi ...]\n\n{tail}"
 
 
+TR_KEY_MAP = {
+    "discounted_product_count": "İndirim Uygulanan Ürün Sayısı",
+    "total_discount_amount": "Yapılan Toplam İndirim Tutarı",
+    "total_revenue": "Nihai Genel Toplam Ciro",
+    "total_sum": "Toplam Değer",
+    "average": "Ortalama Değer",
+    "prime_sum": "Asal Sayılar Toplamı",
+    "prime_median": "Asal Sayılar Medyanı",
+    "prime_variance": "Varyans Değeri",
+    "prime_stdev": "Standart Sapma",
+    "volume": "İşlem Hacimleri",
+    "success_rates": "Başarı ve Red Oranları",
+    "top_transactions": "En Yüksek 5 İşlem",
+    "en_sicak_gun": "En Sıcak Gün",
+    "en_soguk_gun": "En Soğuk Gün",
+    "ortalama_sicaklik": "Haftalık Ortalama Sıcaklık"
+}
+
+
+def format_human_reply(text):
+    """Ham JSON veya sözlük çıktılarını düzgün tümce ve başlıklı Türkçe rapora dönüştürür."""
+    if not text or not isinstance(text, str):
+        return text
+    clean = text.strip()
+    # Python sözlüğü veya JSON ayrıştırma denemesi
+    data = None
+    if clean.startswith("{") and clean.endswith("}"):
+        try:
+            data = json.loads(clean)
+        except Exception:
+            try:
+                import ast
+                data = ast.literal_eval(clean)
+            except Exception:
+                pass
+    if isinstance(data, dict):
+        lines = ["📊 Analiz ve Hesaplama Sonuçları:\n"]
+        for k, v in data.items():
+            label = TR_KEY_MAP.get(k, k.replace('_', ' ').capitalize())
+            if isinstance(v, float):
+                val_str = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " TL" if "amount" in k or "revenue" in k or "tutar" in k or "ciro" in k else f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            elif isinstance(v, int):
+                val_str = f"{v:,}".replace(",", ".") + " adet" if "count" in k or "sayisi" in k or "adet" in k else f"{v:,}".replace(",", ".")
+            elif isinstance(v, dict):
+                sub_lines = [f"   - {sub_k}: {sub_v}" for sub_k, sub_v in v.items()]
+                val_str = "\n" + "\n".join(sub_lines)
+            elif isinstance(v, list):
+                val_str = "\n" + "\n".join(f"   {i+1}) {elem}" for i, elem in enumerate(v))
+            else:
+                val_str = str(v)
+            lines.append(f"• **{label}:** {val_str}")
+        return "\n".join(lines)
+    return clean
+
+
 STREAM_IDLE_SECONDS = 90
 HEARTBEAT_SECONDS = 2
 
@@ -234,16 +289,17 @@ def _run_owned_job(store, job_id):
     checkpoint = job["checkpoint"] or {}
     messages = checkpoint.get("messages", [
         {"role": "system", "content": (
-            "Türkçe çalışan yerel uygulama ajanısın. Önce yalnızca kısa aşama planını çıkar. "
-            "Sonra her çağrıda tek işlemi eksiksiz tamamla. Görevin tüm adımlarını (veri hazırlama, veritabanı, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere (generate.py, import.py vb.) bölme. "
-            "Python kodunda fonksiyonları ve kütüphane çağrılarını (örneğin statistics.variance(list), statistics.stdev(list), hashlib.sha256()) parametreleriyle eksiksiz ve doğru üret. "
-            "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main() veya hesapla()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. Program mutlaka hesaplanan nihai sonuçları terminale print() ile basmalıdır. "
+            "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
+            "Gereksiz aşama planı turlarıyla vakit kaybetme; doğrudan tek hamlede eksiksiz Python betiğini oluştur (tool_write_file) ve ardından tool_run_shell ile çalıştır. "
+            "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
+            "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
+            "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
+            "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas (Örn: '📊 Hesaplama Sonuçları:\n• İndirim Uygulanan Ürün Sayısı: 428 adet\n• Toplam İndirim Tutarı: 21.418.095,90 TL\n• Genel Ciro: 312.415.404,10 TL'). "
             "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
-            "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını (SyntaxError) önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan; tek tırnak içine unescaped tek tırnak gömme. "
-            "Terminal çıktısını (stdout) boğmamak için devasa veri dizilerini veya binlerce elemanlı listeleri asla print ile ekrana basma; terminale yalnızca kısa özet istatistikleri ve sonuç JSON nesnesini bas. "
+            "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. "
             "Dosya 8000 karakterden küçükse parçalama yapma; tek bir tool_write_file ile baştan sona eksiksiz yaz. Yalnızca 8000 karakteri aşan dev dosyalarda parçalama ve tool_append_file kullan. Mevcut dosyayı write ile baştan yazma; "
             "düzeltme için hash kontrollü tek eşleşmeli patch kullan. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
-            "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları veya pipe (| cat) çalıştırma. "
+            "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları çalıştırma. "
             "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
             "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"])},
         {"role": "user", "content": payload["message"] + (
@@ -351,6 +407,17 @@ def _run_owned_job(store, job_id):
                                 pass
                 if found_content:
                     final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç ({found_name}):\n{found_content}"
+
+        if status == "VERIFIED" and final_reply:
+            # Ham JSON veya İngilizce sözlükleri Türkçe, maddeli, tümce düzenine çevir
+            if "\n\nSonuç:\n" in final_reply:
+                prefix, body = final_reply.split("\n\nSonuç:\n", 1)
+                final_reply = f"{prefix}\n\n{format_human_reply(body)}"
+            elif "\n\nSonuç (" in final_reply and "):\n" in final_reply:
+                prefix, body = final_reply.split("):\n", 1)
+                final_reply = f"{prefix}):\n\n{format_human_reply(body)}"
+            else:
+                final_reply = format_human_reply(final_reply)
 
         result = {"task_id": job_id, "status": status, "verified": status == "VERIFIED",
                   "execution_completed": status == "VERIFIED",
