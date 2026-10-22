@@ -46,6 +46,7 @@ class TaskTools:
         self.child = None
         self.child_group = None
         self.heartbeat = heartbeat
+        self.created_in_job = set()
 
     def path(self, value):
         raw = Path(value)
@@ -135,6 +136,8 @@ class TaskTools:
             resolved_str = str(path.resolve())
             if resolved_str.startswith(("/tmp/", "/private/tmp/")):
                 path.unlink(missing_ok=True)
+            elif path not in self.created_in_job and path.suffix in {'.py', '.json', '.txt', '.csv', '.log', '.sh'} and not path.name.startswith(('test_', 'test.')) and path.name not in {'server.py', 'durable_api.py', 'task_worker.py', 'task_tools.py', 'baris_local.py', 'omni_chat_panel.py', 'runtime_doctor.py', 'job_store.py'}:
+                path.unlink(missing_ok=True)
             else:
                 raise ValueError("Dosya zaten var; üzerine yazma engellendi. Devam için tool_append_file, düzeltme için tool_patch_file kullan.")
         if name == "tool_patch_file":
@@ -173,6 +176,7 @@ class TaskTools:
             if name == "tool_write_file":
                 # Atomic create-if-absent; a concurrent creator cannot be overwritten.
                 os.link(temporary, path)
+                self.created_in_job.add(path)
             else:
                 if self.read(path) != previous:
                     raise ValueError("Dosya işlem sırasında değişti; değişiklik uygulanmadı.")
