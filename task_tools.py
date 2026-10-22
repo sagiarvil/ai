@@ -25,11 +25,12 @@ def auto_fix_python_source(code):
 
     # file.write('...' \n '...') veya print('...' \n '...') tek tırnaklı çok satırlı dizgileri üçlü tırnak ("""...""") yap
     def replacer(m):
-        prefix = "f" if m.group(1) else ""
-        content = m.group(2)
-        return f"file.write({prefix}\"\"\"{content}\"\"\")"
+        func = m.group(1)
+        prefix = "f" if m.group(2) else ""
+        content = m.group(3)
+        return f"{func}({prefix}\"\"\"{content}\"\"\")"
 
-    fixed = re.sub(r"file\.write\s*\(\s*(f)?'\''(.*?)'\''\s*\)", replacer, code, flags=re.DOTALL)
+    fixed = re.sub(r'(\b\w+\.write|print)\s*\(\s*(f)?\'(.*?)\'\s*\)', replacer, code, flags=re.DOTALL)
     
     # Genel print veya write çağrıları için f-string tek tırnak onarımı
     try:
