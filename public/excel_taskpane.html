@@ -99,6 +99,7 @@
     <button class="chip" onclick="runQuick('yeni bir sayfa ac ve adını toptacılar oılarak yaz')">➕ Toptancılar Sayfası Aç</button>
     <button class="chip" onclick="runQuick('bu sayfadaki verileri ve formülleri SPK standartlarında denetle, hata var mı?')">🔍 Sayfayı Denetle</button>
     <button class="chip" onclick="runQuick('TDHP standartlarında 3 sekmeli Finansal Model kur')">📑 TDHP Finansal Model</button>
+    <button class="chip" onclick="runQuick('canlı ekran kontrolünü aç ve Google aç')">🖥️ Ekranı Aç</button>
   </div>
 
   <div class="chat-view" id="chat">
@@ -360,15 +361,19 @@
         const data = await res.json();
 
         // 1. EYLEM İCRA MODU (ACTION MODE)
-        if (data.mode === "action" && data.actions && data.actions.length > 0) {
-          aiMsg.innerHTML = "<div>⚙️ <strong>Excel eylemleri icra ediliyor...</strong></div>";
-          chat.scrollTop = chat.scrollHeight;
+        if (data.mode === "action") {
+          if (data.actions && data.actions.length > 0) {
+            aiMsg.innerHTML = "<div>⚙️ <strong>Excel eylemleri icra ediliyor...</strong></div>";
+            chat.scrollTop = chat.scrollHeight;
 
-          const actionLogs = await executeOfficeActions(data.actions);
-          await refreshSheet();
+            const actionLogs = await executeOfficeActions(data.actions);
+            await refreshSheet();
 
-          let logHtml = actionLogs.map(l => "<div class='step'>" + l + "</div>").join("");
-          aiMsg.innerHTML = "<div>" + (data.reply || "✅ İşlem başarıyla icra edildi.") + "</div><div style='margin-top:6px;'>" + logHtml + "</div>";
+            let logHtml = actionLogs.map(l => "<div class='step'>" + l + "</div>").join("");
+            aiMsg.innerHTML = "<div>" + (data.reply || "✅ İşlem başarıyla icra edildi.") + "</div><div style='margin-top:6px;'>" + logHtml + "</div>";
+          } else {
+            aiMsg.innerText = data.reply || "✅ Komut icra edildi.";
+          }
         }
         // 2. DENETİM MODU (AUDIT MODE)
         else if (data.mode === "audit") {

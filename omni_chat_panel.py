@@ -882,6 +882,45 @@ async def excel_smart_router_endpoint(req: Request):
                 "sheet_name": "BİLANÇO"
             }
 
+                # B0) CANLI EKRAN / BİLGİSAYAR EKRANI / TARAYICI AÇMA
+        is_screen_cmd = any(k in p_norm for k in [
+            "ekran ac", "ekrani ac", "ekran kontrol", "tarayici ac", "tarayiciyi ac",
+            "canli ekran", "pencere ac", "chrome ac", "google ac", "site ac",
+            "ekranda ac", "ekranda goster", "bilgisayar ekran", "ekrana ac", "ekran kontrolu"
+        ])
+        if is_screen_cmd:
+            target_url = "https://www.google.com"
+            url_match = re.search(r'https?://[^\s]+', user_prompt)
+            if url_match:
+                target_url = url_match.group(0)
+            elif any(k in p_norm for k in ["tcmb", "kur", "doviz"]):
+                target_url = "https://www.tcmb.gov.tr/kurlar/kurlar_tr.html"
+            elif any(k in p_norm for k in ["hava", "hava durumu"]):
+                target_url = "https://www.mgm.gov.tr"
+            elif any(w in p_norm for w in ["ara", "bul", "incele"]):
+                clean_query = user_prompt
+                for remove_w in ["canlı", "canli", "ekranda", "ekran", "aç", "ac", "tarayıcıda", "tarayicida", "ara", "bul", "ve", "ile"]:
+                    clean_query = re.sub(r'\b' + re.escape(remove_w) + r'\b', "", clean_query, flags=re.IGNORECASE)
+                clean_query = clean_query.strip()
+                if clean_query:
+                    import urllib.parse
+                    target_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_query)}"
+
+            try:
+                subprocess.Popen(["open", "-a", "Google Chrome", target_url])
+            except Exception:
+                try:
+                    subprocess.Popen(["open", target_url])
+                except Exception:
+                    pass
+
+            return {
+                "mode": "action",
+                "reply": f"🖥️ **Bilgisayar Ekranı Kontrolü Açıldı!**\n\nMasaüstünüzde canlı **Google Chrome** penceresi açıldı ve `{target_url}` adresi yüklendi.",
+                "actions": [],
+                "sheet_name": sheet_name
+            }
+
         # B) Sayfa / Sekme Açma veya İsimlendirme
         is_sheet_cmd = any(k in p_norm for k in ["sayfa ac", "sayfa ekle", "sayfa olustur", "sekme ac", "sekme ekle", "sekme olustur", "yeni sayfa", "yeni sekme"])
         target_sheet_name = None
