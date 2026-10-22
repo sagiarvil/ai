@@ -1872,6 +1872,10 @@ async def voice_speak(req: VoiceSpeakRequest):
 from excel_agent_v4 import register_excel_agent_v4_routes
 register_excel_agent_v4_routes(app)
 
+# --- BARIŞ AI OPUS/SONNET AUTONOMOUS KERNEL GATEWAY ---
+from opus_sonnet_kernel import mount_opus_sonnet_gateway
+mount_opus_sonnet_gateway(app)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=5050)
 
