@@ -162,3 +162,21 @@ class RealTorEngine:
                 return soup.get_text(separator=" ", strip=True)[:2500]
         except Exception as e:
             return f"[Tor Erişim Hatası]: {e}"
+
+    @classmethod
+    def crawl_onion(cls, url: str, timeout: int = 25) -> Dict[str, Any]:
+        """Tor SOCKS5 üzerinden .onion sitesini anonim kazır ve OSINT verilerini ayıklar."""
+        from darkweb_intelligence import TorCrawler
+        return TorCrawler.crawl_sync(url, timeout=timeout)
+
+    @classmethod
+    def search_darkweb(cls, query: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """Dark Web (Tor) arama motorlarında canlı arama yapar."""
+        from darkweb_intelligence import DarkWebIntelligence
+        return DarkWebIntelligence.search_sync(query, max_results=max_results)
+
+    @classmethod
+    def threat_intel_scan(cls, target: str, scan_type: str = "genel") -> Dict[str, Any]:
+        """Kullanıcı adı, e-posta, marka veya alan adı için Dark Web sızıntı taraması (OSINT) yapar."""
+        from darkweb_intelligence import DarkWebIntelligence
+        return DarkWebIntelligence.osint_threat_scan_sync(target, scan_type=scan_type)
