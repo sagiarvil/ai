@@ -1428,6 +1428,7 @@ KURALLAR:
 
 
 @app.get("/excel", response_class=HTMLResponse)
+@app.get("/excel_taskpane.html", response_class=HTMLResponse)
 async def get_excel_taskpane():
     p_file = PUBLIC_DIR / "excel_taskpane.html"
     if p_file.exists():
