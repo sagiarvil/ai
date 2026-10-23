@@ -381,6 +381,37 @@
           return;
         }
 
+        if (data.mode === "append") {
+          const shName = data.sheet || telemetry.active_sheet || "Personel";
+          const newRows = data.rows || [];
+          logStep(`✓ [${shName}] sayfasına ${newRows.length} yeni satır ekleniyor...`);
+
+          await Excel.run(async (ctx) => {
+            const sheet = ctx.workbook.worksheets.getItem(shName);
+            const ur = sheet.getUsedRange();
+            ur.load(["rowCount", "columnIndex", "rowIndex"]);
+            await ctx.sync();
+
+            const nextRow0 = ur.rowIndex + ur.rowCount;
+            const startCol0 = ur.columnIndex;
+            const numCols = newRows[0].length;
+
+            const targetRange = sheet.getRangeByIndexes(nextRow0, startCol0, newRows.length, numCols);
+            targetRange.values = newRows;
+            targetRange.format.borders.getItem("InsideHorizontal").style = "Continuous";
+            targetRange.format.borders.getItem("InsideHorizontal").color = "#E2E8F0";
+
+            ctx.workbook.application.calculate("Full");
+            await ctx.sync();
+          });
+
+          logStep(`✓ ${newRows.length} kayıt mevcut tabloya başarıyla işlendi ve kaydedildi.`);
+          await refreshTelemetry();
+          headerDiv.innerHTML = `✅ <strong>${data.reply || "Kayıtlar başarıyla eklendi."}</strong>`;
+          btn.disabled = false;
+          return;
+        }
+
         const sheets = data.workbook?.sheets || [];
         logStep(`✓ Sembolik AST derlendi: ${sheets.length} Sekme (${sheets.map(s => s.name).join(" ➔ ")})`);
 

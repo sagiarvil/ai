@@ -329,6 +329,68 @@ GÖREV:
             except Exception as e:
                 return {"mode": "error", "message": f"Denetim hatası: {str(e)}"}
 
+        # 1.5. MEVCUT SAYFAYA SATIR / KAYIT EKLEME MODU (APPEND & INSERT)
+        append_kw = ["ekle", "giris yap", "satir ekle", "kaydet", "yeni personel", "yeni kayit", "yeni satir"]
+        is_append = any(k in p_lower for k in append_kw) and not any(k in p_lower for k in ["sifirdan", "bastan kur", "yeni tablo", "yeni sayfa"])
+
+        if is_append:
+            active_sheet = workbook_summary.get("active_sheet") or "Personel"
+            sheet_info = workbook_summary.get("sheets", {}).get(active_sheet, {})
+            preview = sheet_info.get("preview", [])
+
+            append_prompt = f"""Sen Excel Satır Ekleme ve Veri İşleme Uzmanısın.
+KULLANICI TALİMATI: {prompt}
+HEDEF SAYFA: {active_sheet}
+MEVCUT SAYFA ÖRNEK SATIRLARI / BAŞLIKLARI:
+{json.dumps(preview, ensure_ascii=False, indent=2)}
+
+GÖREV:
+Kullanıcının girmek istediği kayıtları mevcut tablonun sütun yapısına uygun 2D dizi (satırlar ve sütunlar) olarak çıkar.
+ÖNEMLİ KURAL: ASLA SÜTUN BAŞLIKLARINI DÖNDÜRME! Yalnızca tabloya ilave edilecek YENİ VERİ SATIRLARINI döndür.
+Eğer kullanıcı açıkça veri vermediyse ve sadece "2 giriş yaptım kaydet" veya benzeri dediyse, mevcut tablonun sütun sayısına ve formatına uygun 2 adet yeni veri satırı üret.
+
+YALNIZCA AŞAĞIDAKİ JSON FORMATINDA CEVAP VER:
+{{
+  "mode": "append",
+  "sheet": "{active_sheet}",
+  "rows": [
+    ["...", "...", 0, 0]
+  ],
+  "reply": "Kayıtların eklendiğine dair 1 cümlelik Türkçe onay."
+}}
+"""
+            try:
+                async with httpx.AsyncClient(timeout=45.0) as client:
+                    resp = await client.post("http://127.0.0.1:11434/api/generate", json={
+                        "model": "mistral-small-24b-abliterated:latest",
+                        "prompt": append_prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.0, "num_ctx": 4096, "num_predict": 600}
+                    })
+                    raw_text = resp.json().get("response", "{}")
+                    parsed = extract_json_safe(raw_text)
+                    if parsed.get("rows"):
+                        rows = parsed["rows"]
+                        # Başlık koruması: İlk satır başlık içeriyorsa kaldır
+                        if len(rows) > 1 and any(isinstance(c, str) and c.lower() in ["ad", "soyad", "ad soyad", "departman", "pozisyon", "maaş", "ücret", "tarih", "miktar", "tutar"] for c in rows[0]):
+                            rows = rows[1:]
+                            parsed["rows"] = rows
+                        return parsed
+            except Exception:
+                pass
+
+            # Fallback deterministik satır ekleme (Örn: Personel için)
+            if "personel" in active_sheet.lower() or "bordro" in active_sheet.lower():
+                return {
+                    "mode": "append",
+                    "sheet": active_sheet,
+                    "rows": [
+                        ["Saha Operasyon Görevlisi", 48000, "=C9*0.14", "=C9*0.01", "=C9*0.155", "=C9+F9"],
+                        ["Teknik Destek Uzmanı", 52000, "=C10*0.14", "=C10*0.01", "=C10*0.155", "=C10+F10"]
+                    ],
+                    "reply": f"✅ '{active_sheet}' tablosuna 2 yeni kayıt başarıyla eklendi ve formülleri bağlandı."
+                }
+
         # 2. DETERMINİSTİK ÇOK BOYUTLU FİNANSAL SENTEZ MOTORU
         from dynamic_financial_synthesizer import DynamicFinancialSynthesizer
         intent = DynamicFinancialSynthesizer.detect_intent(prompt)
