@@ -63,7 +63,8 @@ class BarisAutonomousCore:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_ctx": 16384
+                "num_ctx": 16384,
+                "num_predict": 10000
             }
         }
         

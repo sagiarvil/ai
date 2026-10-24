@@ -191,8 +191,8 @@ class BarisLangGraphEngine:
             "stream": False,
             "options": {
                 "temperature": 0.15,
-                "num_ctx": 8192,
-                "num_predict": 2048
+                "num_ctx": 16384,
+                "num_predict": 10000
             }
         }
 
@@ -202,7 +202,7 @@ class BarisLangGraphEngine:
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=180) as resp:
+            with urllib.request.urlopen(req, timeout=300) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 output_text = data.get("message", {}).get("content", "").strip()
                 if output_text:
