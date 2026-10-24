@@ -1,0 +1,13 @@
+{"text": "bu repoyu incele https://github.com/ast-grep/ast-grep", "expected_intent": "repo_inspect", "expected_route": "tool", "expected_tools": ["tool_github_inspect"]}
+{"text": "bu repoyu ıncele https://github.com/ast-grep/ast-grep", "expected_intent": "repo_inspect", "expected_route": "tool", "expected_tools": ["tool_github_inspect"]}
+{"text": "https://github.com/ast-grep/ast-grep", "expected_intent": "repo_inspect", "expected_route": "tool", "expected_tools": ["tool_github_inspect"]}
+{"text": "bu repoyu ıncele..", "expected_intent": "repo_inspect", "expected_route": "reason", "expected_tools": []}
+{"text": "ben gırıyorum kontrol et ve bul..https://github.com/ast-grep/ast-grep", "expected_intent": "repo_inspect", "expected_route": "tool", "expected_tools": ["tool_github_inspect"]}
+{"text": "bu repo barış ai ıcın bıze nasıl katkı saglar", "expected_intent": "architectural_reasoning", "expected_route": "reason", "expected_tools": []}
+{"text": "bu repo baris ai için bize nasıl katkı sağlar", "expected_intent": "architectural_reasoning", "expected_route": "reason", "expected_tools": []}
+{"text": "sence https://github.com/ast-grep/ast-grep 24gb ram üzerinde mantıklı mı", "expected_intent": "architectural_reasoning", "expected_route": "reason", "expected_tools": []}
+{"text": "repoyu gitleaks ile tara", "expected_intent": "security_scan", "expected_route": "tool", "expected_tools": ["tool_security_scan"]}
+{"text": "repoyu tara", "expected_intent": "security_scan", "expected_route": "tool", "expected_tools": ["tool_security_scan"]}
+{"text": "bana ast tabanlı arama yapan açık kaynak repo bul", "expected_intent": "repo_search", "expected_route": "tool", "expected_tools": ["tool_github_search"]}
+{"text": "bu fonksiyonu düzelt ve testleri çalıştır", "expected_intent": "code_change", "expected_route": "tool", "expected_tools": ["tool_apply_patch", "tool_run_tests"]}
+{"text": "merhaba nasılsın", "expected_intent": "general_chat", "expected_route": "reason", "expected_tools": []}
