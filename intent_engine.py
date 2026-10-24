@@ -119,7 +119,6 @@ INTENT_REGISTRY: dict[Intent, IntentSpec] = {
     ),
 }
 
-# Açık kayıt hatası: yeni bir Intent eklenip registry unutulursa IMPORT anında patlar.
 assert set(INTENT_REGISTRY) == set(Intent), "Registry/Enum uyuşmazlığı: SSOT ihlali"
 
 
@@ -149,14 +148,14 @@ class RouterSettings(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────
-# 4. ENJEKSİYON NOKTASI (testler model indirmeden çalışır)
+# 4. ENJEKSİYON NOKTASI
 # ─────────────────────────────────────────────────────────────
 class Embedder(Protocol):
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
 # ─────────────────────────────────────────────────────────────
-# 5. URL KORUMA KALKANI — METNE DOKUNMAZ, SADECE OKUR
+# 5. URL KORUMA KALKANI
 # ─────────────────────────────────────────────────────────────
 _URL_RE = re.compile(
     r"https?://(?:www\.)?(?:github|gitlab)\.com/"
@@ -165,13 +164,12 @@ _URL_RE = re.compile(
 )
 _EXECUTE = ("incele", "kontrol et", "analiz et", "klonla", "tara",
             "inspect", "analyze", "review", "clone", "scan", "patch")
-_CONSULT = ("nasıl katkı", "sence", "ne önerir", "avantaj", "dezavantaj",
+_CONSULT = ("nasıl katkı", "ne katkı", "sence", "ne önerir", "avantaj", "dezavantaj",
             "mantıklı mı", "gerekiyor mu", "fikir", "what do you think",
             "how would this", "should i")
 
 
 def extract_urls(text: str) -> tuple[str, ...]:
-    """Ham metni DEĞİŞTİRMEZ. Sadece URL'yi olduğu gibi geri verir."""
     return tuple(_URL_RE.findall(text))
 
 
@@ -180,7 +178,7 @@ def _lower(text: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────
-# 6. SAF MATEMATİK (I/O yok, yan etki yok)
+# 6. SAF MATEMATİK
 # ─────────────────────────────────────────────────────────────
 def _normalize(vec: Sequence[float]) -> list[float]:
     norm = math.sqrt(sum(x * x for x in vec))
@@ -232,7 +230,7 @@ class IntentEngine:
     def _decide(self, text: str, intent: Intent, score: float,
                 margin: float, route: Route, reason: str,
                 urls: tuple[str, ...] = ()) -> IntentDecision:
-        spec = INTENT_REGISTRY[intent]   # <-- policy'nin TEK kaynağı
+        spec = INTENT_REGISTRY[intent]
         return IntentDecision(
             intent=intent,
             route=route,
@@ -253,18 +251,18 @@ class IntentEngine:
         urls = extract_urls(text)
         low = _lower(text)
 
+        # --- GÜVENLİK VE AKIL YÜRÜTME ÖNCELİĞİ: URL olsa bile amaç DANIŞMA ise ASLA araç çalıştırılamaz!
+        if urls and any(v in low for v in _CONSULT):
+            return self._decide(text, Intent.ARCHITECTURAL_REASONING,
+                                1.0, 1.0, Route.REASON,
+                                "guard_url_consultation", urls)
+
         # --- Deterministik üst koruma: URL + açık eylem -> SEMANTİK ARAMAYA DÜŞMEZ
         if urls and any(v in low for v in _EXECUTE):
             intent = (Intent.SECURITY_SCAN if "tara" in low or "scan" in low
                       else Intent.REPO_INSPECT)
             return self._decide(text, intent, 1.0, 1.0, Route.TOOL,
                                 "guard_url_explicit_action", urls)
-
-        # --- URL var ama amaç DANIŞMA -> araç çalıştırılmaz
-        if urls and any(v in low for v in _CONSULT):
-            return self._decide(text, Intent.ARCHITECTURAL_REASONING,
-                                1.0, 1.0, Route.REASON,
-                                "guard_url_consultation", urls)
 
         # --- Semantik kapı
         self._warm()
@@ -280,7 +278,6 @@ class IntentEngine:
         margin = score - second[0]
 
         if score < self._settings.similarity_threshold or margin < self._settings.min_margin:
-            # GÜVENLİ VARSAYILAN: araç YOK, kullanıcıya soru sorulacak.
             return self._decide(text, Intent.ARCHITECTURAL_REASONING,
                                 score, margin, Route.ABSTAIN, "low_confidence", urls)
 
