@@ -106,6 +106,7 @@ class TaskState(str, Enum):
     VERIFIED = "VERIFIED"
     PARTIAL = "PARTIAL"
     NOT_EXECUTED = "NOT_EXECUTED"
+    ROLLED_BACK = "ROLLED_BACK"
     FAILED = "FAILED"
     COMPLETED = "COMPLETED"
 
@@ -167,10 +168,25 @@ class AutonomousExecutionEngine:
         self.state = TaskState.RECEIVED
         self.evidences: List[Dict[str, Any]] = []
         self.execution_steps: List[Dict[str, Any]] = []
+        self.rollback_stack: List[Tuple[str, str]] = []
 
     def transition_to(self, new_state: TaskState, reason: str = ""):
         logger.info(f"[{self.task_id}] Durum Değişimi: {self.state} -> {new_state} | Sebep: {reason}")
         self.state = new_state
+
+    def rollback(self):
+        """Rollback stack içindeki adımları ters sırada çalıştırarak geri alır."""
+        import shutil
+        while self.rollback_stack:
+            action, target = self.rollback_stack.pop()
+            if action == "delete_dir" and os.path.exists(target):
+                shutil.rmtree(target, ignore_errors=True)
+            elif action == "delete_file" and os.path.exists(target):
+                try:
+                    os.remove(target)
+                except OSError:
+                    pass
+        self.transition_to(TaskState.ROLLED_BACK, "Otomatik geri alma tamamlandı.")
 
     @staticmethod
     def _enrich_tools_schema(tools_schema: list) -> list:

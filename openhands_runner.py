@@ -111,10 +111,11 @@ class OpenHandsAgentEngine:
         module_file = self.sandbox_dir / "token_vault.py"
         test_file = self.sandbox_dir / "test_token_vault.py"
 
-        if len(blocks) >= 2:
+        has_valid_test = len(blocks) >= 2 and ("unittest.TestCase" in blocks[1] or "def test_" in blocks[1])
+        if has_valid_test:
             module_file.write_text(blocks[0], encoding="utf-8")
             test_file.write_text(blocks[1], encoding="utf-8")
-        elif len(blocks) == 1:
+        elif len(blocks) >= 1:
             module_file.write_text(blocks[0], encoding="utf-8")
             test_file.write_text(
                 "import unittest\nimport token_vault\n\nclass TestToken(unittest.TestCase):\n"

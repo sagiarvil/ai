@@ -182,7 +182,7 @@ class ModelManager:
         """
         start_t = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 # 1. Modelin varlığını doğrula
                 show_res = await client.post(
                     f"{OLLAMA_BASE_URL}/api/show",

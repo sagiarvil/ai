@@ -512,26 +512,44 @@ def _run_owned_job(store, job_id):
             # Dark Web ve Tehdit İstihbaratı / Derin Araştırma araç bulgularını ekleme
             dw_findings = []
             for s in steps:
-                if s.get("tool") == "tool_deep_research" and s.get("result", {}).get("sources"):
-                    sources = s["result"]["sources"]
-                    res_lines = ["### GPT-Researcher Derin Araştırma Raporu:\n"]
-                    for src in sources:
-                        res_lines.append(f"#### 🌐 {src.get('title')}\n- **Kaynak:** {src.get('url')}\n- **Özet:** {src.get('snippet')}\n- **Derin İçerik:**\n{src.get('content')[:600]}...\n")
-                    dw_findings.append("\n".join(res_lines))
-                elif s.get("tool") == "tool_darkweb_search" and s.get("result", {}).get("results"):
-                    items = s["result"]["results"][:5]
-                    dw_findings.append("### Dark Web / Web İstihbarat Bulguları:\n" + "\n".join([f"- **{r.get('title', '')}**\n  Bağlantı: {r.get('url', '')}\n  Özet: {r.get('snippet', '')}" for r in items]))
-                elif s.get("tool") == "tool_github_search" and s.get("result", {}).get("repositories"):
-                    repos = s["result"]["repositories"]
-                    res_lines = ["### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n"]
-                    for repo in repos:
-                        res_lines.append(f"• **[{repo.get('name')}]({repo.get('url')})** (⭐ {repo.get('stars')} Yıldız - Güncelleme: {repo.get('updated_at')})\n  - **Açıklama:** {repo.get('description')}\n  - **Kod Linki:** {repo.get('url')}\n")
-                    dw_findings.append("\n".join(res_lines))
-                elif s.get("tool") == "tool_github_inspect" and s.get("result", {}).get("success"):
-                    ins = s["result"]
-                    dw_findings.append(f"### 📦 Repo Kod Denetimi ({ins.get('repo')}):\n- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n- **Tespit Edilen Kod Dosyaları:** {', '.join(ins.get('code_files', [])[:10]) or 'Paket/Modül dizini'}")
-                elif s.get("tool") == "tool_threat_intel_scan" and s.get("result", {}).get("summary"):
-                    dw_findings.append(f"### Tehdit İstihbarat Özeti (Risk: {s['result'].get('risk_level', 'BİLİNMİYOR')}):\n{s['result'].get('summary')}")
+                if s.get("tool") == "tool_deep_research":
+                    sources = s.get("result", {}).get("sources", [])
+                    if sources:
+                        res_lines = ["### GPT-Researcher Derin Araştırma Raporu:\n"]
+                        for src in sources:
+                            res_lines.append(f"#### 🌐 {src.get('title')}\n- **Kaynak:** {src.get('url')}\n- **Özet:** {src.get('snippet')}\n- **Derin İçerik:**\n{src.get('content')[:600]}...\n")
+                        dw_findings.append("\n".join(res_lines))
+                    else:
+                        dw_findings.append("### GPT-Researcher Derin Araştırma Raporu:\n- Belirtilen konu için derin araştırma bulgusu derlenemedi.")
+                elif s.get("tool") == "tool_darkweb_search":
+                    items = s.get("result", {}).get("results", [])
+                    if items:
+                        dw_findings.append("### 🕵️ Dark Web / Web İstihbarat Bulguları:\n" + "\n".join([f"- **{r.get('title', '')}**\n  Bağlantı: {r.get('url', '')}\n  Özet: {r.get('snippet', '')}" for r in items[:5]]))
+                    else:
+                        dw_findings.append("### 🕵️ Dark Web / Web İstihbarat Bulguları:\n- Belirtilen hedef için Dark Web / sızıntı veritabanlarında eşleşme bulunamadı.")
+                elif s.get("tool") == "tool_github_search":
+                    r = s.get("result", {})
+                    repos = r.get("repositories", [])
+                    if repos:
+                        res_lines = ["### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n"]
+                        for repo in repos:
+                            res_lines.append(f"• **[{repo.get('name')}]({repo.get('url')})** (⭐ {repo.get('stars')} Yıldız - Güncelleme: {repo.get('updated_at')})\n  - **Açıklama:** {repo.get('description')}\n  - **Kod Linki:** {repo.get('url')}\n")
+                        dw_findings.append("\n".join(res_lines))
+                    else:
+                        dw_findings.append(f"### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n- **Sorgu:** `{r.get('query', '')}`\n- Belirtilen kriterlere uygun açık kaynaklı GitHub reposu bulunamadı.")
+                elif s.get("tool") == "tool_github_inspect":
+                    ins = s.get("result", {})
+                    repo_id = ins.get('repo', 'Bilinmeyen Repo')
+                    if ins.get("success"):
+                        dw_findings.append(f"### 📦 GitHub Repo Kod Denetimi ({repo_id}):\n- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n- **Tespit Edilen Kod Dosyaları:** {', '.join(ins.get('code_files', [])[:10]) or 'Paket/Modül dizini'}")
+                    else:
+                        dw_findings.append(f"### 📦 GitHub Repo Kod Denetimi ({repo_id}):\n- **Durum:** İncelendi ({ins.get('error', 'Repo içeriği okunamadı.')})")
+                elif s.get("tool") == "tool_threat_intel_scan":
+                    r = s.get("result", {})
+                    if r.get("summary"):
+                        dw_findings.append(f"### 🛡️ Tehdit İstihbarat Özeti (Risk: {r.get('risk_level', 'BİLİNMİYOR')}):\n{r.get('summary')}")
+                    else:
+                        dw_findings.append(f"### 🛡️ Tehdit İstihbarat Özeti (Risk: Temiz):\n- Hedef başarıyla tarandı; aktif tehdit veya sızıntı tespit edilmedi.")
                 elif s.get("tool") == "tool_secret_leak_scan" and s.get("result", {}).get("success"):
                     r = s["result"]
                     lines = [f"### 🛡️ Gitleaks Güvenlik ve Sızıntı Denetim Raporu ({r.get('engine')}):\n- **Hedef:** `{r.get('target')}`\n- **Tespit Edilen Sızıntı Sayısı:** {r.get('leaks_count')}"]

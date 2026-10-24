@@ -140,9 +140,24 @@ class EngineAgentRouter:
                 reason="Doğrudan dosya oluşturma / kod yürütme kabul koşulu tespit edildi."
             )
 
+        # 1.1 Kavramsal / Soru-Cevap / Karşılaştırma Soruları (Motor çalıştırma, doğrudan cevap ver)
+        is_conceptual_question = any(q in t for q in [
+            "nedir", "farki", "farkı", "nasil calisir", "nasıl çalışır", "karsilastir", "karşılaştır",
+            "ne ise yarar", "ne işe yarar", "ne yapmaliyim", "ne yapmalıyım", "neler yapabilirsin",
+            "kimsin", "hangisi daha iyi", "tavsiye", "farki ne", "farkı ne"
+        ])
+        if is_conceptual_question and not any(run_kw in t for run_kw in ["tara", "denetle", "calistir", "çalıştır", "puanla"]):
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["turnkey_solver"],
+                autonomous_action=None,
+                latency_ms=round(dt, 4),
+                reason="Kavramsal soru / karşılaştırma tespit edildi, doğrudan anahtar teslim cevap moduna yönlendirildi."
+            )
+
         # 2. Sızıntı / Gizli Anahtar Taraması (Gitleaks & TruffleHog)
-        is_encryption_query = any(w in t for w in ["sifreleme", "şifreleme", "sifrele", "şifrele", "kripto", "cipher", "crypto", "anahtar teslim"])
-        if not is_encryption_query and "trufflehog" in t:
+        is_encryption_query = any(w in t for w in ["sifreleme", "şifreleme", "sifrele", "şifrele", "kripto", "cipher", "crypto", "anahtar teslim", "aes", "rsa", "fernet"])
+        if not is_encryption_query and not is_conceptual_question and "trufflehog" in t:
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
@@ -153,7 +168,7 @@ class EngineAgentRouter:
 
         leak_explicit = any(k in t for k in ["gitleaks", "sizinti", "sızıntı", "leak", "credential", "api key", "secret scan"])
         password_scan = any(k in t for k in ["sifre", "şifre", "secret", "anahtar", "token"]) and any(a in t for a in ["tara", "sizinti", "sızıntı", "bul", "kontrol", "denet", "leak", "acik", "açık"])
-        if not is_encryption_query and (leak_explicit or password_scan):
+        if not is_encryption_query and not is_conceptual_question and (leak_explicit or password_scan):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
