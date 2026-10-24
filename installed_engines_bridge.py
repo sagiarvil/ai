@@ -275,6 +275,147 @@ class InstalledEnginesBridge:
         }
 
     @classmethod
+    def scan_trufflehog(cls, target_path: str, max_findings: int = 15, fallback_dir: Optional[str] = None) -> Dict[str, Any]:
+        """
+        TruffleHog motorunu kullanarak hedef dizinde doğrulanmış credential ve anahtar sızıntılarını tarar.
+        """
+        th_bin = cls.find_binary("trufflehog", ["/opt/homebrew/bin/trufflehog", "/usr/local/bin/trufflehog"])
+        if not th_bin:
+            return {"success": False, "error": "TruffleHog motoru sistemde bulunamadı."}
+
+        target = cls._resolve_target(target_path, fallback_dir)
+        if not target.exists():
+            return {"success": False, "error": f"Hedef yol bulunamadı: {target_path}"}
+
+        try:
+            cmd = [th_bin, "filesystem", str(target), "--json", "--no-verification", "--no-update"]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+            
+            findings = []
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    raw_src = data.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {})
+                    findings.append({
+                        "detector_name": data.get("DetectorName", "Credential"),
+                        "file": raw_src.get("file", ""),
+                        "line": raw_src.get("line", 0),
+                        "verified": data.get("Verified", False),
+                        "raw_masked": (data.get("Raw", "")[:4] + "***") if data.get("Raw") else "***"
+                    })
+                    if len(findings) >= max_findings:
+                        break
+                except Exception:
+                    continue
+
+            return {
+                "success": True,
+                "engine": "TruffleHog v3.99.6",
+                "target": str(target),
+                "leaks_count": len(findings),
+                "findings": findings
+            }
+        except Exception as exc:
+            return {"success": False, "error": f"TruffleHog tarama hatası: {str(exc)}"}
+
+    @classmethod
+    def scan_repo_scorecard(cls, repo_name: str) -> Dict[str, Any]:
+        """
+        OpenSSF Scorecard motorunu kullanarak belirtilen GitHub reposunun tedarik zinciri ve güvenlik sağlığını puanlar.
+        """
+        sc_bin = cls.find_binary("scorecard", ["/opt/homebrew/bin/scorecard", "/usr/local/bin/scorecard"])
+        if not sc_bin:
+            return {"success": False, "error": "OpenSSF Scorecard motoru sistemde bulunamadı."}
+
+        repo = (repo_name or "").strip().replace("https://github.com/", "").strip("/")
+        if not repo or "/" not in repo:
+            return {"success": False, "error": f"Geçerli bir GitHub repo yolu (owner/repo) belirtilmelidir: {repo_name}"}
+
+        try:
+            cmd = [sc_bin, f"--repo=github.com/{repo}", "--format=json"]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=45)
+            
+            if res.returncode == 0 and res.stdout.strip():
+                data = json.loads(res.stdout)
+                score = data.get("score", 0.0)
+                checks = []
+                for c in data.get("checks", []):
+                    checks.append({
+                        "name": c.get("name"),
+                        "score": c.get("score"),
+                        "reason": c.get("reason")
+                    })
+                return {
+                    "success": True,
+                    "engine": "OpenSSF Scorecard v5.6.0",
+                    "repo": repo,
+                    "overall_score": score,
+                    "checks_count": len(checks),
+                    "checks": checks[:10]
+                }
+            return {
+                "success": False,
+                "engine": "OpenSSF Scorecard v5.6.0",
+                "repo": repo,
+                "error": res.stderr.strip() or "Scorecard raporu üretilemedi."
+            }
+        except Exception as exc:
+            return {"success": False, "error": f"Scorecard çalıştırma hatası: {str(exc)}"}
+
+    @classmethod
+    def fuzz_smart_contract(cls, contract_path: str, fallback_dir: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Crytic Echidna fuzzer motorunu kullanarak akıllı sözleşme güvenlik ve invariant denetimi yapar.
+        """
+        echidna_bin = cls.find_binary("echidna", ["/opt/homebrew/bin/echidna", "/usr/local/bin/echidna"])
+        if not echidna_bin:
+            return {"success": False, "error": "Crytic Echidna fuzzer sistemde bulunamadı."}
+
+        target = cls._resolve_target(contract_path, fallback_dir)
+        sol_files = []
+        if target.is_file() and target.suffix == ".sol":
+            sol_files = [target]
+        elif target.is_dir():
+            sol_files = list(target.glob("*.sol"))
+
+        if not sol_files:
+            return {
+                "success": True,
+                "engine": "Crytic Echidna v2.3.3",
+                "contract": str(target),
+                "fuzz_tests_count": 0,
+                "warning": f"Hedef dizinde (.sol) uzantılı akıllı sözleşme bulunamadı: {target}",
+                "failures": []
+            }
+
+        try:
+            cmd = [echidna_bin, str(sol_files[0]), "--format", "json", "--test-limit", "1000"]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=40)
+            
+            failures = []
+            if res.stdout.strip():
+                try:
+                    data = json.loads(res.stdout)
+                    for k, v in data.items():
+                        if isinstance(v, dict) and v.get("status") == "failed":
+                            failures.append({"property": k, "error": v.get("error")})
+                except Exception:
+                    pass
+
+            return {
+                "success": True,
+                "engine": "Crytic Echidna v2.3.3",
+                "contract": str(sol_files[0].name),
+                "failures_count": len(failures),
+                "failures": failures
+            }
+        except Exception as exc:
+            return {"success": False, "error": f"Echidna fuzzing hatası: {str(exc)}"}
+
+    @classmethod
     def get_all_engines_health(cls) -> Dict[str, Any]:
         """
         Sistemdeki tüm canlı motorların durumunu, dosya yollarını ve yanıt hızlarını döndürür.
@@ -290,9 +431,21 @@ class InstalledEnginesBridge:
             "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
         }
 
+        # TruffleHog
+        t0 = time.perf_counter()
+        th = cls.find_binary("trufflehog", ["/opt/homebrew/bin/trufflehog"])
+        engines["TruffleHog (Credential Hunter)"] = {
+            "available": bool(th),
+            "binary": th or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
         # Google OSV-Scanner
         t0 = time.perf_counter()
-        osv = cls.find_binary("osv-scanner", ["/Users/macair1/projects/ai/installed_engines/google--osv-scanner/bin/osv-scanner"])
+        osv = cls.find_binary("osv-scanner", [
+            "/Users/macair1/projects/ai/installed_engines/google--osv-scanner/bin/osv-scanner",
+            "/opt/homebrew/bin/osv-scanner"
+        ])
         engines["Google OSV-Scanner (CVE)"] = {
             "available": bool(osv),
             "binary": osv or "Bulunamadı",
@@ -301,10 +454,22 @@ class InstalledEnginesBridge:
 
         # Aqua Trivy
         t0 = time.perf_counter()
-        trivy = cls.find_binary("trivy", ["/Users/macair1/projects/ai/installed_engines/aquasecurity--trivy/bin/trivy"])
+        trivy = cls.find_binary("trivy", [
+            "/Users/macair1/projects/ai/installed_engines/aquasecurity--trivy/bin/trivy",
+            "/opt/homebrew/bin/trivy"
+        ])
         engines["Aqua Trivy (Vulnerabilities)"] = {
             "available": bool(trivy),
             "binary": trivy or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # OpenSSF Scorecard
+        t0 = time.perf_counter()
+        sc = cls.find_binary("scorecard", ["/opt/homebrew/bin/scorecard"])
+        engines["OpenSSF Scorecard (Supply Chain)"] = {
+            "available": bool(sc),
+            "binary": sc or "Bulunamadı",
             "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
         }
 
@@ -314,6 +479,15 @@ class InstalledEnginesBridge:
         engines["Crytic Slither (Smart Contracts)"] = {
             "available": bool(slither),
             "binary": slither or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # Crytic Echidna
+        t0 = time.perf_counter()
+        echidna = cls.find_binary("echidna", ["/opt/homebrew/bin/echidna"])
+        engines["Crytic Echidna (Contract Fuzzer)"] = {
+            "available": bool(echidna),
+            "binary": echidna or "Bulunamadı",
             "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
         }
 

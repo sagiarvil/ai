@@ -47,14 +47,14 @@ class EngineAgentRouter:
         "security_auditor": AgentRole(
             agent_id="security_auditor",
             agent_name="🛡️ Siber Güvenlik ve Sızıntı Denetim Ajanı",
-            primary_engine="Gitleaks v8.30.1, TruffleHog & Google OSV / Aqua Trivy",
+            primary_engine="Gitleaks v8.30.1, TruffleHog v3.99.6, Google OSV & Aqua Trivy",
             system_prompt=(
                 "Sen Barış AI Kıdemli Siber Güvenlik ve Tehdit Denetim Uzmanısın. "
-                "ASLA TAVSİYE VERME! Sistemindeki Gitleaks, Aqua Trivy ve Google OSV-Scanner motorlarını kullanarak "
+                "ASLA TAVSİYE VERME! Sistemindeki Gitleaks, TruffleHog, Aqua Trivy, OpenSSF Scorecard ve Google OSV-Scanner motorlarını kullanarak "
                 "açık API anahtarları, şifre sızıntıları, tokenler ve CVE bağımlılık zafiyetlerini denetler, "
                 "doğrudan somut kanıt ve sonuç tablosunu teslim edersin."
             ),
-            allowed_tools=["tool_secret_leak_scan", "tool_vulnerability_scan", "tool_direct_answer"]
+            allowed_tools=["tool_secret_leak_scan", "tool_trufflehog_scan", "tool_vulnerability_scan", "tool_repo_scorecard", "tool_direct_answer"]
         ),
         "github_hunter": AgentRole(
             agent_id="github_hunter",
@@ -65,18 +65,18 @@ class EngineAgentRouter:
                 "ASLA TAVSİYE VERME! Yetkili GitHub motorunu kullanarak kullanıcının aradığı konuda gerçekten çalışan kaynak kodları "
                 "içeren repoları bulur, kod varlığını teyit eder ve doğrudan çalışan repo linklerini Markdown tablosu olarak sunarsın."
             ),
-            allowed_tools=["tool_github_search", "tool_github_inspect", "tool_direct_answer"]
+            allowed_tools=["tool_github_search", "tool_github_inspect", "tool_repo_scorecard", "tool_direct_answer"]
         ),
         "web3_security": AgentRole(
             agent_id="web3_security",
             agent_name="⛓️ Web3 & Akıllı Sözleşme Güvenlik Ajanı",
-            primary_engine="Crytic Slither v0.11.6 & MetaMask Phishing DB (107K+ Domain)",
+            primary_engine="Crytic Slither v0.11.6, Crytic Echidna v2.3.3 & MetaMask Phishing DB (107K+ Domain)",
             system_prompt=(
                 "Sen Barış AI Web3 Güvenlik ve Akıllı Sözleşme Denetçisisin. "
-                "ASLA TAVSİYE VERME! Solidity sözleşmelerini Slither ile reentrancy ve mantık açıklarına karşı denetler, "
+                "ASLA TAVSİYE VERME! Solidity sözleşmelerini Slither ve Echidna fuzzer ile denetler, "
                 "şüpheli alan adlarını MetaMask 107.000+ domainlik karalistesinde anlık tarayıp kesin güvenlik durumunu bildirirsin."
             ),
-            allowed_tools=["tool_smart_contract_audit", "tool_phishing_domain_scan", "tool_direct_answer"]
+            allowed_tools=["tool_smart_contract_audit", "tool_smart_contract_fuzz", "tool_phishing_domain_scan", "tool_direct_answer"]
         ),
         "darkweb_intel": AgentRole(
             agent_id="darkweb_intel",
@@ -142,7 +142,16 @@ class EngineAgentRouter:
 
         # 2. Sızıntı / Gizli Anahtar Taraması (Gitleaks & TruffleHog)
         is_encryption_query = any(w in t for w in ["sifreleme", "şifreleme", "sifrele", "şifrele", "kripto", "cipher", "crypto", "anahtar teslim"])
-        leak_explicit = any(k in t for k in ["gitleaks", "trufflehog", "sizinti", "sızıntı", "leak", "credential", "api key", "secret scan"])
+        if not is_encryption_query and "trufflehog" in t:
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["security_auditor"],
+                autonomous_action=("tool_trufflehog_scan", {"target_path": workspace}),
+                latency_ms=round(dt, 4),
+                reason="TruffleHog derin credential ve gizli anahtar sızıntı taraması talep edildi."
+            )
+
+        leak_explicit = any(k in t for k in ["gitleaks", "sizinti", "sızıntı", "leak", "credential", "api key", "secret scan"])
         password_scan = any(k in t for k in ["sifre", "şifre", "secret", "anahtar", "token"]) and any(a in t for a in ["tara", "sizinti", "sızıntı", "bul", "kontrol", "denet", "leak", "acik", "açık"])
         if not is_encryption_query and (leak_explicit or password_scan):
             dt = (time.perf_counter() - t0) * 1000
@@ -150,17 +159,28 @@ class EngineAgentRouter:
                 agent=cls.ROLES["security_auditor"],
                 autonomous_action=("tool_secret_leak_scan", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="Gitleaks/TruffleHog gizli anahtar ve şifre sızıntı taraması talep edildi."
+                reason="Gitleaks gizli anahtar ve şifre sızıntı taraması talep edildi."
             )
 
         # 3. Zafiyet / CVE / Tedarik Zinciri (OSV-Scanner, Trivy, Scorecard)
-        if any(k in t for k in ["zafiyet", "cve", "guvenlik acigi", "güvenlik açığı", "trivy", "osv", "scorecard", "bagimlilik", "bağımlılık"]):
+        if "scorecard" in t:
+            repo_match = re.search(r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)", t)
+            repo = repo_match.group(1) if repo_match else "sagiarvil/ai"
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["security_auditor"],
+                autonomous_action=("tool_repo_scorecard", {"repo_name": repo}),
+                latency_ms=round(dt, 4),
+                reason="OpenSSF Scorecard repo tedarik zinciri sağlık analizi talep edildi."
+            )
+
+        if any(k in t for k in ["zafiyet", "cve", "guvenlik acigi", "güvenlik açığı", "trivy", "osv", "bagimlilik", "bağımlılık"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
                 autonomous_action=("tool_vulnerability_scan", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="OSV-Scanner/Trivy/Scorecard zafiyet ve bağımlılık taraması talep edildi."
+                reason="OSV-Scanner/Trivy zafiyet ve bağımlılık taraması talep edildi."
             )
 
         # 4. GitHub Kod & Repo Avcısı (GitHub CLI)
@@ -190,13 +210,22 @@ class EngineAgentRouter:
             )
 
         # 6. Akıllı Sözleşme Denetimi (Slither & Echidna)
-        if any(k in t for k in ["slither", "echidna", "akilli sozlesme", "akıllı sözleşme", "smart contract", "solidity", "kontrat"]):
+        if any(k in t for k in ["echidna", "fuzz", "invariant"]):
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["web3_security"],
+                autonomous_action=("tool_smart_contract_fuzz", {"contract_path": workspace}),
+                latency_ms=round(dt, 4),
+                reason="Crytic Echidna akıllı sözleşme fuzzing denetimi talep edildi."
+            )
+
+        if any(k in t for k in ["slither", "akilli sozlesme", "akıllı sözleşme", "smart contract", "solidity", "kontrat"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["web3_security"],
                 autonomous_action=("tool_smart_contract_audit", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="Crytic Slither/Echidna akıllı sözleşme denetimi talep edildi."
+                reason="Crytic Slither akıllı sözleşme statik analizi talep edildi."
             )
 
         # 7. Motor Durumları / Sistem Sağlığı

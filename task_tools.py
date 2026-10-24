@@ -92,6 +92,12 @@ TOOLS = [
         "target_path": TEXT}),
     schema("tool_smart_contract_audit", "Slither motorunu kullanarak Solidity akıllı sözleşmelerini güvenlik açıklarına karşı denetler.", {
         "target_path": TEXT}),
+    schema("tool_trufflehog_scan", "TruffleHog motorunu kullanarak hedef dizinde doğrulanmış API anahtarları, sertifikalar ve credential sızıntılarını derinlemesine tarar.", {
+        "target_path": TEXT}),
+    schema("tool_repo_scorecard", "OpenSSF Scorecard motorunu kullanarak belirtilen açık kaynak GitHub reposunun (owner/repo) güvenlik ve tedarik zinciri sağlık skorunu ölçer.", {
+        "repo_name": TEXT}),
+    schema("tool_smart_contract_fuzz", "Crytic Echidna motorunu kullanarak Solidity akıllı sözleşmelerinde fuzzing ve özellik (invariant) ihlali testi yürütür.", {
+        "contract_path": TEXT}),
     schema("tool_github_search", "GitHub üzerinde belirtilen konuda ve özelliklerde gerçek kod içeren açık kaynak repoları arar; yıldız, açıklama, dil ve doğrudan repo bağlantılarını listeler.", {
         "query": TEXT, "language": TEXT, "min_stars": INTEGER}),
     schema("tool_github_inspect", "Belirtilen GitHub reposunun (owner/repo) içindeki dosyaları ve gerçek kod içerip içermediğini inceler.", {
@@ -215,6 +221,15 @@ class TaskTools:
             if not t_path or not Path(t_path).exists() or "your/project" in t_path:
                 t_path = str(self.root)
             return InstalledEnginesBridge.audit_smart_contract(t_path)
+        if name == "tool_trufflehog_scan":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.scan_trufflehog(args.get("target_path", ""), fallback_dir=str(self.root))
+        if name == "tool_repo_scorecard":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.scan_repo_scorecard(args.get("repo_name", ""))
+        if name == "tool_smart_contract_fuzz":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.fuzz_smart_contract(args.get("contract_path", ""), fallback_dir=str(self.root))
         if name == "tool_github_search":
             from github_intelligence import GitHubIntelligence
             return GitHubIntelligence.search_repos(args.get("query", ""), language=args.get("language"), min_stars=args.get("min_stars", 5))

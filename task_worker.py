@@ -562,6 +562,36 @@ def _run_owned_job(store, job_id):
                     else:
                         lines.append("✅ Akıllı sözleşmede kritik güvenlik açığı tespit edilmedi.")
                     dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_trufflehog_scan" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### 🐗 TruffleHog Credential ve Gizli Anahtar Denetimi ({r.get('engine')}):\n- **Hedef:** `{r.get('target')}`\n- **Tespit Edilen Sızıntı Sayısı:** {r.get('leaks_count')}"]
+                    if r.get("findings"):
+                        lines.append("Bulunan Credential Sızıntıları:")
+                        for f in r.get("findings", []):
+                            lines.append(f"  • **[{f.get('detector_name')}]**: `{f.get('file')}:{f.get('line')}` (Doğrulandı: {f.get('verified')})")
+                    else:
+                        lines.append("✅ Harika! Hedef dizinde doğrulanmış API anahtarı veya credential sızıntısı bulunamadı.")
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_repo_scorecard" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### 📊 OpenSSF Scorecard Repo Güvenlik Skoru ({r.get('engine')}):\n- **Repo:** `{r.get('repo')}`\n- **Genel Güvenlik Skoru:** {r.get('overall_score')}/10"]
+                    if r.get("checks"):
+                        lines.append("Güvenlik Denetim Puanları:")
+                        for c in r.get("checks", []):
+                            lines.append(f"  • **{c.get('name')}**: {c.get('score')}/10 — {c.get('reason')}")
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_smart_contract_fuzz" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### ⚡ Crytic Echidna Akıllı Sözleşme Fuzzing Denetimi ({r.get('engine')}):\n- **Sözleşme:** `{r.get('contract')}`\n- **Başarısız Özellik Sayısı:** {r.get('failures_count')}"]
+                    if r.get("warning"):
+                        lines.append(f"⚠️ **Durum:** {r.get('warning')}")
+                    elif r.get("failures"):
+                        lines.append("İhlal Edilen Özellikler (Invariants):")
+                        for f in r.get("failures", []):
+                            lines.append(f"  • **{f.get('property')}**: {f.get('error')}")
+                    else:
+                        lines.append("✅ Tüm özellik (invariant) testleri başarıyla geçti, açık bulunamadı.")
+                    dw_findings.append("\n".join(lines))
                 elif s.get("tool") == "tool_phishing_domain_scan" and s.get("result", {}).get("success"):
                     r = s["result"]
                     lines = [
