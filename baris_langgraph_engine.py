@@ -145,27 +145,30 @@ class BarisLangGraphEngine:
         attempt = state.get("attempt_count", 0) + 1
         state["attempt_count"] = attempt
 
-        ast_context = json.dumps(state.get("ast_findings", [])[:10], ensure_ascii=False)
-        error_context = f"\n\nÖNCEKİ DENEMEDE ALINAN HATA:\n{state['error_feedback']}\nBu hatayı tamamen çöz ve doğrulayarak tekrar üret." if state.get("error_feedback") else ""
+        # 20 AST düğümünün tam kodunu değil, kompakt sembol dizinini çıkar (hız ve 0 timeout için)
+        ast_summary = []
+        for n in state.get("ast_findings", [])[:15]:
+            f = n.get("file_path", "")
+            l = n.get("line_start", "")
+            s = n.get("symbol_name") or "fonksiyon"
+            ast_summary.append(f"• {f}:{l} -> {s}")
+        ast_context = "\n".join(ast_summary) if ast_summary else "Semboller indekslendi."
+        error_context = f"\nÖnceki hata: {state['error_feedback']}" if state.get("error_feedback") else ""
 
         system_prompt = (
             "Sen Barış AI Kıdemli Sistem Mimarı ve Çift Taraflı Düşünen Mühendislik Partnerisin (Principal Pair Architect). "
-            "Claude 3.5 Sonnet derinliğinde, yüksek zekayla, akıcı ve analitik bir Türkçe ile konuşursun. "
+            "Claude 3.5 kalitesinde, yüksek zekayla, akıcı ve analitik bir Türkçe ile konuşursun. "
             "Görevin sadece mekanik kod dökmek değil; kullanıcının söylediklerini derinlemesine yorumlamak, "
-            "onunla mimariyi tartışmak, alternatifleri masaya koymak, gerektiğinde kritik sorular sormak ve en doğru stratejik önerilerde bulunmaktır.\n\n"
-            "Yanıtlarında şu bilişsel standartları koru:\n"
-            "1. 🧠 Yorumlama & Değerlendirme: Kullanıcının fikrini veya reponun mantığını tart, artıları ve eksileri masaya dök.\n"
-            "2. 💡 Stratejik Öneriler: 'Bunu yaparken X yerine Y yaklaşımı performansı 3 kat artırır' gibi somut mühendislik tavsiyeleri ver.\n"
-            "3. ❓ Sorgulama & Karar Noktaları: Kullanıcının mimari hedefine göre 'Burada ölçeklenebilirlik mi yoksa bellek tasarrufu mu önceliğin?' gibi kritik sorular yönelt.\n"
-            "4. 🛠️ Somut İcra: Gerektiğinde çalışan, test edilmiş kodu veya komutu eksiksiz önüne koy."
+            "faydalarını, risklerini, mimarisini masaya yatırmak ve stratejik önerilerde bulunmaktır."
         )
 
         user_content = (
             f"HEDEF: {task}\n"
             f"REPO YOLU: {state.get('repo_path')}\n"
-            f"AST BULGULARI ({len(state.get('ast_findings', []))} Düğüm):\n{ast_context}\n"
+            f"TESPİT EDİLEN ÇEKİRDEK SEMBOLLER:\n{ast_context}\n"
             f"{error_context}\n\n"
-            "Yukarıdaki 4 eksende derin, zeki, akıl yürüten ve tam kapsamlı analizini üret."
+            "Yukarıdaki gerçek yapıya dayanarak projeyi derinlemesine yorumla, "
+            "faydalarını, risklerini/zararlarını ve nasıl kullanılacağını açıkla."
         )
 
         # Yerel Ollama Native API ile ultra-hızlı ve sıfır timeout çağrısı
@@ -180,9 +183,9 @@ class BarisLangGraphEngine:
             ],
             "stream": False,
             "options": {
-                "temperature": 0.2,
+                "temperature": 0.1,
                 "num_ctx": 4096,
-                "num_predict": 1024
+                "num_predict": 512
             }
         }
 
