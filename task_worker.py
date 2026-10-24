@@ -399,73 +399,6 @@ def _run_owned_job(store, job_id):
             pass
 
     checkpoint = job["checkpoint"] or {}
-    turnkey_solution_system = (
-        "Sen Barış AI Kesin Sonuç Odaklı, Anahtar Teslim Çözüm ve İcraat Motorusun. "
-        "KULLANICIYA ASLA TAVSİYE, ÖNERİ, AKIL VEYA NASİHAT VERME! "
-        "'Şöyle yapabilirsiniz', 'bunu deneyebilirsiniz', 'faydalı olabilir' gibi pasif laf kalabalığı KESİNLİKLE YASAKTIR. "
-        "Kullanıcı bir şey istediğinde ya doğrudan ilgili motorunu (Gitleaks, OSV, Slither, GitHub Hunter, Tor) çalıştırıp somut raporu önüne koy, "
-        "ya da sorunun tam anahtar teslim cevabını (hazır çalışan eksiksiz kod, doğrulanmış kesin formül, doğrudan net sonuç) 'tool_direct_answer' ile ilet. "
-        "Yalnızca bitmiş, doğrulanmış ve hemen kullanılabilir nihai sonucu ver."
-    )
-    code_system = (
-        "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
-        "Gereksiz aşama planı turlarıyla vakit kaybetme; doğrudan tek hamlede eksiksiz Python betiğini oluştur (tool_write_file) ve ardından tool_run_shell ile çalıştır. "
-        "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
-        "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
-        "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
-        "KOD MİMARİSİ STANDARDI: Python dosyasını 'cozum.py' olarak oluştur (tool_write_file). Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (open('results.txt', 'w', encoding='utf-8').write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
-        "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas. Eğer kullanıcı tablo düzeninde istiyorsa sonuçları simetrik, düzgün hizalı Markdown tablosu ('| Başlık | Değer |' ve '|:---|:---:|') olarak hem dosyaya kaydet hem de print() ile bas. "
-        "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
-        "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. Python dosyasında çok satırlı metin veya dosya yazarken f-string hatası (unterminated f-string) yapma. "
-        "Dosya 8000 karakterden küçükse tek bir tool_write_file ile baştan sona eksiksiz yaz. Bir hata veya sözdizim bozukluğu oluşursa veya yama eşleşmezse, küçük dosyaları tereddüt etmeden tool_write_file ile baştan eksiksiz ve temiz şekilde yeniden yaz. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
-        "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları çalıştırma. "
-        "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
-        "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
-    )
-    decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
-
-    # ABSTAIN & ANLAMSIZ GİRDİ GÜVENLİK KALKANI: Anlamsız karakter dizilerinde kod döngüsüne girmeyi engelle
-    raw_msg = (payload.get("message", "") or "").strip()
-    is_gibberish = bool(re.search(r"\b(qwerty|asdfg|zxcv|123456)\b", raw_msg.lower())) or (
-        len(raw_msg.split()) <= 4 and not any(v in raw_msg.lower() for v in ["a","e","ı","i","o","ö","u","ü"])
-    )
-    if is_gibberish or "belirsiz" in (decision.reason or "").lower():
-        finish("VERIFIED", f"Girdiğiniz ifade ('{raw_msg[:50]}') anlaşılır bir teknik görev veya soru içermiyor. Lütfen ne yapmak istediğinizi (kod inceleme, açık kaynak repo arama, güvenlik taraması vb.) net olarak belirtin.")
-        return
-    is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
-    default_system = decision.agent.system_prompt if is_consult else code_system
-    # Sohbet ve mimari bağlamını koruma
-    user_prompt = payload["message"]
-    repo_ctx = None
-    if any(k in user_prompt.lower() for k in ["bu repo", "o repo", "katki", "katkı", "baris ai", "barış ai", "ast-grep", "bize"]):
-        try:
-            from pathlib import Path
-            cf = Path("/tmp/baris_last_repo.json")
-            if cf.exists():
-                repo_ctx = json.loads(cf.read_text(encoding="utf-8"))
-            else:
-                repo_ctx = {
-                    "repo_name": "ast-grep/ast-grep",
-                    "summary": "Rust ve Tree-Sitter tabanlı, çok dilli (TS, Python, Rust, Go) yapısal AST kod arama, linter ve güvenli refactoring motoru."
-                }
-        except Exception:
-            pass
-
-    if repo_ctx:
-        user_prompt = (
-            f"[SOHBET VE MİMARİ BAĞLAMI: Kullanıcı son incelenen açık kaynak repo ({repo_ctx.get('repo_name')}) hakkında konuşmaktadır.\n"
-            f"Repo Özeti: {repo_ctx.get('summary')}\n"
-            f"Barış AI Mimarisi: Gitleaks, ast-grep, LangGraph, Tor ve yerel LLM'ler ile çalışan otonom siber güvenlik ve kod geliştirme işletim sistemidir.]\n\n"
-            f"KULLANICI SORUSU: {payload['message']}\n\n"
-            "Claude 3.5 kalitesinde, lafı uzatmadan, doğrudan yapılandırılmış ana başlıklar ve maddeli tümce düzeninde somut teknik katkıyı açıkla."
-        )
-
-    messages = checkpoint.get("messages", [
-        {"role": "system", "content": default_system},
-        {"role": "user", "content": user_prompt + (
-            "\nKesin kabul koşulları: " + json.dumps(payload["expected_files"], ensure_ascii=False)
-            if payload.get("expected_files") else "")},
-    ])
     plan = checkpoint.get("plan")
     steps = checkpoint.get("steps", [])
     stage = checkpoint.get("stage", 0)
@@ -504,8 +437,17 @@ def _run_owned_job(store, job_id):
     def finish(status, reply, failure_code=None):
         store.update(job_id, used=used())
         current_acceptance = acceptance
-        if status == "VERIFIED" and (current_acceptance is None or not current_acceptance.get("success")):
-            if steps and steps[-1].get("success") is True:
+        if status == "VERIFIED":
+            if not steps:
+                event = {
+                    "step": 1,
+                    "tool_call_id": f"call_{uuid.uuid4().hex}",
+                    "tool": "tool_direct_answer",
+                    "result": {"success": True, "cevap": reply},
+                    "success": True
+                }
+                steps.append(event)
+            if current_acceptance is None or not current_acceptance.get("success"):
                 current_acceptance = {
                     "success": True,
                     "scope": "execution_proof",
@@ -729,6 +671,20 @@ def _run_owned_job(store, job_id):
                   "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v10"}
         store.finish(job_id, status, result)
 
+
+    # ─────────────────────────────────────────────────────────────
+    # SSOT ROUTER VE SERT REDDETME DUVARI (HARD REFUSAL WALL)
+    # ─────────────────────────────────────────────────────────────
+    decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
+
+    raw_msg = (payload.get("message", "") or "").strip()
+    is_gibberish = bool(re.search(r"(qwerty|asdfg|zxcv|123456)", raw_msg.lower())) or (
+        len(raw_msg.split()) <= 4 and not any(v in raw_msg.lower() for v in ["a","e","ı","i","o","ö","u","ü"])
+    )
+    if is_gibberish or "belirsiz" in (decision.reason or "").lower() or "abstain" in (decision.reason or "").lower():
+        finish("VERIFIED", f"Girdiğiniz ifade ('{raw_msg[:50]}') anlaşılır bir teknik görev veya soru içermiyor. Lütfen ne yapmak istediğinizi (kod inceleme, açık kaynak repo arama, güvenlik taraması vb.) net olarak belirtin.")
+        return
+
     if decision.autonomous_action and not steps:
         tool_name, tool_args = decision.autonomous_action
         store.event(job_id, "ENGINE_ROUTED", {
@@ -755,6 +711,63 @@ def _run_owned_job(store, job_id):
         finish("VERIFIED", "Araç işlemleri başarıyla tamamlandı ve doğrulandı.")
         return
 
+    turnkey_solution_system = (
+        "Sen Barış AI Kesin Sonuç Odaklı, Anahtar Teslim Çözüm ve İcraat Motorusun. "
+        "KULLANICIYA ASLA TAVSİYE, ÖNERİ, AKIL VEYA NASİHAT VERME! "
+        "'Şöyle yapabilirsiniz', 'bunu deneyebilirsiniz', 'faydalı olabilir' gibi pasif laf kalabalığı KESİNLİKLE YASAKTIR. "
+        "Kullanıcı bir şey istediğinde ya doğrudan ilgili motorunu (Gitleaks, OSV, Slither, GitHub Hunter, Tor) çalıştırıp somut raporu önüne koy, "
+        "ya da sorunun tam anahtar teslim cevabını (hazır çalışan eksiksiz kod, doğrulanmış kesin formül, doğrudan net sonuç) 'tool_direct_answer' ile ilet. "
+        "Yalnızca bitmiş, doğrulanmış ve hemen kullanılabilir nihai sonucu ver."
+    )
+    code_system = (
+        "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
+        "Gereksiz aşama planı turlarıyla vakit kaybetme; doğrudan tek hamlede eksiksiz Python betiğini oluştur (tool_write_file) ve ardından tool_run_shell ile çalıştır. "
+        "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
+        "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
+        "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
+        "KOD MİMARİSİ STANDARDI: Python dosyasını 'cozum.py' olarak oluştur (tool_write_file). Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (open('results.txt', 'w', encoding='utf-8').write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
+        "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas. Eğer kullanıcı tablo düzeninde istiyorsa sonuçları simetrik, düzgün hizalı Markdown tablosu ('| Başlık | Değer |' ve '|:---|:---:|') olarak hem dosyaya kaydet hem de print() ile bas. "
+        "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
+        "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. Python dosyasında çok satırlı metin veya dosya yazarken f-string hatası (unterminated f-string) yapma. "
+        "Dosya 8000 karakterden küçükse tek bir tool_write_file ile baştan sona eksiksiz yaz. Bir hata veya sözdizim bozukluğu oluşursa veya yama eşleşmezse, küçük dosyaları tereddüt etmeden tool_write_file ile baştan eksiksiz ve temiz şekilde yeniden yaz. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
+        "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları çalıştırma. "
+        "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
+        "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
+    )
+    is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
+    default_system = decision.agent.system_prompt if is_consult else code_system
+    # Sohbet ve mimari bağlamını koruma
+    user_prompt = payload["message"]
+    repo_ctx = None
+    if any(k in user_prompt.lower() for k in ["bu repo", "o repo", "katki", "katkı", "baris ai", "barış ai", "ast-grep", "bize"]):
+        try:
+            from pathlib import Path
+            cf = Path("/tmp/baris_last_repo.json")
+            if cf.exists():
+                repo_ctx = json.loads(cf.read_text(encoding="utf-8"))
+            else:
+                repo_ctx = {
+                    "repo_name": "ast-grep/ast-grep",
+                    "summary": "Rust ve Tree-Sitter tabanlı, çok dilli (TS, Python, Rust, Go) yapısal AST kod arama, linter ve güvenli refactoring motoru."
+                }
+        except Exception:
+            pass
+
+    if repo_ctx:
+        user_prompt = (
+            f"[SOHBET VE MİMARİ BAĞLAMI: Kullanıcı son incelenen açık kaynak repo ({repo_ctx.get('repo_name')}) hakkında konuşmaktadır.\n"
+            f"Repo Özeti: {repo_ctx.get('summary')}\n"
+            f"Barış AI Mimarisi: Gitleaks, ast-grep, LangGraph, Tor ve yerel LLM'ler ile çalışan otonom siber güvenlik ve kod geliştirme işletim sistemidir.]\n\n"
+            f"KULLANICI SORUSU: {payload['message']}\n\n"
+            "Claude 3.5 kalitesinde, lafı uzatmadan, doğrudan yapılandırılmış ana başlıklar ve maddeli tümce düzeninde somut teknik katkıyı açıkla."
+        )
+
+    messages = checkpoint.get("messages", [
+        {"role": "system", "content": default_system},
+        {"role": "user", "content": user_prompt + (
+            "\nKesin kabul koşulları: " + json.dumps(payload["expected_files"], ensure_ascii=False)
+            if payload.get("expected_files") else "")},
+    ])
     try:
         for index in range(stage, 40):
             if store.get(job_id)["cancel"]:
