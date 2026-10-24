@@ -14,8 +14,8 @@ import ast
 import re
 
 def auto_fix_python_source(code):
-    """Python kodunda LLM kaynaklı tırnak, f-string, yarım kalan satır ve sözdizim hatalarını deterministik olarak onarır."""
-    if not isinstance(code, str) or not code.strip():
+    """Python kodunda LLM kaynaklı çok satırlı tırnak ve f-string sözdizim hatalarını deterministik olarak onarır."""
+    if not isinstance(code, str):
         return code
     try:
         ast.parse(code)
@@ -23,65 +23,81 @@ def auto_fix_python_source(code):
     except SyntaxError:
         pass
 
-    lines = code.splitlines()
-    # Deneme 1: Son satırlarda açık kalan parantez ve ayraçları deterministik kapat
-    for end_idx in range(len(lines), max(0, len(lines) - 4), -1):
-        sub_code = "\n".join(lines[:end_idx])
-        sq = sub_code.count("[") - sub_code.count("]")
-        cur = sub_code.count("{") - sub_code.count("}")
-        rnd = sub_code.count("(") - sub_code.count(")")
-        closers = ("]" * max(0, sq)) + ("}" * max(0, cur)) + (")" * max(0, rnd))
-        
-        for q in ('\'', '"', '"""', '\'\'\'', ''):
-            candidate = sub_code + q + closers
-            try:
-                ast.parse(candidate)
-                return candidate
-            except SyntaxError:
-                pass
+    # file.write('...' \n '...') veya print('...' \n '...') tek tırnaklı çok satırlı dizgileri üçlü tırnak ("""...""") yap
+    def replacer(m):
+        func = m.group(1)
+        prefix = "f" if m.group(2) else ""
+        content = m.group(3)
+        return f"{func}({prefix}\"\"\"{content}\"\"\")"
 
-    # Deneme 2: Hatalı son yarım satırı doğrudan buda
-    for cut in range(1, 4):
-        if len(lines) > cut:
-            candidate = "\n".join(lines[:-cut])
-            try:
-                ast.parse(candidate)
-                return candidate
-            except SyntaxError:
-                pass
+    fixed = re.sub(r'(\b\w+\.write|print)\s*\(\s*(f)?\'(.*?)\'\s*\)', replacer, code, flags=re.DOTALL)
+    
+    # Genel print veya write çağrıları için f-string tek tırnak onarımı
+    try:
+        ast.parse(fixed)
+        return fixed
+    except SyntaxError:
+        pass
 
-    return code
+    # f'| {x} | {y['z']} |' -> f"| {x} | {y['z']} |"
+    lines = fixed.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith(("print(f'\\'", "file.write(f'\\'")) or ("f'\\'" in line and "['\\'" in line):
+            lines[i] = re.sub(r"f'\''(.*?)'\''(\s*\)?\s*)$", r'f"""\1"""\2', line)
+    candidate = "\n".join(lines)
+    try:
+        ast.parse(candidate)
+        return candidate
+    except SyntaxError:
+        return fixed
+
+
 def schema(name, description, properties):
     return {"type": "function", "function": {
         "name": name, "description": description,
         "parameters": {"type": "object", "properties": properties,
                        "required": list(properties), "additionalProperties": False}}}
 
-CHUNK_LIMIT = 10000
+CHUNK_LIMIT = 700
 FILE_BYTES_LIMIT = 100_000
 
 TEXT = {"type": "string"}
+INTEGER = {"type": "integer"}
 TOOLS = [
     schema("tool_plan_steps", "Görevi 3–12 kısa aşamaya ayır; kod üretme.", {
         "steps": {"type": "array", "items": {"type": "string", "maxLength": 160}, "minItems": 1, "maxItems": 12}}),
     schema("tool_make_directory", "Çalışma alanında dizin oluştur.", {"filepath": TEXT}),
     schema("tool_list_files", "Çalışma alanında dosyaları listele.", {"filepath": TEXT}),
-    schema("tool_write_file", "UTF-8 dosya oluştur veya mevcut dosyayı baştan temiz yeniden yaz.", {
-        "filepath": TEXT, "content": {"type": "string", "maxLength": 10000}}),
+    schema("tool_write_file", "Yalnızca YENİ UTF-8 dosya oluştur. Mevcut dosya reddedilir. Devamı için append, düzeltme için patch kullan.", {
+        "filepath": TEXT, "content": {"type": "string", "maxLength": 700}}),
     schema("tool_append_file", "Son okuma/yazmanın sha256 değeriyle dosyaya parça ekle.", {
-        "filepath": TEXT, "content": {"type": "string", "maxLength": 10000}, "expected_sha256": TEXT}),
+        "filepath": TEXT, "content": {"type": "string", "maxLength": 700}, "expected_sha256": TEXT}),
     schema("tool_read_file", "Dosyayı oku; sonraki değişiklik için sha256 al.", {"filepath": TEXT}),
     schema("tool_run_shell", "Komutu argv olarak çalıştır; shell operatörleri yerine Python dosyası yazıp çalıştır.", {
         "command": TEXT}),
     schema("tool_patch_file", "Mevcut dosyada tek eşleşen metni hash kontrolüyle düzelt; diğer içeriği koru.", {
-        "filepath": TEXT, "old_text": {"type": "string", "maxLength": 10000},
-        "new_text": {"type": "string", "maxLength": 10000}, "expected_sha256": TEXT}),
-    schema("tool_browser_navigate", "Web tarayıcısını belirtilen URL'ye götür, canlı ekranda aç ve içeriği incele.", {
-        "url": TEXT}),
-    schema("tool_web_search", "Google/Web üzerinde arama yap, canlı ekranda göster ve sonuçları getir.", {
+        "filepath": TEXT, "old_text": {"type": "string", "maxLength": 700},
+        "new_text": {"type": "string", "maxLength": 700}, "expected_sha256": TEXT}),
+    schema("tool_darkweb_search", "Dark Web ve Tor arama motorları üzerinden kullanıcı adı, e-posta, marka, alan adı için sızıntı/istihbarat (OSINT) araması yapar.", {
         "query": TEXT}),
-    schema("tool_open_screen", "Masaüstünde veya yan panelde canlı ekran/tarayıcı penceresi aç.", {
+    schema("tool_onion_crawl", "Tor SOCKS5 yerel ağı üzerinden belirtilen .onion veya web sitesini anonim ziyaret eder; başlık, metin ve bulunan e-posta/cüzdanları ayıklar.", {
         "url": TEXT}),
+    schema("tool_threat_intel_scan", "Belirtilen hedef (e-posta, alan adı, marka) için Dark Web sızıntı ve tehdit istihbaratı (OSINT) taraması yürütür.", {
+        "target": TEXT, "target_type": TEXT}),
+    schema("tool_deep_research", "GPT-Researcher standardında belirtilen konu veya soru için çok kaynaklı derinlemesine araştırma yapar; sayfaların tam metin içeriklerini toplayıp sentezler.", {
+        "query": TEXT}),
+    schema("tool_secret_leak_scan", "Gitleaks motorunu kullanarak belirtilen dosya veya dizinde API anahtarı, token, şifre ve kimlik sızıntılarını tarar.", {
+        "target_path": TEXT}),
+    schema("tool_vulnerability_scan", "OSV-Scanner ve Trivy motorlarını kullanarak bağımlılık güvenlik zafiyetlerini (CVE) tarar.", {
+        "target_path": TEXT}),
+    schema("tool_smart_contract_audit", "Slither motorunu kullanarak Solidity akıllı sözleşmelerini güvenlik açıklarına karşı denetler.", {
+        "target_path": TEXT}),
+    schema("tool_github_search", "GitHub üzerinde belirtilen konuda ve özelliklerde gerçek kod içeren açık kaynak repoları arar; yıldız, açıklama, dil ve doğrudan repo bağlantılarını listeler.", {
+        "query": TEXT, "language": TEXT, "min_stars": INTEGER}),
+    schema("tool_github_inspect", "Belirtilen GitHub reposunun (owner/repo) içindeki dosyaları ve gerçek kod içerip içermediğini inceler.", {
+        "repo_full_name": TEXT}),
+    schema("tool_direct_answer", "Kullanıcının danışmanlık, soru-cevap, rehberlik veya açıklama taleplerine dosya oluşturmadan doğrudan kapsamlı Türkçe yanıt verir.", {
+        "cevap": {"type": "string", "maxLength": 8000}}),
 ]
 
 
@@ -94,6 +110,7 @@ class TaskTools:
         self.child_group = None
         self.heartbeat = heartbeat
         self.created_in_job = set()
+        self.accumulated_files = set()
 
     def path(self, value):
         raw = Path(value)
@@ -164,12 +181,36 @@ class TaskTools:
             return {"success": True, "plan": plan}
         if name == "tool_run_shell":
             return self.run_command(args["command"])
-        if name == "tool_browser_navigate":
-            return self.browser_navigate(args["url"])
-        if name == "tool_web_search":
-            return self.web_search(args["query"])
-        if name == "tool_open_screen":
-            return self.open_screen(args.get("url", "https://www.google.com"))
+        if name == "tool_darkweb_search":
+            from darkweb_intelligence import DarkWebIntelligence
+            results = DarkWebIntelligence.search_sync(args.get("query", ""), max_results=10)
+            return {"success": True, "results": results, "count": len(results)}
+        if name == "tool_onion_crawl":
+            from darkweb_intelligence import TorCrawler
+            return TorCrawler.crawl_sync(args.get("url", ""), timeout=25)
+        if name == "tool_threat_intel_scan":
+            from darkweb_intelligence import DarkWebIntelligence
+            return DarkWebIntelligence.osint_threat_scan_sync(args.get("target", ""), scan_type=args.get("target_type", "genel"))
+        if name == "tool_deep_research":
+            from darkweb_intelligence import DarkWebIntelligence
+            return DarkWebIntelligence.deep_research_sync(args.get("query", ""))
+        if name == "tool_secret_leak_scan":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.scan_secrets(args.get("target_path", str(self.root)))
+        if name == "tool_vulnerability_scan":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.scan_vulnerabilities(args.get("target_path", str(self.root)))
+        if name == "tool_smart_contract_audit":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.audit_smart_contract(args.get("target_path", ""))
+        if name == "tool_github_search":
+            from github_intelligence import GitHubIntelligence
+            return GitHubIntelligence.search_repos(args.get("query", ""), language=args.get("language"), min_stars=args.get("min_stars", 5))
+        if name == "tool_github_inspect":
+            from github_intelligence import GitHubIntelligence
+            return GitHubIntelligence.inspect_repo_contents(args.get("repo_full_name", ""))
+        if name == "tool_direct_answer":
+            return {"success": True, "cevap": args.get("cevap", "")}
         path = self.path(args["filepath"])
         if name == "tool_make_directory":
             resolved = path.resolve()
@@ -186,8 +227,8 @@ class TaskTools:
         if name not in {"tool_write_file", "tool_append_file", "tool_patch_file"}:
             raise ValueError("Bilinmeyen araç.")
         if name == "tool_write_file" and path.exists():
-            # Dosya uzerine temiz yeniden yazmaya izin ver (kisir donguyu engelle)
-            path.unlink(missing_ok=True)
+            if path in self.accumulated_files or path not in self.created_in_job:
+                raise ValueError("Dosya zaten var; üzerine yazma engellendi. Devam için tool_append_file, düzeltme için tool_patch_file kullan.")
         if name == "tool_patch_file":
             old, new = args["old_text"], args["new_text"]
             if not old or max(len(old), len(new)) > self.chunk_limit:
@@ -219,6 +260,7 @@ class TaskTools:
                 raise ValueError(f"Parça {self.chunk_limit} karakteri aşıyor; küçük parçalara böl.")
             data = raw_content.encode("utf-8")
             if name == "tool_append_file":
+                self.accumulated_files.add(path)
                 previous = self.read(path)
                 if hashlib.sha256(previous).hexdigest() != args["expected_sha256"]:
                     raise ValueError("Dosya değişmiş; tekrar okuyup doğru hash ile devam et.")
@@ -234,9 +276,12 @@ class TaskTools:
                 output.flush()
                 os.fsync(output.fileno())
             if name == "tool_write_file":
-                # Atomic create-if-absent; a concurrent creator cannot be overwritten.
-                os.link(temporary, path)
-                self.created_in_job.add(path)
+                if path in self.created_in_job and path.exists():
+                    os.replace(temporary, path)
+                else:
+                    # Atomic create-if-absent; a concurrent creator cannot be overwritten.
+                    os.link(temporary, path)
+                    self.created_in_job.add(path)
             else:
                 if self.read(path) != previous:
                     raise ValueError("Dosya işlem sırasında değişti; değişiklik uygulanmadı.")
@@ -313,107 +358,3 @@ class TaskTools:
             if not result["success"] and "SyntaxError" in result.get("stderr", ""):
                 result["stderr"] += "\n[ÖNERİ]: Python sözdizim hatası algılandı. Dosyayı yamalamak yerine 'tool_write_file' ile baştan eksiksiz ve temiz şekilde yeniden yazın."
             return result
-
-    def browser_navigate(self, url):
-        import urllib.request
-        import json
-        import time
-        import subprocess
-        import re
-
-        if not url.startswith("http://") and not url.startswith("https://"):
-            url = "https://" + url
-
-        meta_path = self.root / ".baris_runtime" / "screen_meta.json"
-        try:
-            subprocess.Popen(["open", "-a", "Google Chrome", url])
-        except Exception:
-            try:
-                subprocess.Popen(["open", url])
-            except Exception:
-                pass
-
-        title = "Web Sayfası"
-        text_content = ""
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode("utf-8", errors="ignore")
-                t_m = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-                if t_m:
-                    title = t_m.group(1).strip()
-                clean = re.sub(r'<script.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-                clean = re.sub(r'<style.*?</style>', '', clean, flags=re.DOTALL | re.IGNORECASE)
-                clean = re.sub(r'<[^>]+>', ' ', clean)
-                clean = ' '.join(clean.split())
-                text_content = clean[:2500]
-        except Exception as e:
-            text_content = f"Sayfa ekranda açıldı. (Ayrıntı: {str(e)})"
-
-        try:
-            meta = {"url": url, "title": title, "updated_at": time.time(), "status": "LIVE"}
-            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-
-        return {
-            "success": True,
-            "url": url,
-            "title": title,
-            "content": text_content,
-            "message": f"'{url}' ({title}) sayfası canlı ekranda açıldı ve incelendi."
-        }
-
-    def web_search(self, query):
-        import urllib.request
-        import urllib.parse
-        import json
-        import time
-        import subprocess
-
-        search_url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
-        try:
-            subprocess.Popen(["open", "-a", "Google Chrome", search_url])
-        except Exception:
-            try:
-                subprocess.Popen(["open", search_url])
-            except Exception:
-                pass
-
-        meta_path = self.root / ".baris_runtime" / "screen_meta.json"
-        try:
-            meta = {"url": search_url, "title": f"Google Arama: {query}", "updated_at": time.time(), "status": "LIVE"}
-            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-
-        results_summary = f"Google'da '{query}' araması yapıldı ve sonuçlar canlı ekranda açıldı."
-        if any(k in query.lower() for k in ["tcmb", "doviz", "kur"]):
-            try:
-                import xml.etree.ElementTree as ET
-                tcmb_url = "https://www.tcmb.gov.tr/kurlar/today.xml"
-                req = urllib.request.Request(tcmb_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    tree = ET.fromstring(resp.read())
-                    rates = []
-                    for cur in tree.findall("Currency"):
-                        code = cur.attrib.get("CurrencyCode", "")
-                        if code in ["USD", "EUR", "GBP", "CHF"]:
-                            name = cur.findtext("Isim", "")
-                            buying = cur.findtext("ForexBuying", "")
-                            selling = cur.findtext("ForexSelling", "")
-                            rates.append(f"{code} ({name}): Alış={buying} TL, Satış={selling} TL")
-                    if rates:
-                        results_summary += "\n\nResmi TCMB Günlük Gösterge Kurları:\n" + "\n".join(rates)
-            except Exception:
-                pass
-
-        return {
-            "success": True,
-            "query": query,
-            "search_url": search_url,
-            "results": results_summary
-        }
-
-    def open_screen(self, url):
-        return self.browser_navigate(url)

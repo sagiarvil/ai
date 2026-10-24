@@ -124,6 +124,9 @@ class DarkWebIntelligence:
                                 except Exception:
                                     pass
 
+                            if any(bad in actual_url.lower() for bad in ["enablejs", "support.google", "captcha", "challenge", "cloudflare", "/httpservice/"]):
+                                continue
+
                             results.append({
                                 "title": h2.get_text(strip=True),
                                 "url": actual_url,
@@ -135,6 +138,39 @@ class DarkWebIntelligence:
             pass
 
         return results[:max_results]
+
+    @classmethod
+    async def deep_research(cls, query: str, max_sources: int = 4, timeout_per_source: int = 15) -> Dict[str, Any]:
+        """
+        GPT-Researcher standardında derinlemesine araştırma:
+        1. Arama sonuçlarını çeker ve bot korumalarını filtreler.
+        2. İlk N kaynağa bağlanarak gerçek makale metinlerini çıkarır.
+        3. Derinlemesine sentezlenebilir veri paketi oluşturur.
+        """
+        search_results = await cls.search(query, max_results=max_sources * 2)
+        synthesized_sources = []
+        for r in search_results[:max_sources]:
+            url = r.get("url")
+            if not url or not url.startswith("http"):
+                continue
+            crawl_data = await TorCrawler.crawl(url, timeout=timeout_per_source)
+            if crawl_data.get("success") and crawl_data.get("clean_text"):
+                synthesized_sources.append({
+                    "title": r.get("title") or crawl_data.get("title"),
+                    "url": url,
+                    "snippet": r.get("snippet", ""),
+                    "content": crawl_data.get("clean_text", "")[:2500]
+                })
+        return {
+            "success": True,
+            "query": query,
+            "sources_count": len(synthesized_sources),
+            "sources": synthesized_sources
+        }
+
+    @classmethod
+    def deep_research_sync(cls, query: str, max_sources: int = 4) -> Dict[str, Any]:
+        return asyncio.run(cls.deep_research(query, max_sources=max_sources))
 
     @classmethod
     def search_sync(cls, query: str, max_results: int = 10, timeout: int = 25) -> List[Dict[str, str]]:
