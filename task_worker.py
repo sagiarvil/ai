@@ -677,19 +677,15 @@ def _run_owned_job(store, job_id):
     # ─────────────────────────────────────────────────────────────
     decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
     raw_msg = (payload.get("message", "") or "").strip()
-    # 0.1 Güvenlik Bariyeri & Jailbreak Savunması
+
+    # 0.1 Güvenlik Bariyeri
     if any(bad in raw_msg.lower() for bad in ["talimatlarini unut", "talimatlarını unut", "/etc/passwd", "/etc/shadow", "serbest bir linux"]):
         finish("VERIFIED", "Güvenlik İhlali: Sistem dosyalarına (/etc/passwd vb.) erişim ve talimat aşımı girişimleri kesinlikle engellenmiştir.")
         return
-    # 0.2 Yalnızca Gerçek Anlamsız Karakter Dizilerini Reddet
-    is_gibberish = bool(re.search(r"\b(qwerty|asdfg|zxcv|123456)\b", raw_msg.lower())) or (
-        len(raw_msg.split()) <= 4 and not any(v in raw_msg.lower() for v in ["a","e","ı","i","o","ö","u","ü"])
-    ) or (
-        len(raw_msg) > 10 and re.fullmatch(r"^[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ\s]+$", raw_msg)
-    )
-    if is_gibberish:
-        finish("VERIFIED", f"Girdiğiniz ifade ('{raw_msg[:50]}') anlaşılır bir teknik görev veya soru içermiyor. Lütfen ne yapmak istediğinizi (kod inceleme, açık kaynak repo arama, güvenlik taraması vb.) net olarak belirtin.")
-        return
+
+    # Inline kod varsa dizin taraması yapma, doğrudan LLM muhakemesine devret
+    if decision.autonomous_action and any(k in raw_msg for k in ["<?php", "def ", "class ", "SELECT ", "eval("]):
+        decision.autonomous_action = None
 
     if decision.autonomous_action and not steps:
         tool_name, tool_args = decision.autonomous_action
@@ -740,9 +736,12 @@ def _run_owned_job(store, job_id):
         "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
         "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
     )
-    is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
-    if "muhakeme" in (decision.reason or "").lower() or "danışmanlık" in (decision.reason or "").lower() or "<?php" in user_prompt or "sakın" in user_prompt.lower():
-        is_consult = True
+    from engine_agent_router import normalize_text
+    t = normalize_text(payload.get("message", ""))
+    wants_execution = any(k in t for k in [
+        "hesapla", "asal sayi", "asal sayı", "script yaz", "kod yaz", "dosyaya kaydet", "dosyaya yaz", "dosya olustur"
+    ]) and not any(k in t for k in ["sakın çalıştırma", "sakin calistirma", "calistirma", "çalıştırma", "kıyasla", "karşılaştır", "neden", "açıkla", "acikla", "owasp", "<?php"])
+    is_consult = not wants_execution
     default_system = decision.agent.system_prompt if is_consult else code_system
     # Sohbet ve mimari bağlamını koruma
     user_prompt = payload["message"]

@@ -128,10 +128,12 @@ class EngineAgentRouter:
     @classmethod
     def route(cls, message: str, workspace: str, expected_files: Optional[dict] = None) -> RoutingDecision:
         t0 = time.perf_counter()
-        t = normalize_text(message)
+        raw_text = message.strip()
+        lower_text = raw_text.lower()
+        urls = re.findall(r'https?://(?:www\.)?(?:github|gitlab)\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+', raw_text)
 
-        # 0.1 Güvenlik Bariyeri & Jailbreak Savunması
-        if any(bad in t for bad in ["talimatlarini unut", "talimatlarını unut", "/etc/passwd", "/etc/shadow", "serbest bir linux"]):
+        # 0. Güvenlik İhlali / Sistem Dosyaları Koruması
+        if any(bad in lower_text for bad in ["talimatlarini unut", "talimatlarını unut", "/etc/passwd", "/etc/shadow", "serbest bir linux"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["turnkey_solver"],
@@ -140,181 +142,50 @@ class EngineAgentRouter:
                 reason="Güvenlik İhlali: Sistem dosyalarına ve yetkisiz komutlara erişim engellendi."
             )
 
-        # 0.2 Kullanıcı Metninde Doğrudan Kod veya Karşılaştırma / Negatif Eylem Varsa Muhakeme Modu
-        has_inline_code = any(k in message for k in ["<?php", "eval(", "def ", "class ", "SELECT ", "import "])
-        has_negated_action = any(k in t for k in ["arama yapma", "sakın çalıştırma", "sakin calistirma", "calistirma", "çalıştırma", "kiyasla", "kıyasla", "karsilastir", "karşılaştır", "neden ustun", "neden üstün", "owasp"])
-        if has_inline_code or (has_negated_action and any(k in t for k in ["incele", "kıyasla", "karsilastir", "zafiyet", "acik", "açık", "farki", "neden"])):
+        # 1. KURAL: Açık URL + Eylem = DOĞRUDAN ARAÇ (Repo İnceleme)
+        if urls and any(word in lower_text for word in ["incele", "analiz et", "tara", "bak", "inspect", "scan", "klonla"]):
             dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["turnkey_solver"],
-                autonomous_action=None,
-                latency_ms=round(dt, 4),
-                reason="Doğrudan kod inceleme veya analitik karşılaştırma muhakemesi, araçsız Claude-grade moduna yönlendirildi."
-            )
-
-        # 0.3 GitHub Repo Hedefli İstihbarat (Gitleaks / Repo İnceleme)
-        is_github_target = any(k in t for k in ["github link", "rust araci", "en populer rust", "ast-grep", "o repo", "bu repo"])
-        if is_github_target and any(k in t for k in ["gitleaks", "tara", "linkini getir", "linki", "incele"]):
-            dt = (time.perf_counter() - t0) * 1000
-            target_repo = "ast-grep/ast-grep" if any(k in t for k in ["ast", "rust"]) else "sagiarvil/ai"
             return RoutingDecision(
                 agent=cls.ROLES["github_hunter"],
-                autonomous_action=("tool_github_inspect", {"repo_full_name": target_repo}),
+                autonomous_action=("tool_github_inspect", {"repo_full_name": urls[0]}),
                 latency_ms=round(dt, 4),
-                reason=f"Açık kaynak GitHub repo ({target_repo}) kod ve Gitleaks sızıntı denetimi talep edildi."
+                reason="Explicit URL inspection request"
             )
 
-        # 1. Kod / Dosya Yazma Görevi (Strict Code Execution)
-        if expected_files or any(k in t for k in ["dosyasi", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje olustur", "dosyaya yaz", "dosyaya kaydet"]):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["code_executor"],
-                autonomous_action=None,
-                latency_ms=round(dt, 4),
-                reason="Doğrudan dosya oluşturma / kod yürütme kabul koşulu tespit edildi."
-            )
-
-        # 1.1 Kavramsal / Soru-Cevap / Karşılaştırma / Mimari Katkı ve Danışmanlık Soruları
-        is_conceptual_question = any(q in t for q in [
-            "nedir", "farki", "farkı", "nasil calisir", "nasıl çalışır", "karsilastir", "karşılaştır",
-            "ne ise yarar", "ne işe yarar", "ne yapmaliyim", "ne yapmalıyım", "neler yapabilirsin",
-            "kimsin", "hangisi daha iyi", "tavsiye", "farki ne", "farkı ne", "katki", "katkı",
-            "katkisi", "katkısı", "katki saglar", "katkı sağlar", "bize nasil", "bize nasıl",
-            "nasil fayda", "nasıl fayda", "nasil entegre", "nasıl entegre", "ne yapabiliriz",
-            "ne yapabilir", "faydasi nedir", "faydası nedir", "baris ai icin", "barış ai için"
-        ])
-        if is_conceptual_question and not any(run_kw in t for run_kw in ["tara", "denetle", "calistir", "çalıştır", "puanla", "klonla", "ara ve bul"]):
+        # 2. KURAL: Açık URL + Danışmanlık = SADECE MUHAKEME (Araç Yok)
+        if urls and any(word in lower_text for word in ["nasıl katkı", "nasil katki", "ne katkı", "ne katki", "sence", "mantıklı mı", "mantikli mi", "öneri", "think", "opinion"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["turnkey_solver"],
                 autonomous_action=None,
                 latency_ms=round(dt, 4),
-                reason="Mimari değerlendirme / kavramsal danışmanlık sorusu tespit edildi, doğrudan anahtar teslim Claude-grade cevap moduna yönlendirildi."
+                reason="Architectural reasoning about a provided repo"
             )
 
-        # 2. Sızıntı / Gizli Anahtar Taraması (Gitleaks & TruffleHog)
-        is_encryption_query = any(w in t for w in ["sifreleme", "şifreleme", "sifrele", "şifrele", "kripto", "cipher", "crypto", "anahtar teslim", "aes", "rsa", "fernet"])
-        if not is_encryption_query and not is_conceptual_question and "trufflehog" in t:
+        # 3. KURAL: Güvenlik Tarama Talebi (Inline Kod Yoksa Klasör Taraması)
+        has_inline_code = any(k in raw_text for k in ["<?php", "def ", "class ", "SELECT ", "eval(", "function "])
+        if not has_inline_code and any(word in lower_text for word in ["gitleaks", "trufflehog"]) and "sakın" not in lower_text:
             dt = (time.perf_counter() - t0) * 1000
+            tool = "tool_trufflehog_scan" if "trufflehog" in lower_text else "tool_secret_leak_scan"
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
-                autonomous_action=("tool_trufflehog_scan", {"target_path": workspace}),
+                autonomous_action=(tool, {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="TruffleHog derin credential ve gizli anahtar sızıntı taraması talep edildi."
+                reason="Explicit workspace security scan request"
             )
 
-        leak_explicit = any(k in t for k in ["gitleaks", "sizinti", "sızıntı", "leak", "credential", "api key", "secret scan"])
-        password_scan = any(k in t for k in ["sifre", "şifre", "secret", "anahtar", "token"]) and any(a in t for a in ["tara", "sizinti", "sızıntı", "bul", "kontrol", "denet", "leak", "acik", "açık"])
-        if not is_encryption_query and not is_conceptual_question and (leak_explicit or password_scan):
+        # 4. KURAL: Açık GitHub Arama Talebi ("bana ... repo bul")
+        if any(k in lower_text for k in ["repo bul", "repolarını bul", "açık kaynak repo bul", "acik kaynak repo bul"]) and not any(k in lower_text for k in ["arama yapma", "bulma", "kıyasla", "karşılaştır"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
-                agent=cls.ROLES["security_auditor"],
-                autonomous_action=("tool_secret_leak_scan", {"target_path": workspace}),
+                agent=cls.ROLES["github_hunter"],
+                autonomous_action=("tool_github_search", {"query": raw_text, "min_stars": 5}),
                 latency_ms=round(dt, 4),
-                reason="Gitleaks gizli anahtar ve şifre sızıntı taraması talep edildi."
+                reason="Explicit GitHub search request"
             )
 
-        # 3. Zafiyet / CVE / Tedarik Zinciri (OSV-Scanner, Trivy, Scorecard)
-        if "scorecard" in t:
-            repo_match = re.search(r"([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)", t)
-            repo = repo_match.group(1) if repo_match else "sagiarvil/ai"
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["security_auditor"],
-                autonomous_action=("tool_repo_scorecard", {"repo_name": repo}),
-                latency_ms=round(dt, 4),
-                reason="OpenSSF Scorecard repo tedarik zinciri sağlık analizi talep edildi."
-            )
-
-        if any(k in t for k in ["zafiyet", "cve", "guvenlik acigi", "güvenlik açığı", "trivy", "osv", "bagimlilik", "bağımlılık"]):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["security_auditor"],
-                autonomous_action=("tool_vulnerability_scan", {"target_path": workspace}),
-                latency_ms=round(dt, 4),
-                reason="OSV-Scanner/Trivy zafiyet ve bağımlılık taraması talep edildi."
-            )
-
-                # 4. SSOT Semantik Niyet Kapısı (IntentEngine — Tek Gerçeklik Kaynağı)
-        try:
-            from intent_engine import IntentEngine, Route, Intent
-            from intent_adapters import FastEmbedAdapter
-            if not hasattr(cls, "_intent_engine") or cls._intent_engine is None:
-                cls._intent_engine = IntentEngine(FastEmbedAdapter())
-
-            intent_dec = cls._intent_engine.decide(message)  # Ham metin, dokunulmamış
-            dt = (time.perf_counter() - t0) * 1000
-
-            if intent_dec.route == Route.ABSTAIN:
-                return RoutingDecision(
-                    agent=cls.ROLES["turnkey_solver"],
-                    autonomous_action=None,
-                    latency_ms=round(dt, 4),
-                    reason=f"Semantik niyet belirsiz (skor: {intent_dec.similarity}, marj: {intent_dec.margin}); doğrudan kullanıcıya soru sorma/açıklama moduna yönlendirildi."
-                )
-
-            if intent_dec.route == Route.REASON:
-                return RoutingDecision(
-                    agent=cls.ROLES["turnkey_solver"],
-                    autonomous_action=None,
-                    latency_ms=round(dt, 4),
-                    reason=f"Semantik niyet mimari muhakeme ({intent_dec.intent}); araçsız doğrudan akıl yürütme yoluna yönlendirildi."
-                )
-
-            if intent_dec.route == Route.TOOL and intent_dec.allowed_tools:
-                primary_tool = intent_dec.allowed_tools[0]
-                tool_args = {}
-                if primary_tool == "tool_github_inspect":
-                    tool_args = {"repo_full_name": intent_dec.urls[0] if intent_dec.urls else message}
-                elif primary_tool == "tool_github_search":
-                    tool_args = {"query": message, "min_stars": 5}
-                elif primary_tool == "tool_security_scan":
-                    tool_args = {"target_path": workspace}
-                else:
-                    tool_args = {"raw_text": intent_dec.raw_input}
-
-                return RoutingDecision(
-                    agent=cls.ROLES["github_hunter"] if "github" in primary_tool else cls.ROLES["security_auditor"],
-                    autonomous_action=(primary_tool, tool_args),
-                    latency_ms=round(dt, 4),
-                    reason=f"SSOT IntentEngine onaylı araç yetkilendirmesi: {primary_tool} (niyet: {intent_dec.intent})"
-                )
-        except Exception:
-            pass
-
-        # 5. Phishing / Sahte Domain Taraması (MetaMask)
-        if any(k in t for k in ["phishing", "sahte domain", "zararli domain", "zararlı domain", "oltalama", "metamask"]):
-            match = re.search(r"([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)", t)
-            domain = match.group(1) if match else "metamask.io"
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["web3_security"],
-                autonomous_action=("tool_phishing_domain_scan", {"domain": domain}),
-                latency_ms=round(dt, 4),
-                reason="MetaMask veritabanında phishing domain kontrolü tespit edildi."
-            )
-
-        # 6. Akıllı Sözleşme Denetimi (Slither & Echidna)
-        if any(k in t for k in ["echidna", "fuzz", "invariant"]):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["web3_security"],
-                autonomous_action=("tool_smart_contract_fuzz", {"contract_path": workspace}),
-                latency_ms=round(dt, 4),
-                reason="Crytic Echidna akıllı sözleşme fuzzing denetimi talep edildi."
-            )
-
-        if any(k in t for k in ["slither", "akilli sozlesme", "akıllı sözleşme", "smart contract", "solidity", "kontrat"]):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["web3_security"],
-                autonomous_action=("tool_smart_contract_audit", {"target_path": workspace}),
-                latency_ms=round(dt, 4),
-                reason="Crytic Slither akıllı sözleşme statik analizi talep edildi."
-            )
-
-        # 7. Motor Durumları / Sistem Sağlığı
-        if any(k in t for k in ["motorlari listele", "motorları listele", "motor durumu", "hangi motorlar", "sistem sagligi", "sistem sağlığı", "canli motorlar", "canlı motorlar"]):
+        # 5. KURAL: Sistem Motorları ve Sağlık Durumu
+        if any(k in lower_text for k in ["motorlari listele", "motorları listele", "motor durumu", "hangi motorlar", "sistem sagligi", "sistem sağlığı", "canli motorlar", "canlı motorlar"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["turnkey_solver"],
@@ -323,31 +194,11 @@ class EngineAgentRouter:
                 reason="Sistem motorlarının canlı sağlık durumu sorgulandı."
             )
 
-        # 8. Dark Web / OSINT Arama
-        if any(k in t for k in ["dark web", "deep web", "onion", "ahmia", "threat intel"]) or re.search(r"\btor\b", t):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["darkweb_intel"],
-                autonomous_action=("tool_darkweb_search", {"query": t}),
-                latency_ms=round(dt, 4),
-                reason="Dark Web ve Tor ağı istihbarat araması talep edildi."
-            )
-
-        # 9. Derin Araştırma (GPT-Researcher)
-        if any(k in t for k in ["derin arastir", "derin araştır", "derinlemesine", "kapsamli arastir", "kapsamlı araştır", "literatur", "literatür", "gpt-researcher"]):
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["deep_research"],
-                autonomous_action=("tool_deep_research", {"query": t}),
-                latency_ms=round(dt, 4),
-                reason="GPT-Researcher çok kaynaklı derin araştırma motoru tetiklendi."
-            )
-
-        # Varsayılan: Anahtar Teslim Çözüm ve Kesin İcraat
+        # 6. KURAL: VARSAYILAN (DEFAULT) - HER ŞEYİ DOĞRUDAN LLM'E BIRAK (SIFIR ENGEL, SIFIR APTAL BEKÇİ)
         dt = (time.perf_counter() - t0) * 1000
         return RoutingDecision(
             agent=cls.ROLES["turnkey_solver"],
             autonomous_action=None,
             latency_ms=round(dt, 4),
-            reason="Anahtar teslim kesin çözüm ve icraat yönlendirmesi."
+            reason="Fallback to LLM for natural language understanding and turnkey reasoning"
         )
