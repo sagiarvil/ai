@@ -3,20 +3,23 @@ def is_consultative_query(text: str, expected_files: dict = None) -> bool:
     """Kullanıcının doğrudan soru/danışma mı yoksa kod çalıştırma görevi mi istediğini belirler."""
     if expected_files:
         return False
-    t = text.lower().strip()
+    from engine_agent_router import normalize_text
+    t = normalize_text(text)
     code_explicit = any(k in t for k in [
-        "dosyası", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje oluştur",
+        "dosyasi", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje olustur",
         "dosyaya yaz", "dosyaya kaydet", "kod yaz", "script yaz"
     ])
     if code_explicit:
         return False
     intel_triggers = [
-        "gitleaks", "trivy", "osv", "slither", "sızıntı", "leak", "secret", "anahtar", "şifre",
-        "zafiyet", "güvenlik açığı", "cve", "github", "repo", "açık kaynak", "dark web", "deep web",
-        "onion", "tor", "istihbarat", "osint", "threat", "ara", "tara", "araştır", "bul",
-        "nasıl", "nedir", "neler yapabilirsin", "kimsin", "önerin", "tavsiye", "farkı ne", "açıkla", "bilgi ver",
-        "yeteneklendır", "yeteneklendir", "hizmet edebilirsin", "hizmet edebilirmisin", "yapabilir misin",
-        "kırabilirmisin", "mümkün mü", "anlat", "neden", "merhaba", "selam", "var mı", "mı", "mi", "mu", "mü"
+        "gitleaks", "trivy", "osv", "slither", "trufflehog", "scorecard", "echidna",
+        "sizinti", "sızıntı", "leak", "secret", "anahtar", "sifre", "şifre",
+        "zafiyet", "guvenlik acigi", "güvenlik açığı", "cve", "github", "repo",
+        "acik kaynak", "açık kaynak", "dark web", "deep web", "onion", "tor",
+        "istihbarat", "osint", "threat", "ara", "tara", "arastir", "araştır", "bul",
+        "nasil", "nasıl", "nedir", "neler yapabilirsin", "kimsin", "acikla", "açıkla", "bilgi ver",
+        "yeteneklendir", "hizmet edebilirsin", "yapabilir misin", "anlat", "neden", "merhaba", "selam",
+        "var mi", "var mı", "mi", "mı", "mu", "mü"
     ]
     return any(k in t for k in intel_triggers) or "?" in t
 
@@ -396,11 +399,13 @@ def _run_owned_job(store, job_id):
             pass
 
     checkpoint = job["checkpoint"] or {}
-    consultative_system = (
-        "Sen Barış AI Türkçe Yüksek Seviye Muhakeme, Danışmanlık ve Siber Güvenlik İstihbarat Asistanısın. "
-        "Sisteminde Gitleaks, Google OSV-Scanner, Aqua Trivy, Crytic Slither, Tor Threat Intel, GPT-Researcher ve GitHub Hunter gibi güçlü endüstriyel motorlar kuruludur. "
-        "Kullanıcının sorusuna doğrudan, kapsamlı, Türkçe, teknik olarak doyurucu, pedagojik, net maddeler halinde ve profesyonel bir üslupla yanıt ver. "
-        "Kullanıcı sızıntı/şifre taraması istediğinde 'tool_secret_leak_scan', zafiyet taraması istediğinde 'tool_vulnerability_scan', akıllı sözleşme denetimi istediğinde 'tool_smart_contract_audit', açık kaynak kod/repo aradığında 'tool_github_search' veya 'tool_github_inspect', derin araştırma istediğinde 'tool_deep_research', genel danışmanlık/açıklama istediğinde 'tool_direct_answer' aracını çağır."
+    turnkey_solution_system = (
+        "Sen Barış AI Kesin Sonuç Odaklı, Anahtar Teslim Çözüm ve İcraat Motorusun. "
+        "KULLANICIYA ASLA TAVSİYE, ÖNERİ, AKIL VEYA NASİHAT VERME! "
+        "'Şöyle yapabilirsiniz', 'bunu deneyebilirsiniz', 'faydalı olabilir' gibi pasif laf kalabalığı KESİNLİKLE YASAKTIR. "
+        "Kullanıcı bir şey istediğinde ya doğrudan ilgili motorunu (Gitleaks, OSV, Slither, GitHub Hunter, Tor) çalıştırıp somut raporu önüne koy, "
+        "ya da sorunun tam anahtar teslim cevabını (hazır çalışan eksiksiz kod, doğrulanmış kesin formül, doğrudan net sonuç) 'tool_direct_answer' ile ilet. "
+        "Yalnızca bitmiş, doğrulanmış ve hemen kullanılabilir nihai sonucu ver."
     )
     code_system = (
         "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
@@ -549,7 +554,9 @@ def _run_owned_job(store, job_id):
                 elif s.get("tool") == "tool_smart_contract_audit" and s.get("result", {}).get("success"):
                     r = s["result"]
                     lines = [f"### ⛓️ Crytic Slither Akıllı Sözleşme Denetimi:\n- **Sözleşme:** `{r.get('contract')}`\n- **Tespit Edilen Bulgu:** {r.get('issues_count')}"]
-                    if r.get("findings"):
+                    if r.get("warning"):
+                        lines.append(f"⚠️ **Durum:** {r.get('warning')}")
+                    elif r.get("findings"):
                         for f in r.get("findings", []):
                             lines.append(f"  • **[{f.get('impact')}] {f.get('check')}**: {f.get('description')}")
                     else:

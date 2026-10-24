@@ -3,15 +3,24 @@
 Barış AI Autonomous Multi-Agent & Engine Router (Sub-Millisecond Kernel)
 Kullanıcı talimatlarını mikrosaniyeler içinde analiz ederek en yetkin uzman ajanı
 ve canlı sistem motorunu otonom olarak devreye alır.
+Tavsiye ve laf kalabalığını yasaklar; %100 anahtar teslim kesin çözüm üretir.
 """
 
 import os
 import re
 import time
+import unicodedata
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def normalize_text(text: str) -> str:
+    """Türkçe İ/ı/I/i ve birleşen aksanları hatasız normalize eder."""
+    t = (text or "").replace("İ", "i").replace("I", "ı").strip()
+    t = "".join(c for c in unicodedata.normalize("NFD", t) if unicodedata.category(c) != "Mn")
+    return t.lower()
 
 
 @dataclass
@@ -38,12 +47,12 @@ class EngineAgentRouter:
         "security_auditor": AgentRole(
             agent_id="security_auditor",
             agent_name="🛡️ Siber Güvenlik ve Sızıntı Denetim Ajanı",
-            primary_engine="Gitleaks v8.30.1 & Google OSV / Aqua Trivy",
+            primary_engine="Gitleaks v8.30.1, TruffleHog & Google OSV / Aqua Trivy",
             system_prompt=(
                 "Sen Barış AI Kıdemli Siber Güvenlik ve Tehdit Denetim Uzmanısın. "
-                "Sistemindeki Gitleaks, Aqua Trivy ve Google OSV-Scanner motorlarını kullanarak "
-                "açık API anahtarları, şifre sızıntıları, tokenler ve CVE bağımlılık zafiyetlerini denetlersin. "
-                "Sonuçları net, maddeler halinde ve Türkçe olarak raporlarsın."
+                "ASLA TAVSİYE VERME! Sistemindeki Gitleaks, Aqua Trivy ve Google OSV-Scanner motorlarını kullanarak "
+                "açık API anahtarları, şifre sızıntıları, tokenler ve CVE bağımlılık zafiyetlerini denetler, "
+                "doğrudan somut kanıt ve sonuç tablosunu teslim edersin."
             ),
             allowed_tools=["tool_secret_leak_scan", "tool_vulnerability_scan", "tool_direct_answer"]
         ),
@@ -53,8 +62,8 @@ class EngineAgentRouter:
             primary_engine="GitHub CLI (gh) & Source Tree Code Inspector",
             system_prompt=(
                 "Sen Barış AI Açık Kaynak İstihbarat ve GitHub Repo Avcısısın. "
-                "Yetkili GitHub motorunu kullanarak kullanıcının aradığı konuda gerçekten çalışan kaynak kodları "
-                "içeren repoları bulur, kod varlığını teyit eder ve doğrudan linkleriyle Markdown tablosu olarak sunarsın."
+                "ASLA TAVSİYE VERME! Yetkili GitHub motorunu kullanarak kullanıcının aradığı konuda gerçekten çalışan kaynak kodları "
+                "içeren repoları bulur, kod varlığını teyit eder ve doğrudan çalışan repo linklerini Markdown tablosu olarak sunarsın."
             ),
             allowed_tools=["tool_github_search", "tool_github_inspect", "tool_direct_answer"]
         ),
@@ -64,8 +73,8 @@ class EngineAgentRouter:
             primary_engine="Crytic Slither v0.11.6 & MetaMask Phishing DB (107K+ Domain)",
             system_prompt=(
                 "Sen Barış AI Web3 Güvenlik ve Akıllı Sözleşme Denetçisisin. "
-                "Solidity sözleşmelerini Slither ile reentrancy ve mantık açıklarına karşı denetler, "
-                "şüpheli alan adlarını MetaMask 107.000+ domainlik karalistesinde anlık tararsın."
+                "ASLA TAVSİYE VERME! Solidity sözleşmelerini Slither ile reentrancy ve mantık açıklarına karşı denetler, "
+                "şüpheli alan adlarını MetaMask 107.000+ domainlik karalistesinde anlık tarayıp kesin güvenlik durumunu bildirirsin."
             ),
             allowed_tools=["tool_smart_contract_audit", "tool_phishing_domain_scan", "tool_direct_answer"]
         ),
@@ -75,8 +84,8 @@ class EngineAgentRouter:
             primary_engine="Tor SOCKS5 Engine, Ahmia & DuckDuckGo Onion",
             system_prompt=(
                 "Sen Barış AI Dark Web ve Tehdit İstihbaratı Analistisin. "
-                "Tor ağı üzerindeki sızıntıları, .onion servislerini ve OSINT veri tabanlarını tarar, "
-                "kullanıcıya filtrelenmiş ve doğrulanmış siber tehdit istihbaratı sunarsın."
+                "ASLA TAVSİYE VERME! Tor ağı üzerindeki sızıntıları, .onion servislerini ve OSINT veri tabanlarını tarar, "
+                "kullanıcıya doğrulanmış tehdit verilerini doğrudan aktarırsın."
             ),
             allowed_tools=["tool_darkweb_search", "tool_onion_crawl", "tool_threat_intel_scan", "tool_direct_answer"]
         ),
@@ -86,8 +95,8 @@ class EngineAgentRouter:
             primary_engine="GPT-Researcher Multi-Source Synthesizer",
             system_prompt=(
                 "Sen Barış AI Derin Araştırma ve Sentez Ajanısın. "
-                "Belirtilen konularda sayfaların tam metinlerini toplayıp, bot engelleyicileri filtreleyerek "
-                "akademik ve kurumsal düzeyde derin araştırma raporları hazırlarsın."
+                "ASLA TAVSİYE VERME! Belirtilen konularda sayfaların tam metinlerini toplayıp, bot engelleyicileri filtreleyerek "
+                "eksiksiz ve anahtar teslim derin araştırma raporu hazırlarsın."
             ),
             allowed_tools=["tool_deep_research", "tool_direct_answer"]
         ),
@@ -97,18 +106,20 @@ class EngineAgentRouter:
             primary_engine="Python 3.14 Local Execution Kernel",
             system_prompt=(
                 "Sen Barış AI Deterministik Kod ve Hesaplama Motorusun. "
-                "Kullanıcının talep ettiği analiz ve veri işleme görevlerini doğrudan yerel Python ile "
-                "eksiksiz ve bağımsız doğrulama kanıtıyla tamamlarsın."
+                "ASLA TAVSİYE VERME! Kullanıcının talep ettiği analiz ve veri işleme görevlerini doğrudan yerel Python ile "
+                "yazar, çalıştırır ve bağımsız doğrulama kanıtıyla tamamlarsın."
             ),
             allowed_tools=[]  # Geleneksel araç seti (tool_write_file, tool_run_shell vb.)
         ),
-        "consultant": AgentRole(
-            agent_id="consultant",
-            agent_name="💡 Baş Danışman ve Sistem Mimarı",
-            primary_engine="Barış AI High-Level Reasoning",
+        "turnkey_solver": AgentRole(
+            agent_id="turnkey_solver",
+            agent_name="🎯 Anahtar Teslim Çözüm ve İcraat Ajanı",
+            primary_engine="Barış AI Turnkey Solution Kernel",
             system_prompt=(
-                "Sen Barış AI Kıdemli Teknoloji ve Mimari Danışmanısın. "
-                "Kullanıcının stratejik sorularına dosya yazmadan doğrudan pedagojik ve teknik doyuruculukla yanıt verirsin."
+                "Sen Barış AI Kesin Sonuç Odaklı, Anahtar Teslim Çözüm ve İcraat Motorusun. "
+                "KULLANICIYA ASLA TAVSİYE, ÖNERİ, AKIL VEYA NASİHAT VERME! "
+                "'Şöyle yapabilirsiniz', 'bunu deneyebilirsiniz', 'faydalı olabilir' gibi pasif tavsiye kipleri KESİNLİKLE YASAKTIR. "
+                "Kullanıcı bir soru sorduğunda ya da görev verdiğinde, sorunun tam anahtar teslim cevabını (hazır çalışan eksiksiz kod, net çözüm, kesin sonuç) doğrudan önüne koyarsın."
             ),
             allowed_tools=["tool_direct_answer", "tool_system_engines_status"]
         )
@@ -117,10 +128,10 @@ class EngineAgentRouter:
     @classmethod
     def route(cls, message: str, workspace: str, expected_files: Optional[dict] = None) -> RoutingDecision:
         t0 = time.perf_counter()
-        t = (message or "").lower().strip()
+        t = normalize_text(message)
 
         # 1. Kod / Dosya Yazma Görevi (Strict Code Execution)
-        if expected_files or any(k in t for k in ["dosyası", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje oluştur", "dosyaya yaz", "dosyaya kaydet"]):
+        if expected_files or any(k in t for k in ["dosyasi", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje olustur", "dosyaya yaz", "dosyaya kaydet"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["code_executor"],
@@ -129,30 +140,32 @@ class EngineAgentRouter:
                 reason="Doğrudan dosya oluşturma / kod yürütme kabul koşulu tespit edildi."
             )
 
-        # 2. Sızıntı / Şifre Taraması (Gitleaks)
-        if any(k in t for k in ["gitleaks", "sızıntı", "şifre sızıntısı", "secret leak", "api anahtarı sızıntısı", "token sızıntısı"]):
+        # 2. Sızıntı / Gizli Anahtar Taraması (Gitleaks & TruffleHog)
+        is_encryption_query = any(w in t for w in ["sifreleme", "şifreleme", "sifrele", "şifrele", "kripto", "cipher", "crypto", "anahtar teslim"])
+        leak_explicit = any(k in t for k in ["gitleaks", "trufflehog", "sizinti", "sızıntı", "leak", "credential", "api key", "secret scan"])
+        password_scan = any(k in t for k in ["sifre", "şifre", "secret", "anahtar", "token"]) and any(a in t for a in ["tara", "sizinti", "sızıntı", "bul", "kontrol", "denet", "leak", "acik", "açık"])
+        if not is_encryption_query and (leak_explicit or password_scan):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
                 autonomous_action=("tool_secret_leak_scan", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="Gitleaks gizli anahtar ve şifre sızıntı taraması talep edildi."
+                reason="Gitleaks/TruffleHog gizli anahtar ve şifre sızıntı taraması talep edildi."
             )
 
-        # 3. Zafiyet / CVE Taraması (OSV-Scanner / Trivy)
-        if any(k in t for k in ["zafiyet", "cve", "güvenlik açığı", "trivy", "osv", "osv-scanner", "bağımlılık taraması"]):
+        # 3. Zafiyet / CVE / Tedarik Zinciri (OSV-Scanner, Trivy, Scorecard)
+        if any(k in t for k in ["zafiyet", "cve", "guvenlik acigi", "güvenlik açığı", "trivy", "osv", "scorecard", "bagimlilik", "bağımlılık"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["security_auditor"],
                 autonomous_action=("tool_vulnerability_scan", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="Açık kaynak bağımlılık zafiyeti (CVE) taraması talep edildi."
+                reason="OSV-Scanner/Trivy/Scorecard zafiyet ve bağımlılık taraması talep edildi."
             )
 
         # 4. GitHub Kod & Repo Avcısı (GitHub CLI)
-        if any(k in t for k in ["github", "repo", "açık kaynak kod", "çalışan repo", "proje bul"]):
-            # Sorguyu temizle (kelime sınırları ile tam eşleşme)
-            q = re.sub(r"\b(github|da|de|üzerinde|bana|bul|ara|çalışan|repo|repolarını|projeleri)\b", "", t, flags=re.IGNORECASE).strip()
+        if any(k in t for k in ["github", "repo", "acik kaynak kod", "açık kaynak kod", "calisan repo", "çalışan repo", "proje bul"]):
+            q = re.sub(r"\b(github|da|de|uzerinde|üzerinde|bana|bul|ara|calisan|çalışan|repo|repolarini|repolarını|projeleri)\b", "", t, flags=re.IGNORECASE).strip()
             q = re.sub(r"\s+", " ", q).strip()
             if not q or len(q) < 3:
                 q = t
@@ -165,8 +178,7 @@ class EngineAgentRouter:
             )
 
         # 5. Phishing / Sahte Domain Taraması (MetaMask)
-        if any(k in t for k in ["phishing", "sahte domain", "zararlı domain", "oltalama", "metamask"]):
-            # Domain ayıkla
+        if any(k in t for k in ["phishing", "sahte domain", "zararli domain", "zararlı domain", "oltalama", "metamask"]):
             match = re.search(r"([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)", t)
             domain = match.group(1) if match else "metamask.io"
             dt = (time.perf_counter() - t0) * 1000
@@ -177,21 +189,21 @@ class EngineAgentRouter:
                 reason="MetaMask veritabanında phishing domain kontrolü tespit edildi."
             )
 
-        # 6. Akıllı Sözleşme Denetimi (Slither)
-        if any(k in t for k in ["slither", "akıllı sözleşme", "smart contract", "solidity", "kontrat denetimi"]):
+        # 6. Akıllı Sözleşme Denetimi (Slither & Echidna)
+        if any(k in t for k in ["slither", "echidna", "akilli sozlesme", "akıllı sözleşme", "smart contract", "solidity", "kontrat"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["web3_security"],
                 autonomous_action=("tool_smart_contract_audit", {"target_path": workspace}),
                 latency_ms=round(dt, 4),
-                reason="Crytic Slither ile akıllı sözleşme güvenlik denetimi talep edildi."
+                reason="Crytic Slither/Echidna akıllı sözleşme denetimi talep edildi."
             )
 
         # 7. Motor Durumları / Sistem Sağlığı
-        if any(k in t for k in ["motorları listele", "motor durumu", "hangi motorlar", "sistem sağlığı", "canlı motorlar", "motorların durumu"]):
+        if any(k in t for k in ["motorlari listele", "motorları listele", "motor durumu", "hangi motorlar", "sistem sagligi", "sistem sağlığı", "canli motorlar", "canlı motorlar"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
-                agent=cls.ROLES["consultant"],
+                agent=cls.ROLES["turnkey_solver"],
                 autonomous_action=("tool_system_engines_status", {}),
                 latency_ms=round(dt, 4),
                 reason="Sistem motorlarının canlı sağlık durumu sorgulandı."
@@ -207,11 +219,21 @@ class EngineAgentRouter:
                 reason="Dark Web ve Tor ağı istihbarat araması talep edildi."
             )
 
-        # Varsayılan: Genel Danışmanlık ve Muhakeme
+        # 9. Derin Araştırma (GPT-Researcher)
+        if any(k in t for k in ["derin arastir", "derin araştır", "derinlemesine", "kapsamli arastir", "kapsamlı araştır", "literatur", "literatür", "gpt-researcher"]):
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["deep_research"],
+                autonomous_action=("tool_deep_research", {"query": t}),
+                latency_ms=round(dt, 4),
+                reason="GPT-Researcher çok kaynaklı derin araştırma motoru tetiklendi."
+            )
+
+        # Varsayılan: Anahtar Teslim Çözüm ve Kesin İcraat
         dt = (time.perf_counter() - t0) * 1000
         return RoutingDecision(
-            agent=cls.ROLES["consultant"],
+            agent=cls.ROLES["turnkey_solver"],
             autonomous_action=None,
             latency_ms=round(dt, 4),
-            reason="Genel danışmanlık ve pedagojik muhakeme yönlendirmesi."
+            reason="Anahtar teslim kesin çözüm ve icraat yönlendirmesi."
         )

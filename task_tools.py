@@ -99,7 +99,7 @@ TOOLS = [
     schema("tool_phishing_domain_scan", "MetaMask veritabanındaki 107.000+ zararlı domain kaydını kullanarak belirtilen web sitesi veya domain adresinin phishing/sahte cüzdan olup olmadığını mikrosaniyeler içinde kontrol eder.", {
         "domain": TEXT}),
     schema("tool_system_engines_status", "Sistemdeki tüm canlı siber güvenlik, GitHub avcısı, Dark Web ve kod denetim motorlarının durumunu ve yanıt sürelerini listeler.", {}),
-    schema("tool_direct_answer", "Kullanıcının danışmanlık, soru-cevap, rehberlik veya açıklama taleplerine dosya oluşturmadan doğrudan kapsamlı Türkçe yanıt verir.", {
+    schema("tool_direct_answer", "Kullanıcının sorularına tavsiye/öneri vermeden doğrudan %100 anahtar teslim nihai cevabı, çalışan tam kodu veya kesin çözümü iletir.", {
         "cevap": {"type": "string", "maxLength": 8000}}),
 ]
 

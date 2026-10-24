@@ -184,6 +184,18 @@ class InstalledEnginesBridge:
         if not target.exists():
             return {"success": False, "error": f"Hedef dosya bulunamadı: {target_path}"}
 
+        if target.is_dir():
+            has_sol = any(target.glob("*.sol")) or any(target.glob("**/*.sol"))
+            if not has_sol:
+                return {
+                    "success": True,
+                    "engine": "Crytic Slither v0.11.6",
+                    "contract": str(target),
+                    "issues_count": 0,
+                    "findings": [],
+                    "warning": f"Hedef dizinde ({target.name}) (.sol) uzantılı Solidity akıllı sözleşmesi bulunamadı."
+                }
+
         try:
             cmd = [slither_bin, str(target), "--json", "-"]
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=35)
