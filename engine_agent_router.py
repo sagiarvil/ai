@@ -140,19 +140,22 @@ class EngineAgentRouter:
                 reason="Doğrudan dosya oluşturma / kod yürütme kabul koşulu tespit edildi."
             )
 
-        # 1.1 Kavramsal / Soru-Cevap / Karşılaştırma Soruları (Motor çalıştırma, doğrudan cevap ver)
+        # 1.1 Kavramsal / Soru-Cevap / Karşılaştırma / Mimari Katkı ve Danışmanlık Soruları
         is_conceptual_question = any(q in t for q in [
             "nedir", "farki", "farkı", "nasil calisir", "nasıl çalışır", "karsilastir", "karşılaştır",
             "ne ise yarar", "ne işe yarar", "ne yapmaliyim", "ne yapmalıyım", "neler yapabilirsin",
-            "kimsin", "hangisi daha iyi", "tavsiye", "farki ne", "farkı ne"
+            "kimsin", "hangisi daha iyi", "tavsiye", "farki ne", "farkı ne", "katki", "katkı",
+            "katkisi", "katkısı", "katki saglar", "katkı sağlar", "bize nasil", "bize nasıl",
+            "nasil fayda", "nasıl fayda", "nasil entegre", "nasıl entegre", "ne yapabiliriz",
+            "ne yapabilir", "faydasi nedir", "faydası nedir", "bu repo", "o repo", "baris ai icin", "barış ai için"
         ])
-        if is_conceptual_question and not any(run_kw in t for run_kw in ["tara", "denetle", "calistir", "çalıştır", "puanla"]):
+        if is_conceptual_question and not any(run_kw in t for run_kw in ["tara", "denetle", "calistir", "çalıştır", "puanla", "klonla", "ara ve bul"]):
             dt = (time.perf_counter() - t0) * 1000
             return RoutingDecision(
                 agent=cls.ROLES["turnkey_solver"],
                 autonomous_action=None,
                 latency_ms=round(dt, 4),
-                reason="Kavramsal soru / karşılaştırma tespit edildi, doğrudan anahtar teslim cevap moduna yönlendirildi."
+                reason="Mimari değerlendirme / kavramsal danışmanlık sorusu tespit edildi, doğrudan anahtar teslim Claude-grade cevap moduna yönlendirildi."
             )
 
         # 2. Sızıntı / Gizli Anahtar Taraması (Gitleaks & TruffleHog)

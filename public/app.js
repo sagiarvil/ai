@@ -1,4 +1,16 @@
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatInlineMarkdown(text) {
+  let s = escapeHtml(text);
+  s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/`([^`]+)`/g, '<code class="pro-inline-code">$1</code>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="pro-link">$1</a>');
+  return s;
+}
+
 function renderMarkdownContent(container, text) {
   if (!text) {
     const p = document.createElement("p");
@@ -6,114 +18,174 @@ function renderMarkdownContent(container, text) {
     container.appendChild(p);
     return;
   }
-  
+
   const rootDiv = document.createElement("div");
   rootDiv.className = "pro-report-card";
 
-  // 1. Metin başındaki önsöz ile tablo başlangıcını ayır
-  let normalized = text.replace(/^(.*?)\s*(\|\s*[^|]+)/, "$1\n\n$2");
-  // Bitişik borulu satırları (| | veya ||) satır sonlarıyla ayır
-  normalized = normalized.replace(/\|\s*\|/g, "|\n|");
-  
-  const lines = normalized.split(/\r?\n/);
-  let tableRows = [];
-  let inTable = false;
+  const lines = text.split(/\r?\n/);
+  let i = 0;
 
-  function flushTable() {
-    if (tableRows.length === 0) return;
-    const wrap = document.createElement("div");
-    wrap.className = "pro-table-wrap";
-    
-    const table = document.createElement("table");
-    table.className = "pro-table";
-    
-    let isHeader = true;
-    let alignments = [];
+  while (i < lines.length) {
+    let line = lines[i];
+    let trimmed = line.trim();
 
-    for (const r of tableRows) {
-      // Ayırıcı satır kontrolü (örn: |:---|:---:|---:|)
-      if (r.every(c => /^[\s:-]+$/.test(c))) {
-        alignments = r.map(c => {
-          const trimmed = c.trim();
-          if (trimmed.startsWith(":") && trimmed.endsWith(":")) return "center";
-          if (trimmed.endsWith(":")) return "right";
-          return "left";
-        });
-        isHeader = false;
-        continue;
-      }
-
-      const tr = document.createElement("tr");
-      r.forEach((cellText, idx) => {
-        const cell = document.createElement(isHeader ? "th" : "td");
-        cell.textContent = cellText;
-        
-        let align = alignments[idx] || "left";
-        if (!isHeader && /^[\s\d.,]+(kg|TL|adet|kWh|%|\$|€)?\s*$/i.test(cellText)) {
-          align = "right";
-        }
-        
-        if (align === "right") cell.className = "num-cell";
-        else if (align === "center") cell.className = "center-cell";
-        
-        tr.appendChild(cell);
-      });
-
-      table.appendChild(tr);
-      isHeader = false;
+    if (!trimmed) {
+      i++;
+      continue;
     }
 
-    wrap.appendChild(table);
-    rootDiv.appendChild(wrap);
-    tableRows = [];
-  }
+    // Fenced Code Block
+    if (trimmed.startsWith("```")) {
+      const lang = trimmed.slice(3).trim();
+      i++;
+      let codeLines = [];
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++;
 
-  let textBuffer = [];
-  function flushText() {
-    if (textBuffer.length === 0) return;
-    const content = textBuffer.join("\n").trim();
-    textBuffer = [];
-    if (!content) return;
+      const codeBox = document.createElement("div");
+      codeBox.className = "pro-code-box";
+      codeBox.innerHTML = '<div class="pro-code-bar"><span class="pro-code-lang">' + escapeHtml(lang || 'terminal') + '</span><button class="pro-copy-btn" type="button" onclick="navigator.clipboard.writeText(this.closest(\x22.pro-code-box\x22).querySelector(\x22code\x22).innerText); this.innerText=\x27Kopyalandı!\x27; setTimeout(()=>this.innerText=\x27Kopyala\x27, 2000)">Kopyala</button></div><pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+      rootDiv.appendChild(codeBox);
+      continue;
+    }
 
-    // Başlık kontrolü
-    if (content.startsWith("### ")) {
+    // Başlıklar
+    if (trimmed.startsWith("#### ")) {
+      const h4 = document.createElement("h4");
+      h4.className = "pro-h4";
+      h4.innerHTML = formatInlineMarkdown(trimmed.replace(/^####\s+/, ""));
+      rootDiv.appendChild(h4);
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith("### ")) {
       const h3 = document.createElement("h3");
-      h3.textContent = content.replace(/^###\s+/, "");
+      h3.className = "pro-h3";
+      h3.innerHTML = formatInlineMarkdown(trimmed.replace(/^###\s+/, ""));
       rootDiv.appendChild(h3);
-      return;
+      i++;
+      continue;
     }
-    if (content.startsWith("## ")) {
-      const h2 = document.createElement("h3");
-      h2.textContent = content.replace(/^##\s+/, "");
+    if (trimmed.startsWith("## ")) {
+      const h2 = document.createElement("h2");
+      h2.className = "pro-h2";
+      h2.innerHTML = formatInlineMarkdown(trimmed.replace(/^##\s+/, ""));
       rootDiv.appendChild(h2);
-      return;
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith("# ")) {
+      const h1 = document.createElement("h1");
+      h1.className = "pro-h1";
+      h1.innerHTML = formatInlineMarkdown(trimmed.replace(/^#\s+/, ""));
+      rootDiv.appendChild(h1);
+      i++;
+      continue;
     }
 
-    const p = document.createElement("p");
-    p.className = "pro-summary-p";
-    p.style.whiteSpace = "pre-wrap";
-    p.textContent = content;
-    rootDiv.appendChild(p);
-  }
-
-  for (let line of lines) {
-    const trimmed = line.trim();
+    // Tablo
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      flushText();
-      const cells = trimmed.slice(1, -1).split("|").map(c => c.trim());
-      tableRows.push(cells);
-      inTable = true;
-    } else {
-      if (inTable) {
-        flushTable();
-        inTable = false;
+      let tableRows = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        const cells = lines[i].trim().slice(1, -1).split("|").map(c => c.trim());
+        tableRows.push(cells);
+        i++;
       }
-      textBuffer.push(line);
+
+      if (tableRows.length > 0) {
+        const wrap = document.createElement("div");
+        wrap.className = "pro-table-wrap";
+        const table = document.createElement("table");
+        table.className = "pro-table";
+
+        let isHeader = true;
+        let alignments = [];
+
+        for (const r of tableRows) {
+          if (r.every(c => /^[\s:-]+$/.test(c))) {
+            alignments = r.map(c => {
+              const trm = c.trim();
+              if (trm.startsWith(":") && trm.endsWith(":")) return "center";
+              if (trm.endsWith(":")) return "right";
+              return "left";
+            });
+            isHeader = false;
+            continue;
+          }
+
+          const tr = document.createElement("tr");
+          r.forEach((cellText, idx) => {
+            const cell = document.createElement(isHeader ? "th" : "td");
+            cell.innerHTML = formatInlineMarkdown(cellText);
+            let align = alignments[idx] || "left";
+            if (!isHeader && /^[\s\d.,]+(kg|TL|adet|kWh|%|\$|€)?\s*$/i.test(cellText)) {
+              align = "right";
+            }
+            if (align === "right") cell.className = "num-cell";
+            else if (align === "center") cell.className = "center-cell";
+            tr.appendChild(cell);
+          });
+          table.appendChild(tr);
+          isHeader = false;
+        }
+        wrap.appendChild(table);
+        rootDiv.appendChild(wrap);
+      }
+      continue;
+    }
+
+    // Listeler
+    const isUnordered = /^[-*•]\s+/.test(trimmed);
+    const isOrdered = /^\d+\.\s+/.test(trimmed);
+
+    if (isUnordered || isOrdered) {
+      const listTag = isOrdered ? "ol" : "ul";
+      const listElem = document.createElement(listTag);
+      listElem.className = "pro-list " + (isOrdered ? "pro-list-ol" : "pro-list-ul");
+
+      while (i < lines.length) {
+        const lTrim = lines[i].trim();
+        if (!lTrim) break;
+        if (isOrdered && /^\d+\.\s+/.test(lTrim)) {
+          const li = document.createElement("li");
+          li.innerHTML = formatInlineMarkdown(lTrim.replace(/^\d+\.\s+/, ""));
+          listElem.appendChild(li);
+          i++;
+        } else if (!isOrdered && /^[-*•]\s+/.test(lTrim)) {
+          const li = document.createElement("li");
+          li.innerHTML = formatInlineMarkdown(lTrim.replace(/^[-*•]\s+/, ""));
+          listElem.appendChild(li);
+          i++;
+        } else {
+          break;
+        }
+      }
+      rootDiv.appendChild(listElem);
+      continue;
+    }
+
+    // Paragraf
+    let paraLines = [];
+    while (i < lines.length) {
+      const lTrim = lines[i].trim();
+      if (!lTrim) break;
+      if (lTrim.startsWith("```") || lTrim.startsWith("#") || (lTrim.startsWith("|") && lTrim.endsWith("|")) || /^[-*•]\s+/.test(lTrim) || /^\d+\.\s+/.test(lTrim)) {
+        break;
+      }
+      paraLines.push(lines[i]);
+      i++;
+    }
+
+    if (paraLines.length > 0) {
+      const p = document.createElement("p");
+      p.className = "pro-body-p";
+      p.innerHTML = formatInlineMarkdown(paraLines.join("<br>"));
+      rootDiv.appendChild(p);
     }
   }
-
-  if (inTable) flushTable();
-  flushText();
 
   container.appendChild(rootDiv);
 }

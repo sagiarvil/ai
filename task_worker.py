@@ -425,9 +425,35 @@ def _run_owned_job(store, job_id):
     decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
     is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
     default_system = decision.agent.system_prompt if is_consult else code_system
+    # Sohbet ve mimari bağlamını koruma
+    user_prompt = payload["message"]
+    repo_ctx = None
+    if any(k in user_prompt.lower() for k in ["bu repo", "o repo", "katki", "katkı", "baris ai", "barış ai", "ast-grep", "bize"]):
+        try:
+            from pathlib import Path
+            cf = Path("/tmp/baris_last_repo.json")
+            if cf.exists():
+                repo_ctx = json.loads(cf.read_text(encoding="utf-8"))
+            else:
+                repo_ctx = {
+                    "repo_name": "ast-grep/ast-grep",
+                    "summary": "Rust ve Tree-Sitter tabanlı, çok dilli (TS, Python, Rust, Go) yapısal AST kod arama, linter ve güvenli refactoring motoru."
+                }
+        except Exception:
+            pass
+
+    if repo_ctx:
+        user_prompt = (
+            f"[SOHBET VE MİMARİ BAĞLAMI: Kullanıcı son incelenen açık kaynak repo ({repo_ctx.get('repo_name')}) hakkında konuşmaktadır.\n"
+            f"Repo Özeti: {repo_ctx.get('summary')}\n"
+            f"Barış AI Mimarisi: Gitleaks, ast-grep, LangGraph, Tor ve yerel LLM'ler ile çalışan otonom siber güvenlik ve kod geliştirme işletim sistemidir.]\n\n"
+            f"KULLANICI SORUSU: {payload['message']}\n\n"
+            "Claude 3.5 kalitesinde, lafı uzatmadan, doğrudan yapılandırılmış ana başlıklar ve maddeli tümce düzeninde somut teknik katkıyı açıkla."
+        )
+
     messages = checkpoint.get("messages", [
         {"role": "system", "content": default_system},
-        {"role": "user", "content": payload["message"] + (
+        {"role": "user", "content": user_prompt + (
             "\nKesin kabul koşulları: " + json.dumps(payload["expected_files"], ensure_ascii=False)
             if payload.get("expected_files") else "")},
     ])
@@ -547,6 +573,17 @@ def _run_owned_job(store, job_id):
                         
                         leak_status = f"🚨 {sec.get('leaks_count')} Sızıntı Tespit Edildi!" if sec.get("leaks_detected") else "✅ Temiz (API anahtarı / şifre sızıntısı yok)"
                         report_text = ast.get("report") or "Mimari analiz tamamlandı."
+                        # Son incelenen repoyu kalıcı bağlama kaydet
+                        try:
+                            Path("/tmp/baris_last_repo.json").write_text(json.dumps({
+                                "repo_name": repo_id,
+                                "repo_url": ins.get("repo_url", repo_id),
+                                "summary": "Rust ve Tree-Sitter tabanlı yapısal AST kod arama, linter ve güvenli refactoring motoru.",
+                                "report": report_text[:800]
+                            }, ensure_ascii=False), encoding="utf-8")
+                        except Exception:
+                            pass
+
 
                         dw_findings.append(
                             f"### 🚀 Bütünleşik Motor Denetim ve Derin Mimari Raporu ({repo_id}):\n"
