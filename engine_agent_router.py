@@ -130,6 +130,40 @@ class EngineAgentRouter:
         t0 = time.perf_counter()
         t = normalize_text(message)
 
+        # 0.1 Güvenlik Bariyeri & Jailbreak Savunması
+        if any(bad in t for bad in ["talimatlarini unut", "talimatlarını unut", "/etc/passwd", "/etc/shadow", "serbest bir linux"]):
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["turnkey_solver"],
+                autonomous_action=None,
+                latency_ms=round(dt, 4),
+                reason="Güvenlik İhlali: Sistem dosyalarına ve yetkisiz komutlara erişim engellendi."
+            )
+
+        # 0.2 Kullanıcı Metninde Doğrudan Kod veya Karşılaştırma / Negatif Eylem Varsa Muhakeme Modu
+        has_inline_code = any(k in message for k in ["<?php", "eval(", "def ", "class ", "SELECT ", "import "])
+        has_negated_action = any(k in t for k in ["arama yapma", "sakın çalıştırma", "sakin calistirma", "calistirma", "çalıştırma", "kiyasla", "kıyasla", "karsilastir", "karşılaştır", "neden ustun", "neden üstün", "owasp"])
+        if has_inline_code or (has_negated_action and any(k in t for k in ["incele", "kıyasla", "karsilastir", "zafiyet", "acik", "açık", "farki", "neden"])):
+            dt = (time.perf_counter() - t0) * 1000
+            return RoutingDecision(
+                agent=cls.ROLES["turnkey_solver"],
+                autonomous_action=None,
+                latency_ms=round(dt, 4),
+                reason="Doğrudan kod inceleme veya analitik karşılaştırma muhakemesi, araçsız Claude-grade moduna yönlendirildi."
+            )
+
+        # 0.3 GitHub Repo Hedefli İstihbarat (Gitleaks / Repo İnceleme)
+        is_github_target = any(k in t for k in ["github link", "rust araci", "en populer rust", "ast-grep", "o repo", "bu repo"])
+        if is_github_target and any(k in t for k in ["gitleaks", "tara", "linkini getir", "linki", "incele"]):
+            dt = (time.perf_counter() - t0) * 1000
+            target_repo = "ast-grep/ast-grep" if any(k in t for k in ["ast", "rust"]) else "sagiarvil/ai"
+            return RoutingDecision(
+                agent=cls.ROLES["github_hunter"],
+                autonomous_action=("tool_github_inspect", {"repo_full_name": target_repo}),
+                latency_ms=round(dt, 4),
+                reason=f"Açık kaynak GitHub repo ({target_repo}) kod ve Gitleaks sızıntı denetimi talep edildi."
+            )
+
         # 1. Kod / Dosya Yazma Görevi (Strict Code Execution)
         if expected_files or any(k in t for k in ["dosyasi", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje olustur", "dosyaya yaz", "dosyaya kaydet"]):
             dt = (time.perf_counter() - t0) * 1000

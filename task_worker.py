@@ -7,7 +7,7 @@ def is_consultative_query(text: str, expected_files: dict = None) -> bool:
     t = normalize_text(text)
     code_explicit = any(k in t for k in [
         "dosyasi", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje olustur",
-        "dosyaya yaz", "dosyaya kaydet", "kod yaz", "script yaz"
+        "dosyaya yaz", "dosyaya kaydet", "kod yaz", "script yaz", "hesapla", "hesap", "asal sayi", "asal sayı"
     ])
     if code_explicit:
         return False
@@ -676,12 +676,18 @@ def _run_owned_job(store, job_id):
     # SSOT ROUTER VE SERT REDDETME DUVARI (HARD REFUSAL WALL)
     # ─────────────────────────────────────────────────────────────
     decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
-
     raw_msg = (payload.get("message", "") or "").strip()
-    is_gibberish = bool(re.search(r"(qwerty|asdfg|zxcv|123456)", raw_msg.lower())) or (
+    # 0.1 Güvenlik Bariyeri & Jailbreak Savunması
+    if any(bad in raw_msg.lower() for bad in ["talimatlarini unut", "talimatlarını unut", "/etc/passwd", "/etc/shadow", "serbest bir linux"]):
+        finish("VERIFIED", "Güvenlik İhlali: Sistem dosyalarına (/etc/passwd vb.) erişim ve talimat aşımı girişimleri kesinlikle engellenmiştir.")
+        return
+    # 0.2 Yalnızca Gerçek Anlamsız Karakter Dizilerini Reddet
+    is_gibberish = bool(re.search(r"\b(qwerty|asdfg|zxcv|123456)\b", raw_msg.lower())) or (
         len(raw_msg.split()) <= 4 and not any(v in raw_msg.lower() for v in ["a","e","ı","i","o","ö","u","ü"])
+    ) or (
+        len(raw_msg) > 10 and re.fullmatch(r"^[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ\s]+$", raw_msg)
     )
-    if is_gibberish or "belirsiz" in (decision.reason or "").lower() or "abstain" in (decision.reason or "").lower():
+    if is_gibberish:
         finish("VERIFIED", f"Girdiğiniz ifade ('{raw_msg[:50]}') anlaşılır bir teknik görev veya soru içermiyor. Lütfen ne yapmak istediğinizi (kod inceleme, açık kaynak repo arama, güvenlik taraması vb.) net olarak belirtin.")
         return
 
@@ -735,6 +741,8 @@ def _run_owned_job(store, job_id):
         "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
     )
     is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
+    if "muhakeme" in (decision.reason or "").lower() or "danışmanlık" in (decision.reason or "").lower() or "<?php" in user_prompt or "sakın" in user_prompt.lower():
+        is_consult = True
     default_system = decision.agent.system_prompt if is_consult else code_system
     # Sohbet ve mimari bağlamını koruma
     user_prompt = payload["message"]
