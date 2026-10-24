@@ -541,9 +541,30 @@ def _run_owned_job(store, job_id):
                     ins = s.get("result", {})
                     repo_id = ins.get('repo', 'Bilinmeyen Repo')
                     if ins.get("success"):
-                        dw_findings.append(f"### 📦 GitHub Repo Kod Denetimi ({repo_id}):\n- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n- **Tespit Edilen Kod Dosyaları:** {', '.join(ins.get('code_files', [])[:10]) or 'Paket/Modül dizini'}")
+                        files_str = ', '.join(ins.get('files', [])[:15])
+                        dw_findings.append(
+                            f"### 📦 GitHub Repo Kod ve Yapı Denetimi ({repo_id}):\n"
+                            f"- **Durum:** ✅ Repo Doğrulandı ve İncelendi\n"
+                            f"- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n"
+                            f"- **Paket / Mimari Belirteçleri:** {'✅ EVET (Cargo/NPM/Python)' if ins.get('has_package_spec') else 'Yok'}\n"
+                            f"- **Kök Dizin Bileşenleri:** `{files_str}`\n"
+                            f"- **Toplam Kök Öğesi:** {ins.get('total_items', 0)}"
+                        )
                     else:
                         dw_findings.append(f"### 📦 GitHub Repo Kod Denetimi ({repo_id}):\n- **Durum:** İncelendi ({ins.get('error', 'Repo içeriği okunamadı.')})")
+                elif s.get("tool") == "tool_langgraph_engine":
+                    lg = s.get("result", {})
+                    if lg.get("success"):
+                        dw_findings.append(
+                            f"### ⚡ Barış AI LangGraph + ast-grep Deterministik Çıktısı:\n"
+                            f"- **Durum:** ✅ Doğrulandı (Milisaniyelik Fiziksel Kanıt)\n"
+                            f"- **Kullanılan Motor:** `{lg.get('model_used')}`\n"
+                            f"- **Deneme Sayısı:** `{lg.get('attempts')}`\n"
+                            f"- **Taranan AST Düğümü:** `{lg.get('ast_count')}`\n\n"
+                            f"**Üretilen Kesin Sonuç:**\n{lg.get('output')}"
+                        )
+                    else:
+                        dw_findings.append(f"### ⚡ Barış AI LangGraph Motoru:\n- **Hata:** {lg.get('output', 'İşlem tamamlanamadı.')}")
                 elif s.get("tool") == "tool_threat_intel_scan":
                     r = s.get("result", {})
                     if r.get("summary"):

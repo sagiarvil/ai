@@ -198,9 +198,33 @@ class EngineAgentRouter:
                 reason="OSV-Scanner/Trivy zafiyet ve bağımlılık taraması talep edildi."
             )
 
-        # 4. GitHub Kod & Repo Avcısı (GitHub CLI)
+        # 4. GitHub Doğrudan Repo İnceleme veya Arama
+        github_url_match = re.search(r"(?:https?://github\.com/)?([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", t)
+        if ("incele" in t.lower() or "kontrol" in t.lower() or "bak" in t.lower() or "analiz" in t.lower()) and github_url_match:
+            repo_id = github_url_match.group(1).rstrip(".")
+            if not repo_id.startswith("http"):
+                dt = (time.perf_counter() - t0) * 1000
+                return RoutingDecision(
+                    agent=cls.ROLES["github_hunter"],
+                    autonomous_action=("tool_github_inspect", {"repo_full_name": repo_id}),
+                    latency_ms=round(dt, 4),
+                    reason=f"GitHub reposu doğrudan inceleme talimatı tespit edildi: {repo_id}"
+                )
+
         if any(k in t for k in ["github", "repo", "acik kaynak kod", "açık kaynak kod", "calisan repo", "çalışan repo", "proje bul"]):
-            q = re.sub(r"\b(github|da|de|uzerinde|üzerinde|bana|bul|ara|calisan|çalışan|repo|repolarini|repolarını|projeleri)\b", "", t, flags=re.IGNORECASE).strip()
+            # URL'leri korumak için regex temizliği
+            if "github.com/" in t:
+                m = re.search(r"github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", t)
+                if m:
+                    repo_id = m.group(1).rstrip(".")
+                    dt = (time.perf_counter() - t0) * 1000
+                    return RoutingDecision(
+                        agent=cls.ROLES["github_hunter"],
+                        autonomous_action=("tool_github_inspect", {"repo_full_name": repo_id}),
+                        latency_ms=round(dt, 4),
+                        reason=f"GitHub repo URL doğrudan inceleme tespit edildi: {repo_id}"
+                    )
+            q = re.sub(r"\b(da|de|uzerinde|üzerinde|bana|bul|ara|calisan|çalışan|repolarini|repolarını|projeleri)\b", "", t, flags=re.IGNORECASE).strip()
             q = re.sub(r"\s+", " ", q).strip()
             if not q or len(q) < 3:
                 q = t

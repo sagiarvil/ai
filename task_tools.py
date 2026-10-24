@@ -236,6 +236,9 @@ class TaskTools:
         if name == "tool_github_inspect":
             from github_intelligence import GitHubIntelligence
             return GitHubIntelligence.inspect_repo_contents(args.get("repo_full_name", ""))
+        if name == "tool_langgraph_engine":
+            from baris_langgraph_engine import BarisLangGraphEngine
+            return BarisLangGraphEngine.run_investigation(args.get("task", ""), args.get("repo_url"))
         if name == "tool_phishing_domain_scan":
             from installed_engines_bridge import InstalledEnginesBridge
             return InstalledEnginesBridge.scan_phishing_domain(args.get("domain", ""))

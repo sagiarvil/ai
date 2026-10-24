@@ -126,8 +126,15 @@ class GitHubIntelligence:
         """
         Belirtilen reponun içeriğini inceler; gerçek kod dosyalarının varlığını kanıtlar.
         """
+        clean_repo = repo_full_name.strip()
+        if "github.com/" in clean_repo:
+            match = re.search(r"github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", clean_repo)
+            if match:
+                clean_repo = match.group(1)
+        clean_repo = clean_repo.rstrip("/").rstrip(".")
+
         gh_path = shutil.which("gh") or "/opt/homebrew/bin/gh"
-        api_endpoint = f"repos/{repo_full_name}/contents/{path}".strip("/")
+        api_endpoint = f"repos/{clean_repo}/contents/{path}".strip("/")
         try:
             res = subprocess.run([gh_path, "api", api_endpoint], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
             if res.returncode == 0:

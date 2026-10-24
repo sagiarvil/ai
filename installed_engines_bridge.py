@@ -509,9 +509,31 @@ class InstalledEnginesBridge:
             "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
         }
 
+        # Baris AI Deterministik GitHub Pipeline & Gatekeeper
+        t0 = time.perf_counter()
+        pipeline_p = Path("/Users/macair1/projects/ai/baris_ai_pipeline.py")
+        engines["Baris AI Deterministik GitHub & Gatekeeper Motoru"] = {
+            "available": pipeline_p.exists(),
+            "path": str(pipeline_p) if pipeline_p.exists() else "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
         return {
             "success": True,
             "total_engines": len(engines),
             "active_engines": sum(1 for e in engines.values() if e.get("available")),
             "engines": engines
+        }
+
+    @classmethod
+    def run_github_investigation(cls, repo_url: str, task: str = "") -> Dict[str, Any]:
+        """Baris AI deterministik boru hattını çalıştırır."""
+        from baris_ai_pipeline import BarisAIPipeline
+        target = BarisAIPipeline.clone_repo(repo_url)
+        pre = BarisAIPipeline.preflight_check(target)
+        return {
+            "success": True,
+            "repo_url": repo_url,
+            "target_path": str(target),
+            "preflight": pre
         }
