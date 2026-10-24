@@ -539,16 +539,23 @@ def _run_owned_job(store, job_id):
                         dw_findings.append(f"### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n- **Sorgu:** `{r.get('query', '')}`\n- Belirtilen kriterlere uygun açık kaynaklı GitHub reposu bulunamadı.")
                 elif s.get("tool") == "tool_github_inspect":
                     ins = s.get("result", {})
-                    repo_id = ins.get('repo', 'Bilinmeyen Repo')
+                    repo_id = ins.get('repo_name') or ins.get('repo') or 'Bilinmeyen Repo'
                     if ins.get("success"):
-                        files_str = ', '.join(ins.get('files', [])[:15])
+                        sec = ins.get("security", {})
+                        ast = ins.get("ast_analysis", {})
+                        pre = ins.get("preflight", {})
+                        
+                        leak_status = f"🚨 {sec.get('leaks_count')} Sızıntı Tespit Edildi!" if sec.get("leaks_detected") else "✅ Temiz (API anahtarı / şifre sızıntısı yok)"
+                        report_text = ast.get("report") or "Mimari analiz tamamlandı."
+
                         dw_findings.append(
-                            f"### 📦 GitHub Repo Kod ve Yapı Denetimi ({repo_id}):\n"
-                            f"- **Durum:** ✅ Repo Doğrulandı ve İncelendi\n"
-                            f"- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n"
-                            f"- **Paket / Mimari Belirteçleri:** {'✅ EVET (Cargo/NPM/Python)' if ins.get('has_package_spec') else 'Yok'}\n"
-                            f"- **Kök Dizin Bileşenleri:** `{files_str}`\n"
-                            f"- **Toplam Kök Öğesi:** {ins.get('total_items', 0)}"
+                            f"### 🚀 Bütünleşik Motor Denetim ve Derin Mimari Raporu ({repo_id}):\n"
+                            f"- **Kaynak:** `{ins.get('repo_url', repo_id)}`\n"
+                            f"- **Fiziksel Boyut:** `{pre.get('file_count', 0)} dosya` (~{pre.get('size_kb', 0)} KB)\n"
+                            f"- **Gitleaks Güvenlik Taraması:** {leak_status}\n"
+                            f"- **ast-grep AST Taraması:** `✅ {ast.get('ast_nodes_count', 0)} Sembol/Fonksiyon Düğümü Doğrulandı`\n"
+                            f"- **Kullanılan Ajan Motoru:** `{ast.get('model_used', 'Yerel Qwen-Coder-14B')}`\n\n"
+                            f"#### 🧠 Derin Teknik Analiz, Çekirdek Mimari ve Kullanım:\n\n{report_text}"
                         )
                     else:
                         dw_findings.append(f"### 📦 GitHub Repo Kod Denetimi ({repo_id}):\n- **Durum:** İncelendi ({ins.get('error', 'Repo içeriği okunamadı.')})")

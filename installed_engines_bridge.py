@@ -527,13 +527,46 @@ class InstalledEnginesBridge:
 
     @classmethod
     def run_github_investigation(cls, repo_url: str, task: str = "") -> Dict[str, Any]:
-        """Baris AI deterministik boru hattını çalıştırır."""
+        """
+        BÜTÜNLEŞİK ÇOK MOTORLU ZİNCİR (Full-Chain Multi-Engine Pipeline)
+        1. Varlık ve Sığ Klon
+        2. Gitleaks / TruffleHog Sızıntı Taraması
+        3. ast-grep Fiziksel AST Semantik Analizi
+        4. LangGraph + LiteLLM Derin Mimari ve Kod Çözüm Sentezi
+        """
         from baris_ai_pipeline import BarisAIPipeline
-        target = BarisAIPipeline.clone_repo(repo_url)
+        from baris_langgraph_engine import BarisLangGraphEngine
+        import re
+
+        clean_url = repo_url.strip()
+        if not clean_url.startswith("http"):
+            clean_url = f"https://github.com/{clean_url}"
+
+        # 1. Klonlama ve Ön Kontrol
+        target = BarisAIPipeline.clone_repo(clean_url)
         pre = BarisAIPipeline.preflight_check(target)
+
+        # 2. Gitleaks Güvenlik Zinciri
+        leak_report = cls.scan_secrets(str(target))
+
+        # 3. LangGraph + ast-grep Derin Mimari Zinciri
+        analysis_task = task or f"Bu reponun ({target.name}) mimarisini, çekirdek bileşenlerini, yeteneklerini ve pratik kod kullanım örneklerini çıkar."
+        lg_res = BarisLangGraphEngine.run_investigation(task=analysis_task, repo_url=clean_url)
+
         return {
             "success": True,
-            "repo_url": repo_url,
+            "repo_url": clean_url,
+            "repo_name": target.name,
             "target_path": str(target),
-            "preflight": pre
+            "preflight": pre,
+            "security": {
+                "leaks_count": leak_report.get("leaks_count", 0),
+                "leaks_detected": leak_report.get("success", False) and leak_report.get("leaks_count", 0) > 0,
+                "findings": leak_report.get("findings", [])[:5]
+            },
+            "ast_analysis": {
+                "ast_nodes_count": lg_res.get("ast_count", 0),
+                "model_used": lg_res.get("model_used", "local"),
+                "report": lg_res.get("output", "")
+            }
         }

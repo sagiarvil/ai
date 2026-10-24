@@ -234,8 +234,8 @@ class TaskTools:
             from github_intelligence import GitHubIntelligence
             return GitHubIntelligence.search_repos(args.get("query", ""), language=args.get("language"), min_stars=args.get("min_stars", 5))
         if name == "tool_github_inspect":
-            from github_intelligence import GitHubIntelligence
-            return GitHubIntelligence.inspect_repo_contents(args.get("repo_full_name", ""))
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.run_github_investigation(args.get("repo_full_name", ""))
         if name == "tool_langgraph_engine":
             from baris_langgraph_engine import BarisLangGraphEngine
             return BarisLangGraphEngine.run_investigation(args.get("task", ""), args.get("repo_url"))

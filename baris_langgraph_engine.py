@@ -13,6 +13,22 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
+from pydantic import BaseModel, Field, HttpUrl, ValidationError
+
+# Pydantic v2 Katı AST Şeması (Strict Schema Enforcement & Zero Context Stuffing)
+class ASTNodeFinding(BaseModel):
+    file_path: str = Field(..., description="Hedef dosyanın repo köküne göre göreceli yolu")
+    line_start: int = Field(..., ge=1, description="Düğümün başladığı satır numarası")
+    line_end: int = Field(..., ge=1, description="Düğümün bittiği satır numarası")
+    node_type: str = Field("symbol", description="AST düğüm türü: function, class, struct, import vb.")
+    symbol_name: Optional[str] = Field(None, description="Fonksiyon veya sınıf adı")
+    code_snippet: str = Field(..., max_length=500, description="Temizlenmiş, budanmış somut kod parçası")
+
+class ASTExtractionEnvelope(BaseModel):
+    repo_name: str
+    total_nodes_scanned: int
+    nodes: List[ASTNodeFinding] = Field(default_factory=list, max_items=25)
+    token_budget_est: int = Field(0, description="Tahmini token hacmi")
 
 import litellm
 from langgraph.graph import END, StateGraph
@@ -73,31 +89,58 @@ class BarisLangGraphEngine:
 
     @classmethod
     def node_ast_grep_scan(cls, state: GraphState) -> GraphState:
-        """Adım 2: ast-grep ile fiziksel AST ağacını tara."""
-        repo_path = state.get("repo_path")
-        if not repo_path:
+        """Adım 2: ast-grep çıktısını Pydantic v2 katı şemasından geçirerek bağlam boğulmasını engeller."""
+        repo_path_str = state.get("repo_path")
+        if not repo_path_str:
             return state
 
+        repo_path = Path(repo_path_str)
         ast_grep_bin = shutil.which("ast-grep") or "/opt/homebrew/bin/ast-grep"
-        findings = []
+        verified_nodes: List[Dict[str, Any]] = []
 
         # ast-grep ile fonksiyon, sınıf ve import sembollerini tara
         try:
-            # Örnek: Fonksiyon tanımlarını JSON olarak listele
             cmd = [ast_grep_bin, "run", "--pattern", "fn $NAME($$$) { $$$ }", "--json", str(repo_path)]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=12)
             if res.returncode == 0 and res.stdout.strip():
                 raw_items = json.loads(res.stdout)
-                for item in raw_items[:20]:
-                    findings.append({
-                        "file": item.get("file", ""),
-                        "line": item.get("range", {}).get("start", {}).get("line", 0),
-                        "text": item.get("text", "")[:150]
-                    })
+                for item in raw_items:
+                    raw_file = item.get("file", "")
+                    # Orphan check: Dosya gerçekten diskte var mı?
+                    f_abs = repo_path / raw_file if not Path(raw_file).is_absolute() else Path(raw_file)
+                    if not f_abs.exists():
+                        continue
+
+                    r_range = item.get("range", {})
+                    s_line = r_range.get("start", {}).get("line", 1)
+                    e_line = r_range.get("end", {}).get("line", s_line)
+                    raw_text = (item.get("text") or "").strip()
+
+                    try:
+                        # Pydantic v2 doğrulamasından geçir
+                        node = ASTNodeFinding(
+                            file_path=str(f_abs.relative_to(repo_path) if f_abs.is_relative_to(repo_path) else f_abs.name),
+                            line_start=max(1, s_line),
+                            line_end=max(s_line, e_line),
+                            node_type="function",
+                            symbol_name=item.get("metaVariables", {}).get("single", {}).get("NAME", {}).get("text"),
+                            code_snippet=raw_text[:400]
+                        )
+                        verified_nodes.append(node.model_dump())
+                        if len(verified_nodes) >= 20:
+                            break
+                    except ValidationError:
+                        continue
         except Exception:
             pass
 
-        state["ast_findings"] = findings
+        envelope = ASTExtractionEnvelope(
+            repo_name=repo_path.name,
+            total_nodes_scanned=len(verified_nodes),
+            nodes=verified_nodes,
+            token_budget_est=sum(len(n["code_snippet"]) // 4 for n in verified_nodes)
+        )
+        state["ast_findings"] = envelope.model_dump()["nodes"]
         return state
 
     @classmethod
@@ -119,15 +162,19 @@ class BarisLangGraphEngine:
         user_content = f"GÖREV: {task}\nAST BULGULARI: {ast_context}{error_context}\n\nÇözümünü ve gerekliyse kod bloğunu üret."
 
         try:
-            resp = litellm.completion(
-                model=model,
-                messages=[
+            kwargs = {
+                "model": model,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content}
                 ],
-                temperature=0.2,
-                timeout=90
-            )
+                "temperature": 0.2,
+                "timeout": 90
+            }
+            if model.startswith("ollama/"):
+                kwargs["api_base"] = "http://localhost:11434"
+
+            resp = litellm.completion(**kwargs)
             state["proposed_solution"] = resp.choices[0].message.content.strip()
         except Exception as e:
             # Fallback
