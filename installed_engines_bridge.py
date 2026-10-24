@@ -9,12 +9,16 @@ import json
 import os
 import shutil
 import subprocess
+import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 class InstalledEnginesBridge:
     """Kurulu motorlar yönetim ve çalıştırma köprüsü."""
+
+    _phishing_cache: Optional[Dict[str, Any]] = None
 
     @classmethod
     def find_binary(cls, name: str, fallback_paths: Optional[List[str]] = None) -> Optional[str]:
@@ -27,7 +31,17 @@ class InstalledEnginesBridge:
         return None
 
     @classmethod
-    def scan_secrets(cls, target_path: str, max_findings: int = 15) -> Dict[str, Any]:
+    def _resolve_target(cls, target_path: str, fallback: Optional[str] = None) -> Path:
+        raw = (target_path or "").strip()
+        if not raw or "your/project" in raw or raw in {".", "proje", "mevcut"}:
+            return Path(fallback or os.getcwd()).resolve()
+        p = Path(raw).resolve()
+        if not p.exists() and fallback:
+            return Path(fallback).resolve()
+        return p
+
+    @classmethod
+    def scan_secrets(cls, target_path: str, max_findings: int = 15, fallback_dir: Optional[str] = None) -> Dict[str, Any]:
         """
         Gitleaks motorunu kullanarak hedef dosya veya dizinde gizli anahtar,
         token, şifre ve kimlik sızıntılarını tarar.
@@ -36,7 +50,7 @@ class InstalledEnginesBridge:
         if not gitleaks_bin:
             return {"success": False, "error": "Gitleaks motoru sistemde bulunamadı."}
 
-        target = Path(target_path).resolve()
+        target = cls._resolve_target(target_path, fallback_dir)
         if not target.exists():
             return {"success": False, "error": f"Hedef yol bulunamadı: {target_path}"}
 
@@ -81,7 +95,7 @@ class InstalledEnginesBridge:
             return {"success": False, "error": f"Gitleaks tarama hatası: {str(exc)}"}
 
     @classmethod
-    def scan_vulnerabilities(cls, target_path: str, max_findings: int = 15) -> Dict[str, Any]:
+    def scan_vulnerabilities(cls, target_path: str, max_findings: int = 15, fallback_dir: Optional[str] = None) -> Dict[str, Any]:
         """
         Google OSV-Scanner ve Aqua Trivy motorlarını kullanarak
         açık kaynak bağımlılık zafiyetlerini (CVE) tarar.
@@ -95,7 +109,7 @@ class InstalledEnginesBridge:
             "/opt/homebrew/bin/trivy"
         ])
 
-        target = Path(target_path).resolve()
+        target = cls._resolve_target(target_path, fallback_dir)
         if not target.exists():
             return {"success": False, "error": f"Hedef yol bulunamadı: {target_path}"}
 
@@ -157,7 +171,7 @@ class InstalledEnginesBridge:
         }
 
     @classmethod
-    def audit_smart_contract(cls, target_path: str) -> Dict[str, Any]:
+    def audit_smart_contract(cls, target_path: str, fallback_dir: Optional[str] = None) -> Dict[str, Any]:
         """
         Crytic Slither motorunu kullanarak Solidity akıllı sözleşmelerini
         güvenlik açıklarına ve reentrancy açıklarına karşı analiz eder.
@@ -166,7 +180,7 @@ class InstalledEnginesBridge:
         if not slither_bin:
             return {"success": False, "error": "Slither motoru sistemde bulunamadı."}
 
-        target = Path(target_path).resolve()
+        target = cls._resolve_target(target_path, fallback_dir)
         if not target.exists():
             return {"success": False, "error": f"Hedef dosya bulunamadı: {target_path}"}
 
@@ -196,3 +210,122 @@ class InstalledEnginesBridge:
             }
         except Exception as exc:
             return {"success": False, "error": f"Slither analizi başarısız: {str(exc)}"}
+
+    @classmethod
+    def scan_phishing_domain(cls, domain_or_url: str) -> Dict[str, Any]:
+        """
+        MetaMask eth-phishing-detect veri tabanını kullanarak belirtilen
+        domain veya URL'nin bilinen bir phishing/sahte cüzdan olup olmadığını doğrular.
+        """
+        raw = domain_or_url.strip()
+        if "://" not in raw:
+            raw = "http://" + raw
+        parsed = urllib.parse.urlparse(raw)
+        domain = (parsed.netloc or parsed.path).split(":")[0].lower()
+
+        # Veritabanını önbelleğe al
+        if cls._phishing_cache is None:
+            db_path = Path("/Users/macair1/projects/ai/installed_engines/MetaMask--eth-phishing-detect/src/config.json")
+            if db_path.exists():
+                try:
+                    with open(db_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    cls._phishing_cache = {
+                        "blacklist": set(cfg.get("blacklist", [])),
+                        "whitelist": set(cfg.get("whitelist", [])),
+                        "fuzzylist": set(cfg.get("fuzzylist", []))
+                    }
+                except Exception:
+                    cls._phishing_cache = {"blacklist": set(), "whitelist": set(), "fuzzylist": set()}
+            else:
+                cls._phishing_cache = {"blacklist": set(), "whitelist": set(), "fuzzylist": set()}
+
+        cache = cls._phishing_cache
+        is_whitelisted = domain in cache["whitelist"]
+        is_blacklisted = domain in cache["blacklist"]
+        
+        # Subdomain kontrolü
+        if not is_blacklisted:
+            parts = domain.split(".")
+            for i in range(1, len(parts) - 1):
+                parent = ".".join(parts[i:])
+                if parent in cache["blacklist"]:
+                    is_blacklisted = True
+                    break
+
+        return {
+            "success": True,
+            "engine": "MetaMask Phishing Detection v2",
+            "domain": domain,
+            "is_phishing": is_blacklisted and not is_whitelisted,
+            "status": "🚨 TEHLİKELİ (Zararlı / Phishing)" if (is_blacklisted and not is_whitelisted) else ("✅ GÜVENLİ (Beyaz Liste)" if is_whitelisted else "ℹ️ NÖTR (Bilinen Tehdit Kaydı Yok)"),
+            "total_threat_signatures": len(cache["blacklist"])
+        }
+
+    @classmethod
+    def get_all_engines_health(cls) -> Dict[str, Any]:
+        """
+        Sistemdeki tüm canlı motorların durumunu, dosya yollarını ve yanıt hızlarını döndürür.
+        """
+        engines = {}
+        
+        # Gitleaks
+        t0 = time.perf_counter()
+        gl = cls.find_binary("gitleaks", ["/opt/homebrew/bin/gitleaks"])
+        engines["Gitleaks (Secret Scanner)"] = {
+            "available": bool(gl),
+            "binary": gl or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # Google OSV-Scanner
+        t0 = time.perf_counter()
+        osv = cls.find_binary("osv-scanner", ["/Users/macair1/projects/ai/installed_engines/google--osv-scanner/bin/osv-scanner"])
+        engines["Google OSV-Scanner (CVE)"] = {
+            "available": bool(osv),
+            "binary": osv or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # Aqua Trivy
+        t0 = time.perf_counter()
+        trivy = cls.find_binary("trivy", ["/Users/macair1/projects/ai/installed_engines/aquasecurity--trivy/bin/trivy"])
+        engines["Aqua Trivy (Vulnerabilities)"] = {
+            "available": bool(trivy),
+            "binary": trivy or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # Crytic Slither
+        t0 = time.perf_counter()
+        slither = cls.find_binary("slither", ["/opt/homebrew/bin/slither"])
+        engines["Crytic Slither (Smart Contracts)"] = {
+            "available": bool(slither),
+            "binary": slither or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # GitHub CLI (gh)
+        t0 = time.perf_counter()
+        gh = cls.find_binary("gh", ["/opt/homebrew/bin/gh"])
+        engines["GitHub Hunter (gh CLI)"] = {
+            "available": bool(gh),
+            "binary": gh or "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        # MetaMask Phishing DB
+        t0 = time.perf_counter()
+        db_p = Path("/Users/macair1/projects/ai/installed_engines/MetaMask--eth-phishing-detect/src/config.json")
+        engines["MetaMask Eth Phishing Intel"] = {
+            "available": db_p.exists(),
+            "path": str(db_p) if db_p.exists() else "Bulunamadı",
+            "ping_ms": round((time.perf_counter() - t0) * 1000, 2)
+        }
+
+        return {
+            "success": True,
+            "total_engines": len(engines),
+            "active_engines": sum(1 for e in engines.values() if e.get("available")),
+            "engines": engines
+        }

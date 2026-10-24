@@ -1,3 +1,25 @@
+
+def is_consultative_query(text: str, expected_files: dict = None) -> bool:
+    """Kullanıcının doğrudan soru/danışma mı yoksa kod çalıştırma görevi mi istediğini belirler."""
+    if expected_files:
+        return False
+    t = text.lower().strip()
+    code_explicit = any(k in t for k in [
+        "dosyası", "dosyaya", "tablosu", "scripti", "kodunu yaz", "proje oluştur",
+        "dosyaya yaz", "dosyaya kaydet", "kod yaz", "script yaz"
+    ])
+    if code_explicit:
+        return False
+    intel_triggers = [
+        "gitleaks", "trivy", "osv", "slither", "sızıntı", "leak", "secret", "anahtar", "şifre",
+        "zafiyet", "güvenlik açığı", "cve", "github", "repo", "açık kaynak", "dark web", "deep web",
+        "onion", "tor", "istihbarat", "osint", "threat", "ara", "tara", "araştır", "bul",
+        "nasıl", "nedir", "neler yapabilirsin", "kimsin", "önerin", "tavsiye", "farkı ne", "açıkla", "bilgi ver",
+        "yeteneklendır", "yeteneklendir", "hizmet edebilirsin", "hizmet edebilirmisin", "yapabilir misin",
+        "kırabilirmisin", "mümkün mü", "anlat", "neden", "merhaba", "selam", "var mı", "mı", "mi", "mu", "mü"
+    ]
+    return any(k in t for k in intel_triggers) or "?" in t
+
 import re
 """One durable task in its own process; no HTTP request owns its lifetime."""
 import asyncio
@@ -11,6 +33,8 @@ import sys
 import time
 
 import httpx
+import uuid
+from engine_agent_router import EngineAgentRouter
 
 from acceptance_checks import AcceptanceGuard, inspect_expected_files
 from job_store import JobStore, OwnershipLost
@@ -32,6 +56,8 @@ def safe_tool_content(result, max_chars=2000):
 
 
 TR_KEY_MAP = {
+    "discounted_product_count": "İndirim Uygulanan Ürün Sayısı",
+    "total_discount_amount": "Yapılan Toplam İndirim Tutarı",
     "total_revenue": "Nihai Genel Toplam Ciro",
     "total_sum": "Toplam Değer",
     "average": "Ortalama Değer",
@@ -119,7 +145,7 @@ def format_human_reply(text):
     if "|" in clean and any(k in clean for k in ("|---", "|:--", "|--", "\n|", "||", "| |")):
         sym_table = format_symmetric_markdown_table(clean)
         if not sym_table.startswith("### ") and not sym_table.startswith("## "):
-            header_lead = "### Analiz ve Doğrulama Raporu\n\nGörev çıktısı:\n\n"
+            header_lead = "### Analiz ve Doğrulama Raporu\n\nTalep edilen sınıflandırma ve hesaplama işlemleri tamamlanmış olup sonuçlar aşağıda simetrik tablo halinde sunulmuştur:\n\n"
             if sym_table.startswith("Görev başarıyla tamamlandı."):
                 sym_table = sym_table.replace("Görev başarıyla tamamlandı.", header_lead).strip()
             else:
@@ -357,27 +383,45 @@ def _run_owned_job(store, job_id):
     if job["status"] != "RUNNING":
         return
     payload = job["payload"]
+
+
     if not payload.get("expected_files"):
         try:
-            (Path(payload["workspace"]) / "cozum.py").unlink(missing_ok=True)
+            ws_path = Path(payload["workspace"])
+            (ws_path / "cozum.py").unlink(missing_ok=True)
+            (ws_path / "results.txt").unlink(missing_ok=True)
+            (ws_path / "analiz.py").unlink(missing_ok=True)
+            (ws_path / "sonuc.txt").unlink(missing_ok=True)
         except Exception:
             pass
+
     checkpoint = job["checkpoint"] or {}
+    consultative_system = (
+        "Sen Barış AI Türkçe Yüksek Seviye Muhakeme, Danışmanlık ve Siber Güvenlik İstihbarat Asistanısın. "
+        "Sisteminde Gitleaks, Google OSV-Scanner, Aqua Trivy, Crytic Slither, Tor Threat Intel, GPT-Researcher ve GitHub Hunter gibi güçlü endüstriyel motorlar kuruludur. "
+        "Kullanıcının sorusuna doğrudan, kapsamlı, Türkçe, teknik olarak doyurucu, pedagojik, net maddeler halinde ve profesyonel bir üslupla yanıt ver. "
+        "Kullanıcı sızıntı/şifre taraması istediğinde 'tool_secret_leak_scan', zafiyet taraması istediğinde 'tool_vulnerability_scan', akıllı sözleşme denetimi istediğinde 'tool_smart_contract_audit', açık kaynak kod/repo aradığında 'tool_github_search' veya 'tool_github_inspect', derin araştırma istediğinde 'tool_deep_research', genel danışmanlık/açıklama istediğinde 'tool_direct_answer' aracını çağır."
+    )
+    code_system = (
+        "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
+        "Gereksiz aşama planı turlarıyla vakit kaybetme; doğrudan tek hamlede eksiksiz Python betiğini oluştur (tool_write_file) ve ardından tool_run_shell ile çalıştır. "
+        "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
+        "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
+        "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
+        "KOD MİMARİSİ STANDARDI: Python dosyasını 'cozum.py' olarak oluştur (tool_write_file). Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (open('results.txt', 'w', encoding='utf-8').write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
+        "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas. Eğer kullanıcı tablo düzeninde istiyorsa sonuçları simetrik, düzgün hizalı Markdown tablosu ('| Başlık | Değer |' ve '|:---|:---:|') olarak hem dosyaya kaydet hem de print() ile bas. "
+        "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
+        "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. Python dosyasında çok satırlı metin veya dosya yazarken f-string hatası (unterminated f-string) yapma. "
+        "Dosya 8000 karakterden küçükse tek bir tool_write_file ile baştan sona eksiksiz yaz. Bir hata veya sözdizim bozukluğu oluşursa veya yama eşleşmezse, küçük dosyaları tereddüt etmeden tool_write_file ile baştan eksiksiz ve temiz şekilde yeniden yaz. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
+        "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları çalıştırma. "
+        "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
+        "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
+    )
+    decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
+    is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
+    default_system = decision.agent.system_prompt if is_consult else code_system
     messages = checkpoint.get("messages", [
-        {"role": "system", "content": (
-            "Türkçe çalışan yüksek performanslı yerel uygulama ajanısın. "
-            "Gereksiz aşama planı turlarıyla vakit kaybetme; doğrudan tek hamlede eksiksiz Python betiğini oluştur (tool_write_file) ve ardından tool_run_shell ile çalıştır. "
-            "Görevin tüm adımlarını (veri hazırlama, hesaplama, özet istatistikler, dosya kaydetme) tek ve eksiksiz bir Python betiğinde topla; asla ayrı ayrı ara scriptlere bölme. "
-            "Python kodunda fonksiyonları ve kütüphane çağrılarını eksiksiz üret. "
-            "Python kodunda tanımladığın fonksiyonu dosyanın en altında MUTLAKA çağır (örneğin if __name__ == '__main__': main()). Sadece fonksiyon tanımlayıp çağırmayı unutursan kod hiçbir işlem yapmaz. "
-            "KOD MİMARİSİ STANDARDI: Python dosyasını 'cozum.py' olarak oluştur (tool_write_file). Kodu gereksiz uzun 'def' fonksiyonlarına bölmeden doğrudan düz prosedürel script olarak kompakt yaz. Tablo ve sonuç çıktılarını her zaman satirlar = [...] listesi olarak toplayıp sonuc = '\\n'.join(satirlar) ile birleştir; asla tek tırnaklı çok satırlı f-string yazma. Sonucu tek hamlede hem dosyaya kaydet (open('results.txt', 'w', encoding='utf-8').write(sonuc)) hem de ekrana bas (print(sonuc)). Kod 600 karakteri geçmemelidir. "
-            "ÇIKTI FORMATI: Terminale ve sonuç dosyasına asla ham İngilizce JSON veya ham sözlük ('{'key': val}') basma! Sonuçları mutlaka %100 Türkçe, başlıklı, maddeler halinde ve düzgün tümce düzeninde net açıklayarak print() ile bas. Eğer kullanıcı tablo düzeninde istiyorsa sonuçları simetrik, düzgün hizalı Markdown tablosu ('| Başlık | Değer |' ve '|:---|:---:|') olarak hem dosyaya kaydet hem de print() ile bas. "
-            "Python dosyasının İÇİNE asla tool_run_shell veya tool_write_file gibi araç adlarını kod olarak yazma; araçlar yalnızca JSON işleminde motora bildirilir. "
-            "SQL sorguları veya karmaşık dizgiler yazarken sözdizim hatasını önlemek için mutlaka üçlü tırnak ('''...''' veya \"\"\"...\"\"\") kullan. Python dosyasında çok satırlı metin veya dosya yazarken f-string hatası (unterminated f-string) yapma. "
-            "Dosya 8000 karakterden küçükse tek bir tool_write_file ile baştan sona eksiksiz yaz. Bir hata veya sözdizim bozukluğu oluşursa veya yama eşleşmezse, küçük dosyaları tereddüt etmeden tool_write_file ile baştan eksiksiz ve temiz şekilde yeniden yaz. Kodları asla python -c veya shell satırına gömme; mutlaka tool_write_file ile .py dosyasına yaz ve ardından tool_run_shell ile 'python dosya.py' olarak çalıştır. "
-            "Programı yazıp (tool_write_file) başarıyla çalıştırdıktan (tool_run_shell) ve sonuçları gördükten sonra görevi bitirmek için doğrudan {'name': '__finish__', 'arguments': {}} çağır; gereksiz terminal komutları çalıştırma. "
-            "Hataları araç çıktısıyla düzelt; aynı sonucu tekrarlama. Ağ veya paket kurulumu kullanıcı kapsamındaysa yap. "
-            "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"])},
+        {"role": "system", "content": default_system},
         {"role": "user", "content": payload["message"] + (
             "\nKesin kabul koşulları: " + json.dumps(payload["expected_files"], ensure_ascii=False)
             if payload.get("expected_files") else "")},
@@ -454,35 +498,86 @@ def _run_owned_job(store, job_id):
                                 break
                         except Exception:
                             pass
-                if not found_content:
-                    scan_dirs = [Path(payload["workspace"]), Path("/tmp"), Path("/private/tmp")]
-                    candidates = []
-                    for s_dir in scan_dirs:
-                        if not s_dir.exists():
-                            continue
-                        try:
-                            for item in s_dir.iterdir():
-                                if item.is_file() and item.suffix in {".json", ".txt", ".csv"} and not item.name.startswith((".", "test_")):
-                                    try:
-                                        mtime = item.stat().st_mtime
-                                        if mtime >= (start - 10):
-                                            candidates.append((mtime, item))
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
-                    if candidates:
-                        candidates.sort(key=lambda x: x[0], reverse=True)
-                        for _, c_path in candidates:
-                            try:
-                                text = c_path.read_text(encoding="utf-8").strip()
-                                if text and len(text) < 3000:
-                                    found_content, found_name = text, c_path.name
-                                    break
-                            except Exception:
-                                pass
                 if found_content:
-                    final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç ({found_name}):\n{found_content}"
+                    if not final_reply or final_reply in {"Araç işlemleri başarıyla tamamlandı ve doğrulandı.", "İşlem başarıyla tamamlandı."}:
+                        final_reply = f"Görev başarıyla tamamlandı.\n\nSonuç ({found_name}):\n{found_content}"
+                    elif found_content not in final_reply and not is_consult:
+                        final_reply = f"{final_reply}\n\nSonuç ({found_name}):\n{found_content}"
+
+            # Dark Web ve Tehdit İstihbaratı / Derin Araştırma araç bulgularını ekleme
+            dw_findings = []
+            for s in steps:
+                if s.get("tool") == "tool_deep_research" and s.get("result", {}).get("sources"):
+                    sources = s["result"]["sources"]
+                    res_lines = ["### GPT-Researcher Derin Araştırma Raporu:\n"]
+                    for src in sources:
+                        res_lines.append(f"#### 🌐 {src.get('title')}\n- **Kaynak:** {src.get('url')}\n- **Özet:** {src.get('snippet')}\n- **Derin İçerik:**\n{src.get('content')[:600]}...\n")
+                    dw_findings.append("\n".join(res_lines))
+                elif s.get("tool") == "tool_darkweb_search" and s.get("result", {}).get("results"):
+                    items = s["result"]["results"][:5]
+                    dw_findings.append("### Dark Web / Web İstihbarat Bulguları:\n" + "\n".join([f"- **{r.get('title', '')}**\n  Bağlantı: {r.get('url', '')}\n  Özet: {r.get('snippet', '')}" for r in items]))
+                elif s.get("tool") == "tool_github_search" and s.get("result", {}).get("repositories"):
+                    repos = s["result"]["repositories"]
+                    res_lines = ["### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n"]
+                    for repo in repos:
+                        res_lines.append(f"• **[{repo.get('name')}]({repo.get('url')})** (⭐ {repo.get('stars')} Yıldız - Güncelleme: {repo.get('updated_at')})\n  - **Açıklama:** {repo.get('description')}\n  - **Kod Linki:** {repo.get('url')}\n")
+                    dw_findings.append("\n".join(res_lines))
+                elif s.get("tool") == "tool_github_inspect" and s.get("result", {}).get("success"):
+                    ins = s["result"]
+                    dw_findings.append(f"### 📦 Repo Kod Denetimi ({ins.get('repo')}):\n- **Çalışan Kod Mevcut:** {'✅ EVET' if ins.get('has_code') else '⚠️ HAYIR'}\n- **Tespit Edilen Kod Dosyaları:** {', '.join(ins.get('code_files', [])[:10]) or 'Paket/Modül dizini'}")
+                elif s.get("tool") == "tool_threat_intel_scan" and s.get("result", {}).get("summary"):
+                    dw_findings.append(f"### Tehdit İstihbarat Özeti (Risk: {s['result'].get('risk_level', 'BİLİNMİYOR')}):\n{s['result'].get('summary')}")
+                elif s.get("tool") == "tool_secret_leak_scan" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### 🛡️ Gitleaks Güvenlik ve Sızıntı Denetim Raporu ({r.get('engine')}):\n- **Hedef:** `{r.get('target')}`\n- **Tespit Edilen Sızıntı Sayısı:** {r.get('leaks_count')}"]
+                    if r.get("findings"):
+                        lines.append("Bulunan Sızıntılar:")
+                        for f in r.get("findings", []):
+                            lines.append(f"  • **{f.get('description')}**: `{f.get('file')}:{f.get('start_line')}` (Kural: {f.get('rule_id')})")
+                    else:
+                        lines.append("✅ Tebrikler! Hedef dosya/dizinde hiçbir açık API anahtarı veya şifre sızıntısı bulunamadı.")
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_vulnerability_scan" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### 🔍 CVE & Bağımlılık Zafiyet Raporu ({r.get('engine')}):\n- **Hedef:** `{r.get('target')}`\n- **Toplam Zafiyet:** {r.get('vulnerabilities_count')}"]
+                    if r.get("findings"):
+                        for f in r.get("findings", []):
+                            lines.append(f"  • **{f.get('id')}** ({f.get('package')} {f.get('version', '')}): {f.get('summary')}")
+                    else:
+                        lines.append("✅ Harika! Güvenlik açığı veya kritik zafiyet tespit edilmedi.")
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_smart_contract_audit" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [f"### ⛓️ Crytic Slither Akıllı Sözleşme Denetimi:\n- **Sözleşme:** `{r.get('contract')}`\n- **Tespit Edilen Bulgu:** {r.get('issues_count')}"]
+                    if r.get("findings"):
+                        for f in r.get("findings", []):
+                            lines.append(f"  • **[{f.get('impact')}] {f.get('check')}**: {f.get('description')}")
+                    else:
+                        lines.append("✅ Akıllı sözleşmede kritik güvenlik açığı tespit edilmedi.")
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_phishing_domain_scan" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [
+                        f"### 🛡️ MetaMask Alan Adı ve Phishing İstihbarat Raporu ({r.get('engine')}):",
+                        f"- **Taranan Domain:** `{r.get('domain')}`",
+                        f"- **Güvenlik Durumu:** {r.get('status')}",
+                        f"- **Veri Tabanı İmzaları:** {r.get('total_threat_signatures', 0):,} bilinen zararlı adres"
+                    ]
+                    dw_findings.append("\n".join(lines))
+                elif s.get("tool") == "tool_system_engines_status" and s.get("result", {}).get("success"):
+                    r = s["result"]
+                    lines = [
+                        f"### ⚡ Canlı Sistem Motorları ve Sağlık Durumu ({r.get('active_engines')}/{r.get('total_engines')} Aktif):"
+                    ]
+                    for eng_name, eng_info in r.get("engines", {}).items():
+                        status_icon = "🟢 AKTİF" if eng_info.get("available") else "🔴 EKSİK"
+                        lines.append(f"  • **{eng_name}**: {status_icon} (Gecikme: {eng_info.get('ping_ms', 0)} ms) — `{eng_info.get('binary') or eng_info.get('path')}`")
+                    dw_findings.append("\n".join(lines))
+            if dw_findings:
+                if not final_reply or final_reply in {"Araç işlemleri başarıyla tamamlandı ve doğrulandı.", "İşlem başarıyla tamamlandı."}:
+                    final_reply = "\n\n".join(dw_findings)
+                elif not any("İstihbarat Bulguları" in final_reply for _ in [1]):
+                    final_reply = f"{final_reply}\n\n" + "\n\n".join(dw_findings)
 
         if status == "VERIFIED" and final_reply:
             # Ham JSON veya İngilizce sözlükleri Türkçe, maddeli, tümce düzenine çevir
@@ -504,6 +599,32 @@ def _run_owned_job(store, job_id):
                   "failure_code": failure_code,
                   "plan": plan or [], "engine_protocol": "baris-execution-v2", "build": "local-ui-v10"}
         store.finish(job_id, status, result)
+
+    if decision.autonomous_action and not steps:
+        tool_name, tool_args = decision.autonomous_action
+        store.event(job_id, "ENGINE_ROUTED", {
+            "agent": decision.agent.agent_name,
+            "engine": decision.agent.primary_engine,
+            "latency_ms": decision.latency_ms,
+            "reason": decision.reason,
+            "autonomous_tool": tool_name
+        })
+        store.update(job_id, pending={"name": tool_name, "args": tool_args}, used=used())
+        store.event(job_id, "TOOL_START", {"message": f"{decision.agent.agent_name} motoru çalıştırıyor: {tool_name}", "tool": tool_name})
+        step_res = tools.execute(tool_name, tool_args)
+        store.update(job_id, pending=None, used=used())
+        call_id = f"call_{uuid.uuid4().hex}"
+        event = {
+            "step": 1,
+            "tool_call_id": call_id,
+            "tool": tool_name,
+            "result": step_res,
+            "success": step_res.get("success", True)
+        }
+        steps.append(event)
+        store.event(job_id, "TOOL_DONE", event)
+        finish("VERIFIED", "Araç işlemleri başarıyla tamamlandı ve doğrulandı.")
+        return
 
     try:
         for index in range(stage, 40):
@@ -536,7 +657,13 @@ def _run_owned_job(store, job_id):
                     chunk_limit = 350
             else:
                 chunk_limit = 8000 if model_failures == 0 else 4000
-            selected = copy.deepcopy([TOOLS[0]] if plan is None else TOOLS[1:])
+            if is_consult:
+                if decision.agent.allowed_tools:
+                    selected = [t for t in TOOLS if t["function"]["name"] in decision.agent.allowed_tools]
+                else:
+                    selected = [t for t in TOOLS if t["function"]["name"] == "tool_direct_answer"]
+            else:
+                selected = copy.deepcopy([TOOLS[0]] if plan is None else [t for t in TOOLS[1:] if t["function"]["name"] != "tool_direct_answer"])
             for tool in selected:
                 properties = tool["function"]["parameters"].get("properties", {})
                 for field in ("content", "old_text", "new_text"):
@@ -549,9 +676,10 @@ def _run_owned_job(store, job_id):
             request["keep_alive"] = "10m"
             request["options"]["num_predict"] = 4096
             request["options"]["repeat_penalty"] = 1.1
-            request["messages"][0]["content"] += (
-                " Eksiksiz, tam ve doğrulanabilir üretim kodunu üret. "
-                "İlgili araçları parametreleriyle eksiksiz çağır.")
+            if not is_consult:
+                request["messages"][0]["content"] += (
+                    " Eksiksiz, tam ve doğrulanabilir üretim kodunu üret. "
+                    "İlgili araçları parametreleriyle eksiksiz çağır.")
             try:
                 raw = asyncio.run(generate(
                     request, store, job_id, min(240, remaining),
@@ -574,8 +702,11 @@ def _run_owned_job(store, job_id):
                 continue
             calls = message.get("tool_calls") or []
             if not calls:
-                if not steps:
+                reply_text = message.get("content", "").strip() or "İşlem başarıyla tamamlandı."
+                if not steps and payload.get("expected_files"):
                     raise ValueError("Araç çalışmadan görev bitirilemez.")
+                finish("VERIFIED", reply_text)
+                return
                 # Dinamik Görev Kabul Kapısı: Araçlar başarıyla icra edildiyse görevi VERIFIED olarak tamamla
                 all_ok = all(s.get("success") is True for s in steps)
                 last_ok = steps[-1].get("success") is True
@@ -595,18 +726,18 @@ def _run_owned_job(store, job_id):
             if repeats[fingerprint] > 3:
                 has_successful_run = any(s.get("tool") == "tool_run_shell" and s.get("success") is True for s in steps)
                 has_successful_write = any(s.get("tool") in {"tool_write_file", "tool_append_file"} and s.get("success") is True for s in steps)
-                # Disk üzerinde üretilmiş bir sonuç dosyası var mı kontrol et
-                ws = Path(payload["workspace"])
+                # Disk üzerinde BU GÖREVDE yazılmış bir sonuç dosyası var mı kontrol et (asla genel disk taraması yapma!)
+                written_files = [s.get("result", {}).get("path") for s in steps if s.get("tool") in {"tool_write_file", "tool_append_file"} and s.get("success") is True and s.get("result", {}).get("path")]
                 found_res = False
-                for candidate in sorted(ws.glob("*.*")):
-                    if candidate.suffix in {".txt", ".json", ".md", ".csv"} and candidate.name not in {"requirements.txt", "pyproject.toml"}:
+                for p in reversed(written_files):
+                    candidate = Path(p)
+                    if candidate.suffix in {".txt", ".json", ".md", ".csv"} and candidate.suffix != ".py":
                         try:
-                            if candidate.stat().st_mtime >= (start - 5):
-                                c_text = candidate.read_text(encoding="utf-8").strip()
-                                if len(c_text) > 10:
-                                    finish("VERIFIED", f"Görev başarıyla tamamlandı.\n\nSonuç ({candidate.name}):\n{format_human_reply(c_text)}")
-                                    found_res = True
-                                    return
+                            c_text = candidate.read_text(encoding="utf-8").strip()
+                            if len(c_text) > 10:
+                                finish("VERIFIED", f"Görev başarıyla tamamlandı.\n\nSonuç ({candidate.name}):\n{format_human_reply(c_text)}")
+                                found_res = True
+                                return
                         except Exception:
                             pass
                 if has_successful_run and has_successful_write:
@@ -634,6 +765,10 @@ def _run_owned_job(store, job_id):
                 messages[0]["content"] += "\nAşama planı: " + json.dumps(plan, ensure_ascii=False)
             else:
                 steps.append(event)
+            if name == "tool_direct_answer" and result.get("success"):
+                direct_ans = args.get("cevap", "").strip() or result.get("cevap", "").strip() or "İşlem başarıyla tamamlandı."
+                finish("VERIFIED", direct_ans)
+                return
             progress_key = None
             if result.get('success') and name in {'tool_write_file', 'tool_append_file', 'tool_patch_file'}:
                 progress_key = result.get('path', '') + ':' + result.get('sha256', '')

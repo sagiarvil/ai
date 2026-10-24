@@ -7,6 +7,7 @@ aktif ve yüksek kaliteli açık kaynak repoları arama ve inceleme motoru.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
@@ -32,15 +33,29 @@ class GitHubIntelligence:
         return None
 
     @classmethod
-    def search_repos(cls, query: str, language: Optional[str] = None, min_stars: int = 5, limit: int = 5) -> Dict[str, Any]:
+    def search_repos(cls, query: str, language: Optional[str] = None, min_stars: int = 1, limit: int = 5) -> Dict[str, Any]:
         """
         GitHub üzerinde belirtilen konuda ve dilde gerçek açık kaynak repoları arar.
         """
+        q_raw = query.strip()
+        detected_lang = language
+        q_low = q_raw.lower()
+        for lang_cand in ["python", "javascript", "typescript", "golang", "go", "rust", "solidity", "c++", "java", "php"]:
+            if re.search(rf"\b{re.escape(lang_cand)}\b", q_low):
+                detected_lang = detected_lang or ("go" if lang_cand == "golang" else lang_cand)
+                q_raw = re.sub(rf"\b{re.escape(lang_cand)}\b", "", q_raw, flags=re.IGNORECASE)
+
+        # Türkçe dolgu kelimelerini temizle
+        clean_q = re.sub(r"\b(ile|yazılmış|olan|için|bir|ve|hakkında|örnek|uygulama|çalışan|açık|kaynak|kod|repo|proje)\b", "", q_raw, flags=re.IGNORECASE)
+        clean_q = re.sub(r"\s+", " ", clean_q).strip()
+        if not clean_q:
+            clean_q = query.strip()
+
         gh_path = shutil.which("gh") or "/opt/homebrew/bin/gh"
-        cmd = [gh_path, "search", "repos", query, "--sort", "stars", "--limit", str(max(limit, 5)), "--json", "fullName,description,url,stargazersCount,updatedAt"]
+        cmd = [gh_path, "search", "repos", clean_q, "--sort", "stars", "--limit", str(max(limit, 5)), "--json", "fullName,description,url,stargazersCount,updatedAt"]
         
-        if language:
-            cmd.extend(["--language", language])
+        if detected_lang:
+            cmd.extend(["--language", detected_lang])
 
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=12)

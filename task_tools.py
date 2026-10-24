@@ -86,9 +86,9 @@ TOOLS = [
         "target": TEXT, "target_type": TEXT}),
     schema("tool_deep_research", "GPT-Researcher standardında belirtilen konu veya soru için çok kaynaklı derinlemesine araştırma yapar; sayfaların tam metin içeriklerini toplayıp sentezler.", {
         "query": TEXT}),
-    schema("tool_secret_leak_scan", "Gitleaks motorunu kullanarak belirtilen dosya veya dizinde API anahtarı, token, şifre ve kimlik sızıntılarını tarar.", {
+    schema("tool_secret_leak_scan", "Gitleaks motorunu kullanarak belirtilen dosya veya dizinde (boş veya nokta bırakılırsa mevcut projeyi tarar) API anahtarı, token, şifre ve kimlik sızıntılarını tarar.", {
         "target_path": TEXT}),
-    schema("tool_vulnerability_scan", "OSV-Scanner ve Trivy motorlarını kullanarak bağımlılık güvenlik zafiyetlerini (CVE) tarar.", {
+    schema("tool_vulnerability_scan", "OSV-Scanner ve Trivy motorlarını kullanarak bağımlılık güvenlik zafiyetlerini (CVE) tarar (boş bırakılırsa mevcut projeyi tarar).", {
         "target_path": TEXT}),
     schema("tool_smart_contract_audit", "Slither motorunu kullanarak Solidity akıllı sözleşmelerini güvenlik açıklarına karşı denetler.", {
         "target_path": TEXT}),
@@ -96,6 +96,9 @@ TOOLS = [
         "query": TEXT, "language": TEXT, "min_stars": INTEGER}),
     schema("tool_github_inspect", "Belirtilen GitHub reposunun (owner/repo) içindeki dosyaları ve gerçek kod içerip içermediğini inceler.", {
         "repo_full_name": TEXT}),
+    schema("tool_phishing_domain_scan", "MetaMask veritabanındaki 107.000+ zararlı domain kaydını kullanarak belirtilen web sitesi veya domain adresinin phishing/sahte cüzdan olup olmadığını mikrosaniyeler içinde kontrol eder.", {
+        "domain": TEXT}),
+    schema("tool_system_engines_status", "Sistemdeki tüm canlı siber güvenlik, GitHub avcısı, Dark Web ve kod denetim motorlarının durumunu ve yanıt sürelerini listeler.", {}),
     schema("tool_direct_answer", "Kullanıcının danışmanlık, soru-cevap, rehberlik veya açıklama taleplerine dosya oluşturmadan doğrudan kapsamlı Türkçe yanıt verir.", {
         "cevap": {"type": "string", "maxLength": 8000}}),
 ]
@@ -196,19 +199,34 @@ class TaskTools:
             return DarkWebIntelligence.deep_research_sync(args.get("query", ""))
         if name == "tool_secret_leak_scan":
             from installed_engines_bridge import InstalledEnginesBridge
-            return InstalledEnginesBridge.scan_secrets(args.get("target_path", str(self.root)))
+            t_path = args.get("target_path", "")
+            if not t_path or not Path(t_path).exists() or "your/project" in t_path:
+                t_path = str(self.root)
+            return InstalledEnginesBridge.scan_secrets(t_path)
         if name == "tool_vulnerability_scan":
             from installed_engines_bridge import InstalledEnginesBridge
-            return InstalledEnginesBridge.scan_vulnerabilities(args.get("target_path", str(self.root)))
+            t_path = args.get("target_path", "")
+            if not t_path or not Path(t_path).exists() or "your/project" in t_path:
+                t_path = str(self.root)
+            return InstalledEnginesBridge.scan_vulnerabilities(t_path)
         if name == "tool_smart_contract_audit":
             from installed_engines_bridge import InstalledEnginesBridge
-            return InstalledEnginesBridge.audit_smart_contract(args.get("target_path", ""))
+            t_path = args.get("target_path", "")
+            if not t_path or not Path(t_path).exists() or "your/project" in t_path:
+                t_path = str(self.root)
+            return InstalledEnginesBridge.audit_smart_contract(t_path)
         if name == "tool_github_search":
             from github_intelligence import GitHubIntelligence
             return GitHubIntelligence.search_repos(args.get("query", ""), language=args.get("language"), min_stars=args.get("min_stars", 5))
         if name == "tool_github_inspect":
             from github_intelligence import GitHubIntelligence
             return GitHubIntelligence.inspect_repo_contents(args.get("repo_full_name", ""))
+        if name == "tool_phishing_domain_scan":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.scan_phishing_domain(args.get("domain", ""))
+        if name == "tool_system_engines_status":
+            from installed_engines_bridge import InstalledEnginesBridge
+            return InstalledEnginesBridge.get_all_engines_health()
         if name == "tool_direct_answer":
             return {"success": True, "cevap": args.get("cevap", "")}
         path = self.path(args["filepath"])
