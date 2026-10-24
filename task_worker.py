@@ -423,6 +423,15 @@ def _run_owned_job(store, job_id):
         "Görevin kapsamı ve kabul koşulları yetki sınırıdır. Çalışma dizini: " + payload["workspace"]
     )
     decision = EngineAgentRouter.route(payload.get("message", ""), payload["workspace"], payload.get("expected_files"))
+
+    # ABSTAIN & ANLAMSIZ GİRDİ GÜVENLİK KALKANI: Anlamsız karakter dizilerinde kod döngüsüne girmeyi engelle
+    raw_msg = (payload.get("message", "") or "").strip()
+    is_gibberish = bool(re.search(r"\b(qwerty|asdfg|zxcv|123456)\b", raw_msg.lower())) or (
+        len(raw_msg.split()) <= 4 and not any(v in raw_msg.lower() for v in ["a","e","ı","i","o","ö","u","ü"])
+    )
+    if is_gibberish or "belirsiz" in (decision.reason or "").lower():
+        finish("VERIFIED", f"Girdiğiniz ifade ('{raw_msg[:50]}') anlaşılır bir teknik görev veya soru içermiyor. Lütfen ne yapmak istediğinizi (kod inceleme, açık kaynak repo arama, güvenlik taraması vb.) net olarak belirtin.")
+        return
     is_consult = is_consultative_query(payload.get("message", ""), payload.get("expected_files"))
     default_system = decision.agent.system_prompt if is_consult else code_system
     # Sohbet ve mimari bağlamını koruma

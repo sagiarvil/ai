@@ -46,7 +46,9 @@ class GitHubIntelligence:
                 q_raw = re.sub(rf"\b{re.escape(lang_cand)}\b", "", q_raw, flags=re.IGNORECASE)
 
         # Türkçe dolgu kelimelerini temizle
-        clean_q = re.sub(r"\b(ile|yazılmış|olan|için|bir|ve|hakkında|örnek|uygulama|çalışan|açık|kaynak|kod|repo|proje)\b", "", q_raw, flags=re.IGNORECASE)
+        # Türkçe arama ve dolgu kelimelerini agresif temizle
+        stop_words = r"\b(bana|bul|ara|arama|yapan|eden|tabanlı|tabanli|ile|yazılmış|olan|için|bir|ve|hakkında|örnek|uygulama|çalışan|açık|kaynak|kod|repo|proje|göster|listele|getir|benzeri|benzer|var|mı|mi)\b"
+        clean_q = re.sub(stop_words, "", q_raw, flags=re.IGNORECASE)
         clean_q = re.sub(r"\s+", " ", clean_q).strip()
         if not clean_q:
             clean_q = query.strip()

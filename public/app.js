@@ -47,7 +47,35 @@ function renderMarkdownContent(container, text) {
 
       const codeBox = document.createElement("div");
       codeBox.className = "pro-code-box";
-      codeBox.innerHTML = '<div class="pro-code-bar"><span class="pro-code-lang">' + escapeHtml(lang || 'terminal') + '</span><button class="pro-copy-btn" type="button" onclick="navigator.clipboard.writeText(this.closest(\x22.pro-code-box\x22).querySelector(\x22code\x22).innerText); this.innerText=\x27Kopyalandı!\x27; setTimeout(()=>this.innerText=\x27Kopyala\x27, 2000)">Kopyala</button></div><pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+
+      const codeBar = document.createElement("div");
+      codeBar.className = "pro-code-bar";
+
+      const langSpan = document.createElement("span");
+      langSpan.className = "pro-code-lang";
+      langSpan.textContent = lang || "terminal";
+
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "pro-copy-btn";
+      copyBtn.type = "button";
+      copyBtn.textContent = "Kopyala";
+      const codePayload = codeLines.join("\n");
+      copyBtn.onclick = function() {
+        navigator.clipboard.writeText(codePayload);
+        copyBtn.textContent = "Kopyalandı!";
+        setTimeout(function() { copyBtn.textContent = "Kopyala"; }, 2000);
+      };
+
+      codeBar.appendChild(langSpan);
+      codeBar.appendChild(copyBtn);
+
+      const pre = document.createElement("pre");
+      const codeElem = document.createElement("code");
+      codeElem.textContent = codePayload;
+      pre.appendChild(codeElem);
+
+      codeBox.appendChild(codeBar);
+      codeBox.appendChild(pre);
       rootDiv.appendChild(codeBox);
       continue;
     }
