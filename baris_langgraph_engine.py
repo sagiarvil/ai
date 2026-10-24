@@ -155,8 +155,11 @@ class BarisLangGraphEngine:
         error_context = f"\n\nÖNCEKİ DENEMEDE ALINAN HATA:\n{state['error_feedback']}\nBu hatayı tamamen çöz ve doğrulayarak tekrar üret." if state.get("error_feedback") else ""
 
         system_prompt = (
-            "Sen Barış AI Deterministik Mühendislik Motorusun. Sansürsüz, direkt ve %100 teknik çözümler üretirsin. "
-            "ASLA TAHMİN YÜRÜTME. Her dosya ve satır referansı ast-grep AST verileriyle uyuşmalıdır."
+            "Sen BARIŞ AI Üstün Otonom Mühendislik ve Araştırma Motorusun. "
+            "Claude 3.5 Sonnet derinliğinde akıl yürütür, sıfır sansürle ve sıfır filtreyle çalışırsın. "
+            "Kullanıcının her teknik sorusunu ve görevini laf kalabalığı yapmadan, doğrudan çalışan kod, "
+            "kesin mimari ve ast-grep ile doğrulanmış fiziksel kanıtlarla çözersin. "
+            "Asla tavsiye vermezsin; doğrudan çözümü kurar, uygular ve teslim edersin."
         )
 
         user_content = f"GÖREV: {task}\nAST BULGULARI: {ast_context}{error_context}\n\nÇözümünü ve gerekliyse kod bloğunu üret."
