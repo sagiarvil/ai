@@ -323,7 +323,7 @@ async function refreshConnection() {
     statusLabel.textContent = error.message;
     statusLabel.style.color = '#f85149';
   }
-  sendBtn.disabled = busy || !connected;
+  sendBtn.disabled = busy || !connected || (input.value.trim().length === 0);
 }
 
 function renderResult(box, data) {
@@ -620,6 +620,7 @@ function runUiFileTest() {
 input.addEventListener('input', () => {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+  sendBtn.disabled = busy || !connected || (input.value.trim().length === 0);
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
