@@ -92,15 +92,18 @@ class BarisLangGraphEngine:
         ast_grep_bin = shutil.which("ast-grep") or "/opt/homebrew/bin/ast-grep"
         verified_nodes: List[Dict[str, Any]] = []
 
-        # ast-grep ile fonksiyon, sınıf ve import sembollerini tara
+        # ast-grep ile fonksiyon, sınıf ve import sembollerini tara (Test dizinlerini filtrele)
         try:
             cmd = [ast_grep_bin, "run", "--pattern", "fn $NAME($$$) { $$$ }", "--json", str(repo_path)]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=12)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 raw_items = json.loads(res.stdout)
                 for item in raw_items:
                     raw_file = item.get("file", "")
-                    # Orphan check: Dosya gerçekten diskte var mı?
+                    # Gürültü Filtresi: Test, fixture ve mock dosyalarını ele; asıl çekirdeğe odaklan
+                    if any(noise in raw_file.lower() for noise in ["test", "fixture", "mock", "bench", "example"]):
+                        continue
+
                     f_abs = repo_path / raw_file if not Path(raw_file).is_absolute() else Path(raw_file)
                     if not f_abs.exists():
                         continue
@@ -109,16 +112,16 @@ class BarisLangGraphEngine:
                     s_line = r_range.get("start", {}).get("line", 1)
                     e_line = r_range.get("end", {}).get("line", s_line)
                     raw_text = (item.get("text") or "").strip()
+                    sym_name = item.get("metaVariables", {}).get("single", {}).get("NAME", {}).get("text") or "fn"
 
                     try:
-                        # Pydantic v2 doğrulamasından geçir
                         node = ASTNodeFinding(
                             file_path=str(f_abs.relative_to(repo_path) if f_abs.is_relative_to(repo_path) else f_abs.name),
                             line_start=max(1, s_line),
                             line_end=max(s_line, e_line),
                             node_type="function",
-                            symbol_name=item.get("metaVariables", {}).get("single", {}).get("NAME", {}).get("text"),
-                            code_snippet=raw_text[:400]
+                            symbol_name=sym_name,
+                            code_snippet=raw_text[:350]
                         )
                         verified_nodes.append(node.model_dump())
                         if len(verified_nodes) >= 20:
@@ -157,18 +160,22 @@ class BarisLangGraphEngine:
 
         system_prompt = (
             "Sen Barış AI Kıdemli Sistem Mimarı ve Çift Taraflı Düşünen Mühendislik Partnerisin (Principal Pair Architect). "
-            "Claude 3.5 kalitesinde, yüksek zekayla, akıcı ve analitik bir Türkçe ile konuşursun. "
-            "Görevin sadece mekanik kod dökmek değil; kullanıcının söylediklerini derinlemesine yorumlamak, "
-            "faydalarını, risklerini, mimarisini masaya yatırmak ve stratejik önerilerde bulunmaktır."
+            "Claude 3.5 kalitesinde, derin akıl yürüten, sansürsüz ve analitik bir Türkçe ile konuşursun. "
+            "Görevin asla yüzeysel veya yarım metin üretmek değildir. Raporunu şu 5 yapılandırılmış başlıkta eksiksiz tamamla:\n\n"
+            "### 1. 🎯 Projenin Tam Amacı ve Çözdüğü Kök Problem\n"
+            "### 2. 💡 Temel Faydaları ve Güçlü Yönleri (Hangi mimarilerde kullanılmalı?)\n"
+            "### 3. ⚠️ Riskleri, Zararları ve Sınırları (Hangi durumlarda kullanılmamalı, olası tehlikeleri?)\n"
+            "### 4. 🛠️ Çekirdek Mimari Kırılımı ve Hemen Çalıştırılabilir CLI Kod Örnekleri\n"
+            "### 5. ❓ Stratejik Mimari Önerim ve Kullanıcıya Kritik Sorularım\n\n"
+            "ÖNEMLİ KURAL: Cümlelerini veya bölümlerini ASLA yarıda kesme; 5 başlığın tamamını eksiksiz bitir."
         )
 
         user_content = (
             f"HEDEF: {task}\n"
             f"REPO YOLU: {state.get('repo_path')}\n"
-            f"TESPİT EDİLEN ÇEKİRDEK SEMBOLLER:\n{ast_context}\n"
+            f"ÇEKİRDEK AST SEMBOLLERİ (Filtrelenmiş Üretim Kodları):\n{ast_context}\n"
             f"{error_context}\n\n"
-            "Yukarıdaki gerçek yapıya dayanarak projeyi derinlemesine yorumla, "
-            "faydalarını, risklerini/zararlarını ve nasıl kullanılacağını açıkla."
+            "Yukarıdaki 5 başlıkta derinlemesine, zeki ve tam metinli mimari analizini üret."
         )
 
         # Yerel Ollama Native API ile ultra-hızlı ve sıfır timeout çağrısı
@@ -183,9 +190,9 @@ class BarisLangGraphEngine:
             ],
             "stream": False,
             "options": {
-                "temperature": 0.1,
-                "num_ctx": 4096,
-                "num_predict": 512
+                "temperature": 0.15,
+                "num_ctx": 8192,
+                "num_predict": 2048
             }
         }
 
@@ -195,7 +202,7 @@ class BarisLangGraphEngine:
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 output_text = data.get("message", {}).get("content", "").strip()
                 if output_text:
