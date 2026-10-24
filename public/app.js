@@ -553,13 +553,26 @@ function testFileWrite() {
   sendAction({[path]: 'Merhaba Barış'});
 }
 
+input.addEventListener('input', () => {
+  if (connected && !busy && input.value.trim().length > 0) {
+    sendBtn.disabled = false;
+  }
+});
+
 input.addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     sendAction();
   }
 });
+
+// Anında bağlantı kontrolü ve 3 saniyede bir periyodik durum heartbeat
 refreshConnection();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', refreshConnection);
+}
+window.addEventListener('load', refreshConnection);
+setInterval(refreshConnection, 3000);
 
 
 // Layout controls do not alter the execution protocol.
