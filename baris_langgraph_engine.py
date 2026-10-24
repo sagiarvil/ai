@@ -56,7 +56,7 @@ class GraphState(TypedDict):
 
 class BarisLangGraphEngine:
     LOCAL_MODEL = "ollama/qwen-coder-14b-abliterated:latest"
-    FALLBACK_MODEL = "gemini/gemini-2.0-flash"
+    REASONING_MODEL = "ollama/deepseek-r1-14b-abliterated:latest"
 
     @classmethod
     def node_fetch_and_preflight(cls, state: GraphState) -> GraphState:
@@ -77,14 +77,8 @@ class BarisLangGraphEngine:
                 return state
 
         state["repo_path"] = str(target_path)
-        
-        # Pre-flight: Dosya sayısı ve boyut kontrolü
-        code_files = list(target_path.rglob("*.rs")) + list(target_path.rglob("*.py")) + list(target_path.rglob("*.ts")) + list(target_path.rglob("*.js")) + list(target_path.rglob("*.go"))
-        if len(code_files) > 60 and os.environ.get("GEMINI_API_KEY"):
-            state["model_choice"] = cls.FALLBACK_MODEL
-        else:
-            state["model_choice"] = cls.LOCAL_MODEL
-
+        # Güvenilir yerel sansürsüz motor
+        state["model_choice"] = cls.LOCAL_MODEL
         return state
 
     @classmethod
@@ -155,36 +149,57 @@ class BarisLangGraphEngine:
         error_context = f"\n\nÖNCEKİ DENEMEDE ALINAN HATA:\n{state['error_feedback']}\nBu hatayı tamamen çöz ve doğrulayarak tekrar üret." if state.get("error_feedback") else ""
 
         system_prompt = (
-            "Sen BARIŞ AI Üstün Otonom Mühendislik ve Araştırma Motorusun. "
-            "Claude 3.5 Sonnet derinliğinde akıl yürütür, sıfır sansürle ve sıfır filtreyle çalışırsın. "
-            "Kullanıcının her teknik sorusunu ve görevini laf kalabalığı yapmadan, doğrudan çalışan kod, "
-            "kesin mimari ve ast-grep ile doğrulanmış fiziksel kanıtlarla çözersin. "
-            "Asla tavsiye vermezsin; doğrudan çözümü kurar, uygular ve teslim edersin."
+            "Sen BARIŞ AI Üstün Bilişsel ve Mühendislik Motorusun. "
+            "Claude 3.5 kalitesinde derin akıl yürüten, son derece zeki, analitik ve sansürsüz bir uzmansın. "
+            "Bir repo veya kod konusu geldiğinde laf salatası yapmadan şu 4 kritik ekseni derinlemesine yorumlarsın:\n"
+            "1. 🎯 Projenin Tam Amacı ve Ne İşe Yaradığı\n"
+            "2. 💡 Temel Faydaları ve Güçlü Yönleri (Neden ve Ne Zaman Kullanılmalı?)\n"
+            "3. ⚠️ Riskleri, Zararları ve Sınırları (Nerede Kullanılmamalı, Hangi Tehlikeleri Var?)\n"
+            "4. 🛠️ Çekirdek Mimari Kırılımı ve Çalışan Somut Kod/Komut Örnekleri.\n"
+            "Her bilgin kesin, teknik olarak kusursuz, akıcı ve doğrudan amaca hizmet etmelidir."
         )
 
-        user_content = f"GÖREV: {task}\nAST BULGULARI: {ast_context}{error_context}\n\nÇözümünü ve gerekliyse kod bloğunu üret."
+        user_content = (
+            f"HEDEF: {task}\n"
+            f"REPO YOLU: {state.get('repo_path')}\n"
+            f"AST BULGULARI ({len(state.get('ast_findings', []))} Düğüm):\n{ast_context}\n"
+            f"{error_context}\n\n"
+            "Yukarıdaki 4 eksende derin, zeki, akıl yürüten ve tam kapsamlı analizini üret."
+        )
+
+        # Yerel Ollama Native API ile ultra-hızlı ve sıfır timeout çağrısı
+        import urllib.request
+        import urllib.error
+
+        payload = {
+            "model": "qwen-coder-14b-abliterated:latest",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_ctx": 4096,
+                "num_predict": 1024
+            }
+        }
 
         try:
-            kwargs = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.2,
-                "timeout": 90
-            }
-            if model.startswith("ollama/"):
-                kwargs["api_base"] = "http://localhost:11434"
-
-            resp = litellm.completion(**kwargs)
-            state["proposed_solution"] = resp.choices[0].message.content.strip()
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                output_text = data.get("message", {}).get("content", "").strip()
+                if output_text:
+                    state["proposed_solution"] = output_text
+                else:
+                    state["error_feedback"] = "Yerel model boş içerik döndürdü."
         except Exception as e:
-            # Fallback
-            if model != cls.FALLBACK_MODEL and os.environ.get("GEMINI_API_KEY"):
-                state["model_choice"] = cls.FALLBACK_MODEL
-                return cls.node_llm_reason(state)
-            state["error_feedback"] = f"Model çağrı hatası: {str(e)}"
+            state["error_feedback"] = f"Yerel Ollama doğrudan çağrı hatası: {str(e)}"
 
         return state
 
