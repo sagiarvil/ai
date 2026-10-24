@@ -562,7 +562,7 @@ def _run_owned_job(store, job_id):
                             res_lines.append(f"• **[{repo.get('name')}]({repo.get('url')})** (⭐ {repo.get('stars')} Yıldız - Güncelleme: {repo.get('updated_at')})\n  - **Açıklama:** {repo.get('description')}\n  - **Kod Linki:** {repo.get('url')}\n")
                         dw_findings.append("\n".join(res_lines))
                     else:
-                        dw_findings.append(f"### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n- **Sorgu:** `{r.get('query', '')}`\n- Belirtilen kriterlere uygun açık kaynaklı GitHub reposu bulunamadı.")
+                        dw_findings.append(f"### 🚀 Doğrulanmış Açık Kaynak GitHub Kod Repoları:\n- **Sorgu:** `{r.get('query', '')}`\n- İnceleme yapıldı, eşleşme çıkarılamadı.")
                 elif s.get("tool") == "tool_github_inspect":
                     ins = s.get("result", {})
                     repo_id = ins.get('repo_name') or ins.get('repo') or 'Bilinmeyen Repo'

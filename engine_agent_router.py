@@ -147,7 +147,7 @@ class EngineAgentRouter:
             "kimsin", "hangisi daha iyi", "tavsiye", "farki ne", "farkı ne", "katki", "katkı",
             "katkisi", "katkısı", "katki saglar", "katkı sağlar", "bize nasil", "bize nasıl",
             "nasil fayda", "nasıl fayda", "nasil entegre", "nasıl entegre", "ne yapabiliriz",
-            "ne yapabilir", "faydasi nedir", "faydası nedir", "bu repo", "o repo", "baris ai icin", "barış ai için"
+            "ne yapabilir", "faydasi nedir", "faydası nedir", "baris ai icin", "barış ai için"
         ])
         if is_conceptual_question and not any(run_kw in t for run_kw in ["tara", "denetle", "calistir", "çalıştır", "puanla", "klonla", "ara ve bul"]):
             dt = (time.perf_counter() - t0) * 1000
@@ -201,43 +201,52 @@ class EngineAgentRouter:
                 reason="OSV-Scanner/Trivy zafiyet ve bağımlılık taraması talep edildi."
             )
 
-        # 4. GitHub Doğrudan Repo İnceleme veya Arama
-        github_url_match = re.search(r"(?:https?://github\.com/)?([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", t)
-        if ("incele" in t.lower() or "kontrol" in t.lower() or "bak" in t.lower() or "analiz" in t.lower()) and github_url_match:
-            repo_id = github_url_match.group(1).rstrip(".")
-            if not repo_id.startswith("http"):
-                dt = (time.perf_counter() - t0) * 1000
+                # 4. SSOT Semantik Niyet Kapısı (IntentEngine — Tek Gerçeklik Kaynağı)
+        try:
+            from intent_engine import IntentEngine, Route, Intent
+            from intent_adapters import FastEmbedAdapter
+            if not hasattr(cls, "_intent_engine") or cls._intent_engine is None:
+                cls._intent_engine = IntentEngine(FastEmbedAdapter())
+
+            intent_dec = cls._intent_engine.decide(message)  # Ham metin, dokunulmamış
+            dt = (time.perf_counter() - t0) * 1000
+
+            if intent_dec.route == Route.ABSTAIN:
                 return RoutingDecision(
-                    agent=cls.ROLES["github_hunter"],
-                    autonomous_action=("tool_github_inspect", {"repo_full_name": repo_id}),
+                    agent=cls.ROLES["turnkey_solver"],
+                    autonomous_action=None,
                     latency_ms=round(dt, 4),
-                    reason=f"GitHub reposu doğrudan inceleme talimatı tespit edildi: {repo_id}"
+                    reason=f"Semantik niyet belirsiz (skor: {intent_dec.similarity}, marj: {intent_dec.margin}); doğrudan kullanıcıya soru sorma/açıklama moduna yönlendirildi."
                 )
 
-        if any(k in t for k in ["github", "repo", "acik kaynak kod", "açık kaynak kod", "calisan repo", "çalışan repo", "proje bul"]):
-            # URL'leri korumak için regex temizliği
-            if "github.com/" in t:
-                m = re.search(r"github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)", t)
-                if m:
-                    repo_id = m.group(1).rstrip(".")
-                    dt = (time.perf_counter() - t0) * 1000
-                    return RoutingDecision(
-                        agent=cls.ROLES["github_hunter"],
-                        autonomous_action=("tool_github_inspect", {"repo_full_name": repo_id}),
-                        latency_ms=round(dt, 4),
-                        reason=f"GitHub repo URL doğrudan inceleme tespit edildi: {repo_id}"
-                    )
-            q = re.sub(r"\b(da|de|uzerinde|üzerinde|bana|bul|ara|calisan|çalışan|repolarini|repolarını|projeleri)\b", "", t, flags=re.IGNORECASE).strip()
-            q = re.sub(r"\s+", " ", q).strip()
-            if not q or len(q) < 3:
-                q = t
-            dt = (time.perf_counter() - t0) * 1000
-            return RoutingDecision(
-                agent=cls.ROLES["github_hunter"],
-                autonomous_action=("tool_github_search", {"query": q, "min_stars": 5}),
-                latency_ms=round(dt, 4),
-                reason="Açık kaynak GitHub kod reposu arama talimatı tespit edildi."
-            )
+            if intent_dec.route == Route.REASON:
+                return RoutingDecision(
+                    agent=cls.ROLES["turnkey_solver"],
+                    autonomous_action=None,
+                    latency_ms=round(dt, 4),
+                    reason=f"Semantik niyet mimari muhakeme ({intent_dec.intent}); araçsız doğrudan akıl yürütme yoluna yönlendirildi."
+                )
+
+            if intent_dec.route == Route.TOOL and intent_dec.allowed_tools:
+                primary_tool = intent_dec.allowed_tools[0]
+                tool_args = {}
+                if primary_tool == "tool_github_inspect":
+                    tool_args = {"repo_full_name": intent_dec.urls[0] if intent_dec.urls else message}
+                elif primary_tool == "tool_github_search":
+                    tool_args = {"query": message, "min_stars": 5}
+                elif primary_tool == "tool_security_scan":
+                    tool_args = {"target_path": workspace}
+                else:
+                    tool_args = {"raw_text": intent_dec.raw_input}
+
+                return RoutingDecision(
+                    agent=cls.ROLES["github_hunter"] if "github" in primary_tool else cls.ROLES["security_auditor"],
+                    autonomous_action=(primary_tool, tool_args),
+                    latency_ms=round(dt, 4),
+                    reason=f"SSOT IntentEngine onaylı araç yetkilendirmesi: {primary_tool} (niyet: {intent_dec.intent})"
+                )
+        except Exception:
+            pass
 
         # 5. Phishing / Sahte Domain Taraması (MetaMask)
         if any(k in t for k in ["phishing", "sahte domain", "zararli domain", "zararlı domain", "oltalama", "metamask"]):
