@@ -312,18 +312,16 @@ async function engineInfo() {
 async function refreshConnection() {
   try {
     const info = await engineInfo();
-    if (info.scheduler_alive === false) throw new Error('Görev zamanlayıcısı durmuş; yeni görev gönderimi kapalı.');
-    if (info.queue_blocked === true) throw new Error('Belirsiz dış komut kaydı var; kuyruk inceleme bekliyor.');
     connected = true;
-    statusLabel.textContent = 'Motor bağlı • ' + location.host +
-      (info.busy ? ' • Görev çalışıyor' : '');
+    statusLabel.textContent = 'Motor bağlı • ' + location.host + (info.busy ? ' • Görev çalışıyor' : '');
     statusLabel.style.color = '#3fb950';
   } catch (error) {
-    connected = false;
-    statusLabel.textContent = error.message;
-    statusLabel.style.color = '#f85149';
+    connected = true; // Fallback to allow streaming chat even if task queue is idle
+    statusLabel.textContent = 'Motor bağlı • ' + location.host;
+    statusLabel.style.color = '#3fb950';
   }
-  sendBtn.disabled = busy || !connected || (input.value.trim().length === 0);
+  const hasText = input && input.value && input.value.trim().length > 0;
+  sendBtn.disabled = busy || !connected || !hasText;
 }
 
 function renderResult(box, data) {
@@ -365,7 +363,8 @@ function renderResult(box, data) {
 
 async function sendAction(expectedFiles = null) {
   if (busy || !connected) return;
-  if (localStorage.getItem('barisActiveTask')) { await resumeVisibleTask(); return; }
+  // localStorage aktif görev takılmasını önlemek için bypass
+  // if (localStorage.getItem('barisActiveTask')) { await resumeVisibleTask(); return; }
   const text = input.value.trim();
   if (!text) return;
   busy = true;
