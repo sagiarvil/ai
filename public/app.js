@@ -1,4 +1,72 @@
 
+function getOrCreateSessionId() {
+  let sid = localStorage.getItem('barisChatSessionId');
+  if (!sid) {
+    sid = crypto.randomUUID();
+    localStorage.setItem('barisChatSessionId', sid);
+  }
+  return sid;
+}
+
+async function streamChatResponse(text, box) {
+  const sessionId = getOrCreateSessionId();
+  box.innerHTML = '<span class="loading-cursor">▋</span>';
+  let fullText = '';
+  
+  const response = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      message: text,
+      session_id: sessionId
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Streaming sunucu yanıtı başarısız: ' + response.statusText);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+    const lines = buffer.split('
+');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data:')) continue;
+      const dataStr = trimmed.slice(5).trim();
+      if (dataStr === '[DONE]') {
+        break;
+      }
+      try {
+        const parsed = JSON.parse(dataStr);
+        if (parsed.token) {
+          fullText += parsed.token;
+          box.innerHTML = '';
+          renderMarkdownContent(box, fullText);
+          const cursor = document.createElement('span');
+          cursor.className = 'loading-cursor';
+          cursor.textContent = '▋';
+          box.appendChild(cursor);
+          feed.scrollTop = feed.scrollHeight;
+        }
+      } catch (e) {}
+    }
+  }
+
+  box.innerHTML = '';
+  renderMarkdownContent(box, fullText || 'Yanıt tamamlandı.');
+  feed.scrollTop = feed.scrollHeight;
+}
+
+
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -322,13 +390,19 @@ async function sendAction(expectedFiles = null) {
   const timer = setInterval(update, 1000);
   try {
     await engineInfo();
-    const payload = {message: text};
-    if (expectedFiles) payload.expected_files = expectedFiles;
-    const submitted = await submitPayload(payload);
-    localStorage.setItem('barisActiveTask', submitted.task_id);
-    localStorage.removeItem('barisPendingSubmission');
-    clearInterval(timer);
-    await followTask(submitted.task_id, box);
+    const isExplicitDurableTask = expectedFiles || /\b(dosya|kod\s+yaz|kaydet|gitleaks|test\s+et)\b/i.test(text);
+    if (!isExplicitDurableTask) {
+      clearInterval(timer);
+      await streamChatResponse(text, box);
+    } else {
+      const payload = {message: text};
+      if (expectedFiles) payload.expected_files = expectedFiles;
+      const submitted = await submitPayload(payload);
+      localStorage.setItem('barisActiveTask', submitted.task_id);
+      localStorage.removeItem('barisPendingSubmission');
+      clearInterval(timer);
+      await followTask(submitted.task_id, box);
+    }
 
   } catch (error) {
     clearInterval(timer);
@@ -547,4 +621,3 @@ document.addEventListener('click', event => {
     closeToolsMenu();
   }
 });
-
